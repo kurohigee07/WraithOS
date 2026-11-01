@@ -82,7 +82,12 @@ async fn main() -> anyhow::Result<()> {
     if migrated > 0 {
         info!(migrated, "flat modules migrated to default tenant");
     }
-    let tenants = TenantRegistry::from_config(config.tenants.clone(), config.default_tenant.clone())
+    let tenant_acquire_timeout = config.to_app_context().wasm_acquire_timeout;
+    let tenants = TenantRegistry::from_config(
+        config.tenants.clone(),
+        config.default_tenant.clone(),
+        tenant_acquire_timeout,
+    )
         .context("tenant registry")?;
     let tenants = Arc::new(tenants);
     info!(count = tenants.default_name().len() as u32, "tenant registry ready");

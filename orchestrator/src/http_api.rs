@@ -49,6 +49,7 @@ enum ApiError {
     NotFound(String),
     Unauthorized(String),
     RateLimited { retry_after_ms: u64 },
+    TenantModuleLimit { current: usize, max: usize },
     Unavailable(String),
     Internal(String),
 }
@@ -91,6 +92,15 @@ impl IntoResponse for ApiError {
                 }
                 resp
             }
+            ApiError::TenantModuleLimit { current, max } => (
+                StatusCode::INSUFFICIENT_STORAGE,
+                Json(serde_json::json!({
+                    "error": format!("tenant module limit reached ({current}/{max})"),
+                    "current": current,
+                    "max": max,
+                })),
+            )
+                .into_response(),
             ApiError::Unavailable(m) => (
                 StatusCode::SERVICE_UNAVAILABLE,
                 Json(serde_json::json!({ "error": m })),
@@ -138,6 +148,17 @@ async fn upload_shared(
         return Err(ApiError::Conflict(format!(
             "module '{id}' already exists in tenant '{tenant}'; use PUT to replace"
         )));
+    }
+
+    // M18: tenant module capacity
+    let current_count = s.registry.all_for_tenant(tenant).len();
+    if let Err((cur, max)) = s.tenants.check_capacity(tenant, current_count) {
+        metrics::counter!(
+            "tenant_quota_rejected_total",
+            "tenant" => tenant.to_string(),
+            "reason" => "module_limit",
+        ).increment(1);
+        return Err(ApiError::TenantModuleLimit { current: cur, max });
     }
 
     verify_if_needed(s, headers, &body)?;
@@ -263,6 +284,32 @@ async fn execute_shared(
     let module = s.registry.get(tenant, id).ok_or_else(|| {
         ApiError::NotFound(format!("module '{id}' not found in tenant '{tenant}'"))
     })?;
+
+    // M18: tenant-level rate (before module quota — cheaper to reject here)
+    if let Err(retry_after_ms) = s.tenants.try_acquire_rate(tenant) {
+        metrics::counter!(
+            "tenant_quota_rejected_total",
+            "tenant" => tenant.to_string(),
+            "reason" => "rate",
+        ).increment(1);
+        return Err(ApiError::RateLimited { retry_after_ms });
+    }
+
+    // M18: tenant-level concurrency (permit held via RAII until handler returns)
+    let _tenant_permit = match s.tenants.acquire_concurrency(tenant).await {
+        Ok(p) => p,
+        Err(()) => {
+            metrics::counter!(
+                "tenant_quota_rejected_total",
+                "tenant" => tenant.to_string(),
+                "reason" => "concurrency",
+            ).increment(1);
+            return Err(ApiError::Unavailable(
+                format!("tenant '{tenant}' concurrency timeout")
+            ));
+        }
+    };
+
     match module.execute_quota(s.ctx.clone(), payload).await {
         Ok(v) => Ok(Json(v)),
         Err(QuotaExecError::RateLimited { retry_after_ms }) => {

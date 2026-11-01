@@ -45,6 +45,10 @@ emit_event("rhai.processed", "{\"source\":\"rhai\"}");
 # token_plain: plaintext (dev only; logs warning)
 # [tenants.alice]
 # token_hash = "$argon2id$v=19$m=19456,t=2,p=1$..."
+# Per-tenant resource caps (M18) — omit any field for unlimited:
+# max_modules = 10            # max # of modules per tenant
+# max_concurrent_wasm = 4     # max concurrent wasm execs per tenant
+# rate_limit_per_sec = 100    # aggregate rate limit across tenant's modules
 #
 # [tenants.bob]
 # token_plain = "dev-token"
@@ -61,3 +65,4 @@ allowed_hosts = ["example.com"]
 [[capabilities]]
 type = "tcp-connect"
 allowed_ports = [443]
+
