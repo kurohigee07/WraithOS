@@ -75,7 +75,7 @@ async fn main() -> anyhow::Result<()> {
     // ── Metrics server (opsional) ──────────────────────────────────────
 
     // ── Wasm modules ────────────────────────────────────────────────────
-    let registry = ModuleRegistry::new(engine.clone());
+    let registry = ModuleRegistry::new(engine.clone(), config.trusted_signer_keys.clone());
     let loaded = registry
         .load_wasm_dir(&config.modules_dir)
         .context("load wasm modules")?;

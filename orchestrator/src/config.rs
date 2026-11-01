@@ -70,6 +70,9 @@ pub struct Config {
     pub metrics_bind: Option<String>,
     pub script: ScriptConfig,
     pub capabilities: Vec<Capability>,
+    /// Hex-encoded ed25519 pubkeys (64 hex chars each).
+    /// If non-empty, every `*.wasm` requires valid sibling `*.wasm.sig`.
+    pub trusted_signer_keys: Vec<String>,
 }
 
 impl Default for Config {
@@ -87,6 +90,7 @@ impl Default for Config {
             log_format: LogFormat::Pretty,
             metrics_bind: Some("127.0.0.1:9090".to_string()),
             script: ScriptConfig::default(),
+            trusted_signer_keys: vec![],
             capabilities: vec![
                 Capability::Log,
                 Capability::HttpGet {
