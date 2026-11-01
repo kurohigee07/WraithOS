@@ -1,0 +1,5 @@
+{
+  "max_memory_mb": 0,
+  "max_concurrent": 0,
+  "rate_limit_per_sec": 0
+}

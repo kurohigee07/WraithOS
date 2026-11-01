@@ -27,6 +27,13 @@ emit_event("rhai.processed", "{\"source\":\"rhai\"}");
 # Ed25519 pubkeys (hex, 64 chars). Jika tidak kosong, setiap .wasm
 # WAJIB punya .wasm.sig sibling (64-byte raw ed25519 signature).
 # Kosongkan untuk skip verifikasi (dev only).
+# Quota default untuk modul yang di-upload tanpa X-Module-Quota header.
+# Field 0 = inherit global / unlimited. Lihat docs di shared-types.
+# [default_quota]
+# max_memory_mb = 0
+# max_concurrent = 0
+# rate_limit_per_sec = 0
+
 trusted_signer_keys = []
 
 [[capabilities]]

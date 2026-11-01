@@ -12,9 +12,8 @@ pub struct WasmHostState {
 }
 
 impl WasmHostState {
-    pub fn new(ctx: Arc<AppContext>) -> Self {
-        let memory_bytes = (ctx.config.wasm_memory_limit_mb as usize)
-            .saturating_mul(1024 * 1024);
+    pub fn new(ctx: Arc<AppContext>, memory_limit_mb: u64) -> Self {
+        let memory_bytes = (memory_limit_mb as usize).saturating_mul(1024 * 1024);
         let limits = StoreLimitsBuilder::new()
             .memory_size(memory_bytes)
             .trap_on_grow_failure(true)
