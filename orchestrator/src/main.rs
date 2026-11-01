@@ -75,7 +75,14 @@ async fn main() -> anyhow::Result<()> {
     // ── Metrics server (opsional) ──────────────────────────────────────
 
     // ── Wasm modules ────────────────────────────────────────────────────
-    let registry = ModuleRegistry::new(engine.clone(), config.trusted_signer_keys.clone());
+    let default_quota = shared_types::ModuleQuota::default();
+    let registry = ModuleRegistry::new(
+        engine.clone(),
+        config.trusted_signer_keys.clone(),
+        default_quota,
+        config.wasm_memory_limit_mb,
+        config.to_app_context().wasm_acquire_timeout,
+    );
     let loaded = registry
         .load_wasm_dir(&config.modules_dir)
         .context("load wasm modules")?;

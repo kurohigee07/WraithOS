@@ -1,34 +1,48 @@
 //! Registry modul. Loader wasm butuh shared Arc<Engine> + optional
-//! signature verification. M15: mutable API untuk lifecycle (upload,
-//! replace, delete, list).
+//! signature verification + per-module quota (sidecar).
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use anyhow::Context as _;
 use dashmap::DashMap;
 use ed25519_dalek::{Signature, Verifier, VerifyingKey};
-use shared_types::ModuleManifest;
+use shared_types::{ModuleManifest, ModuleQuota};
 use tracing::{info, warn};
 use wasmtime::Engine;
 
+use crate::fs_util::atomic_write;
+use crate::quota::ModuleQuotaState;
 use crate::wasm::module::WasmModule;
 
 pub struct ModuleRegistry {
     engine: Arc<Engine>,
     trusted_keys: Vec<String>,
+    default_quota: ModuleQuota,
+    global_memory_limit_mb: u64,
+    acquire_timeout: Duration,
     wasm: DashMap<String, Arc<WasmModule>>,
 }
 
 impl ModuleRegistry {
-    pub fn new(engine: Arc<Engine>, trusted_keys: Vec<String>) -> Self {
+    pub fn new(
+        engine: Arc<Engine>,
+        trusted_keys: Vec<String>,
+        default_quota: ModuleQuota,
+        global_memory_limit_mb: u64,
+        acquire_timeout: Duration,
+    ) -> Self {
         Self {
             engine,
             trusted_keys,
+            default_quota,
+            global_memory_limit_mb,
+            acquire_timeout,
             wasm: DashMap::new(),
         }
     }
 
-    // ── Read accessors ─────────────────────────────────────────────────
+    // ── Accessors ─────────────────────────────────────────────────────
     pub fn count(&self) -> usize { self.wasm.len() }
 
     pub fn all(&self) -> Vec<(String, Arc<WasmModule>)> {
@@ -43,17 +57,18 @@ impl ModuleRegistry {
 
     pub fn engine(&self) -> Arc<Engine> { self.engine.clone() }
 
-    // ── Write accessors (M15) ──────────────────────────────────────────
-    /// Insert only if absent. Returns Err(module) if id already exists
-    /// (caller owns the Arc to drop, avoiding use-after-move).
+    pub fn default_quota(&self) -> ModuleQuota { self.default_quota.clone() }
+
+    pub fn global_memory_limit_mb(&self) -> u64 { self.global_memory_limit_mb }
+
+    pub fn acquire_timeout(&self) -> Duration { self.acquire_timeout }
+
+    // ── Mutation ──────────────────────────────────────────────────────
     pub fn insert_if_absent(
         &self,
         id: String,
         module: Arc<WasmModule>,
     ) -> Result<(), Arc<WasmModule>> {
-        // Pre-check + insert. Race window on localhost (single admin) is
-        // sub-millisecond; DashMap entry API would be more correct but
-        // import path varies across versions.
         if self.wasm.contains_key(&id) {
             return Err(module);
         }
@@ -61,8 +76,6 @@ impl ModuleRegistry {
         Ok(())
     }
 
-    /// Insert-or-replace. Returns previous module (its Arc drops when
-    /// in-flight executions complete their clones).
     pub fn insert_replace(
         &self,
         id: String,
@@ -75,7 +88,7 @@ impl ModuleRegistry {
         self.wasm.remove(id).map(|(_, m)| m)
     }
 
-    // ── Signature helpers ─────────────────────────────────────────────
+    // ── Signature ─────────────────────────────────────────────────────
     pub fn has_trusted_keys(&self) -> bool { !self.trusted_keys.is_empty() }
 
     pub fn verify_signature(&self, bytes: &[u8], sig_bytes: &[u8]) -> anyhow::Result<()> {
@@ -85,7 +98,19 @@ impl ModuleRegistry {
         verify_bytes(bytes, sig_bytes, &self.trusted_keys)
     }
 
-    // ── Loader (dari disk, startup) ────────────────────────────────────
+    // ── Build quota state (validates against global cap) ─────────────
+    pub fn build_quota_state(&self, quota: &ModuleQuota) -> anyhow::Result<Arc<ModuleQuotaState>> {
+        if quota.max_memory_mb > 0 && quota.max_memory_mb > self.global_memory_limit_mb {
+            anyhow::bail!(
+                "max_memory_mb ({}) exceeds global cap ({})",
+                quota.max_memory_mb,
+                self.global_memory_limit_mb
+            );
+        }
+        Ok(Arc::new(ModuleQuotaState::from_quota(quota, self.acquire_timeout)))
+    }
+
+    // ── Loader from disk (startup) ────────────────────────────────────
     pub fn load_wasm_dir(&self, dir: &std::path::Path) -> anyhow::Result<usize> {
         let entries = match std::fs::read_dir(dir) {
             Ok(e) => e,
@@ -106,10 +131,8 @@ impl ModuleRegistry {
             };
             let path = entry.path();
             if path.extension().and_then(|s| s.to_str()) != Some("wasm") { continue; }
-            // Skip temp files from atomic_write (hidden dotfiles)
-            if path.file_name().and_then(|s| s.to_str()).map(|s| s.starts_with('.')).unwrap_or(false) {
-                continue;
-            }
+            if path.file_name().and_then(|s| s.to_str())
+                .map(|s| s.starts_with('.')).unwrap_or(false) { continue; }
 
             let bytes = match std::fs::read(&path) {
                 Ok(b) => b,
@@ -121,17 +144,12 @@ impl ModuleRegistry {
                 let sig_bytes = match std::fs::read(&sig_path) {
                     Ok(b) => b,
                     Err(e) => {
-                        warn!(
-                            path = %path.display(),
-                            sig_path = %sig_path.display(),
-                            err = %e,
-                            "skip: signature file missing (trusted_keys configured)"
-                        );
+                        warn!(path = %path.display(), err = %e, "skip: sig missing");
                         continue;
                     }
                 };
                 if let Err(e) = verify_bytes(&bytes, &sig_bytes, &self.trusted_keys) {
-                    warn!(path = %path.display(), err = %e, "skip: signature verification failed");
+                    warn!(path = %path.display(), err = %e, "skip: bad sig");
                     continue;
                 }
                 info!(path = %path.display(), "wasm signature verified");
@@ -140,14 +158,27 @@ impl ModuleRegistry {
             let file_stem = path.file_stem().and_then(|s| s.to_str())
                 .unwrap_or("unknown").to_string();
 
+            // Read sidecar quota if present; else use default.
+            let quota = read_quota_sidecar(dir, &file_stem)
+                .unwrap_or_else(|| self.default_quota.clone());
+
+            let quota_state = match self.build_quota_state(&quota) {
+                Ok(s) => s,
+                Err(e) => {
+                    warn!(path = %path.display(), err = %e, "skip: invalid quota");
+                    continue;
+                }
+            };
+
             let manifest = ModuleManifest {
                 id: file_stem.clone(),
                 version: "0.0.0".to_string(),
                 capabilities: vec![],
                 tenant: "default".to_string(),
+                quota,
             };
 
-            match WasmModule::load(self.engine.clone(), manifest, &bytes) {
+            match WasmModule::load(self.engine.clone(), manifest, &bytes, quota_state) {
                 Ok(m) => {
                     info!(id = %file_stem, path = %path.display(), "wasm module loaded");
                     self.wasm.insert(file_stem, Arc::new(m));
@@ -160,8 +191,30 @@ impl ModuleRegistry {
     }
 }
 
-/// Verify `wasm_bytes` against `sig_bytes` using any of `trusted_keys`.
-/// sig = 64 bytes raw, keys = 32 bytes hex-encoded.
+fn read_quota_sidecar(dir: &std::path::Path, id: &str) -> Option<ModuleQuota> {
+    let path = dir.join(format!("{id}.wasm.quota.json"));
+    let s = std::fs::read_to_string(&path).ok()?;
+    match serde_json::from_str::<ModuleQuota>(&s) {
+        Ok(q) => Some(q),
+        Err(e) => {
+            warn!(path = %path.display(), err = %e, "sidecar parse failed");
+            None
+        }
+    }
+}
+
+pub(crate) fn write_quota_sidecar(
+    dir: &std::path::Path,
+    id: &str,
+    q: &ModuleQuota,
+) -> anyhow::Result<()> {
+    let path = dir.join(format!("{id}.wasm.quota.json"));
+    let json = serde_json::to_vec_pretty(q)
+        .context("serialize quota")?;
+    atomic_write(&path, &json)
+        .map_err(|e| anyhow::anyhow!("write sidecar {}: {e}", path.display()))
+}
+
 fn verify_bytes(
     wasm_bytes: &[u8],
     sig_bytes: &[u8],
@@ -186,7 +239,7 @@ fn verify_bytes(
         let vk = match VerifyingKey::from_bytes(&key_arr) {
             Ok(v) => v,
             Err(e) => {
-                warn!(key = %key_hex, err = %e, "trusted key not valid ed25519 point; skipping");
+                warn!(key = %key_hex, err = %e, "trusted key invalid; skipping");
                 continue;
             }
         };
