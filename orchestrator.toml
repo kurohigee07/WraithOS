@@ -53,6 +53,11 @@ emit_event("rhai.processed", "{\"source\":\"rhai\"}");
 # [tenants.bob]
 # token_plain = "dev-token"
 
+# Build pipeline (M19). Cargo home used to invoke `cargo build`.
+# Default: $HOME/.cargo. Override if orchestrator runs under a user
+# whose cargo install lives elsewhere.
+# cargo_home = "/home/opc/.cargo"
+
 trusted_signer_keys = []
 
 [[capabilities]]

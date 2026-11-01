@@ -83,6 +83,19 @@ async fn main() -> anyhow::Result<()> {
         info!(migrated, "flat modules migrated to default tenant");
     }
     let tenant_acquire_timeout = config.to_app_context().wasm_acquire_timeout;
+    let cargo_home = config.cargo_home.clone().unwrap_or_else(|| {
+        let home = std::env::var("HOME").unwrap_or_else(|_| "/home/opc".to_string());
+        std::path::PathBuf::from(format!("{home}/.cargo"))
+    });
+    if !cargo_home.join("bin").join("cargo").exists() {
+        warn!(
+            cargo_home = %cargo_home.display(),
+            "cargo binary not found — /modules/build will fail"
+        );
+    } else {
+        info!(cargo_home = %cargo_home.display(), "build pipeline ready");
+    }
+
     let tenants = TenantRegistry::from_config(
         config.tenants.clone(),
         config.default_tenant.clone(),
@@ -131,6 +144,8 @@ async fn main() -> anyhow::Result<()> {
         started_at,
         modules_dir: config.modules_dir.clone(),
         tenants: tenants.clone(),
+        build_semaphore: Arc::new(tokio::sync::Semaphore::new(1)),
+        cargo_home: cargo_home.clone(),
     };
     let metrics_server: Option<(tokio::task::JoinHandle<()>, tokio::sync::oneshot::Sender<()>)> =
         match config.metrics_bind.as_deref() {

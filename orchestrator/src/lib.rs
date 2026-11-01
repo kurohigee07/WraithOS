@@ -1,5 +1,6 @@
 //! Orchestrator core library. Binary di main.rs thin wrapper.
 
+pub mod build_api;
 pub mod capabilities;
 pub mod cli;
 pub mod config;
