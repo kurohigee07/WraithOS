@@ -1,0 +1,36 @@
+# Orchestrator runtime config. Semua field punya default jika dihilangkan.
+
+db_path = "orchestrator.db"
+modules_dir = "./modules"
+http_timeout_secs = 30
+max_sockets = 256
+# Batasi Wasm paralel. Rule of thumb: < CPU count, agar tokio worker
+# tetap tersedia untuk HTTP/metrics/signal handling.
+max_concurrent_wasm = 2
+# Timeout menunggu slot Wasm pool. Jika habis, execute() return error.
+wasm_acquire_timeout_secs = 10
+# Batas linear memory per Wasm instance. Guest yang melebihi akan trap.
+wasm_memory_limit_mb = 256
+max_db_connections = 8
+log_level = "info"
+log_format = "pretty"   # "pretty" | "json"
+metrics_bind = "127.0.0.1:9090"   # empty string = disable
+
+[script]
+# Pilih salah satu: inline atau path.
+inline = '''
+log_info("rhai received: " + event_kind);
+emit_event("rhai.processed", "{\"source\":\"rhai\"}");
+'''
+# path = "./rules/scan.rhai"
+
+[[capabilities]]
+type = "log"
+
+[[capabilities]]
+type = "http-get"
+allowed_hosts = ["example.com"]
+
+[[capabilities]]
+type = "tcp-connect"
+allowed_ports = [443]

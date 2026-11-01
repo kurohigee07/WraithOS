@@ -1,0 +1,18 @@
+[Unit]
+Description=Orchestrator - unified core engine
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/orchestrator-project
+ExecStart=%h/orchestrator-project/target/x86_64-unknown-linux-musl/release/orchestrator --config %h/orchestrator-project/orchestrator.toml
+Restart=on-failure
+RestartSec=3
+KillSignal=SIGTERM
+TimeoutStopSec=15
+StandardOutput=append:%h/orchestrator-project/logs/orchestrator.log
+StandardError=append:%h/orchestrator-project/logs/orchestrator.log
+
+[Install]
+WantedBy=default.target

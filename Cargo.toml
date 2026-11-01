@@ -1,0 +1,90 @@
+[workspace]
+members = ["orchestrator", "shared-types", "sample-plugin"]
+default-members = ["orchestrator", "shared-types"]
+resolver = "2"
+
+[workspace.package]
+edition = "2021"
+rust-version = "1.85"          # tokio 1.54.x membutuhkan Rust 1.85+
+license = "MIT OR Apache-2.0"
+
+[workspace.dependencies]
+# ── Async Runtime & Utility ─────────────────────────────────────────────
+tokio = { version = "1.54", features = ["full"] }
+async-trait = "0.1"
+futures = "0.3"
+dashmap = "6.1"
+
+# ── Error & Observability ───────────────────────────────────────────────
+thiserror = "2.0"
+anyhow = "1.0"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+
+# ── HTTP / TLS ──────────────────────────────────────────────────────────
+# default-features = false WAJIB: reqwest 0.13 default-nya menarik native-tls
+# dan aws-lc-rs. Kita paksa rustls-no-provider agar provider ring dari
+# workspace rustls yang dipakai, bukan aws-lc-rs.
+reqwest = { version = "0.13", default-features = false, features = [
+    "rustls-no-provider",
+    "json",
+    "gzip",
+    "brotli",
+    "stream",
+] }
+
+# Provider kripto tunggal: ring. default-features = false menghapus
+# dependensi implisit aws-lc-rs yang butuh cmake/nasm.
+rustls = { version = "0.23", default-features = false, features = [
+    "ring",
+    "std",
+    "tls12",
+    "logging",
+] }
+
+# ── Raw Socket Host-Level ───────────────────────────────────────────────
+socket2 = { version = "0.5", features = ["all"] }
+
+# ── Database ────────────────────────────────────────────────────────────
+# Feature "sqlite" di sqlx 0.8 sudah mengaktifkan sqlite-bundled:
+# libsqlite3 dikompilasi dari source dan di-link statis. Tidak ada TLS
+# untuk SQLite karena ini embedded DB.
+sqlx = { version = "0.8", default-features = false, features = [
+    "runtime-tokio",
+    "sqlite",
+    "macros",
+    "migrate",
+] }
+
+# ── Wasmtime (Component Model + Async Host Functions) ───────────────────
+# wasmtime 48 adalah LTS. component-model-async wajib untuk bindgen!
+# dengan async: true. runtime + cranelift + std juga diperlukan.
+wasmtime = { version = "48.0", default-features = false, features = [
+    "async",
+    "component-model",
+    "component-model-async",
+    "cranelift",
+    "runtime",
+    "std",
+] }
+wasmtime-wasi = { version = "48.0", default-features = false, features = ["p2"] }
+
+# ── Rhai ────────────────────────────────────────────────────────────────
+rhai = { version = "1.22", features = ["sync", "serde", "internals"] }
+
+axum = "0.8"
+metrics = "0.24"
+metrics-exporter-prometheus = "0.17"
+clap = { version = "4", features = ["derive"] }
+toml = "0.8"
+
+# ── Serialization ───────────────────────────────────────────────────────
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+webpki-roots = "1.0"
+
+[profile.release]
+lto = "fat"
+codegen-units = 1
+strip = "symbols"
+panic = "abort"
