@@ -22,6 +22,7 @@ pub struct ApiState {
     pub registry: Arc<ModuleRegistry>,
     pub started_at: Instant,
     pub modules_dir: std::path::PathBuf,
+    pub tenants: std::sync::Arc<crate::tenant::TenantRegistry>,
 }
 
 pub fn install() -> anyhow::Result<PrometheusHandle> {
@@ -72,8 +73,9 @@ async fn debug_state_handler(State(s): State<ApiState>) -> Json<serde_json::Valu
         .registry
         .all()
         .iter()
-        .map(|(id, m)| {
+        .map(|(tenant, id, m)| {
             serde_json::json!({
+                "tenant": tenant,
                 "id": id,
                 "version": m.manifest().version,
                 "capabilities": m.manifest().capabilities,

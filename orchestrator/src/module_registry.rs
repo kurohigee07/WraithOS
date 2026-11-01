@@ -1,5 +1,4 @@
-//! Registry modul. Loader wasm butuh shared Arc<Engine> + optional
-//! signature verification + per-module quota (sidecar).
+//! Registry modul. Multi-tenant: key = (tenant, id). Storage `modules/{tenant}/`.
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -15,13 +14,15 @@ use crate::fs_util::atomic_write;
 use crate::quota::ModuleQuotaState;
 use crate::wasm::module::WasmModule;
 
+type RegistryKey = (String, String);
+
 pub struct ModuleRegistry {
     engine: Arc<Engine>,
     trusted_keys: Vec<String>,
     default_quota: ModuleQuota,
     global_memory_limit_mb: u64,
     acquire_timeout: Duration,
-    wasm: DashMap<String, Arc<WasmModule>>,
+    wasm: DashMap<RegistryKey, Arc<WasmModule>>,
 }
 
 impl ModuleRegistry {
@@ -43,53 +44,86 @@ impl ModuleRegistry {
     }
 
     // ── Accessors ─────────────────────────────────────────────────────
-    pub fn count(&self) -> usize { self.wasm.len() }
-
-    pub fn all(&self) -> Vec<(String, Arc<WasmModule>)> {
-        self.wasm.iter().map(|e| (e.key().clone(), e.value().clone())).collect()
+    pub fn count(&self) -> usize {
+        self.wasm.len()
     }
 
-    pub fn get(&self, id: &str) -> Option<Arc<WasmModule>> {
-        self.wasm.get(id).map(|e| e.value().clone())
+    pub fn all(&self) -> Vec<(String, String, Arc<WasmModule>)> {
+        self.wasm
+            .iter()
+            .map(|e| (e.key().0.clone(), e.key().1.clone(), e.value().clone()))
+            .collect()
     }
 
-    pub fn has(&self, id: &str) -> bool { self.wasm.contains_key(id) }
+    pub fn all_for_tenant(&self, tenant: &str) -> Vec<(String, Arc<WasmModule>)> {
+        self.wasm
+            .iter()
+            .filter(|e| e.key().0 == tenant)
+            .map(|e| (e.key().1.clone(), e.value().clone()))
+            .collect()
+    }
 
-    pub fn engine(&self) -> Arc<Engine> { self.engine.clone() }
+    pub fn get(&self, tenant: &str, id: &str) -> Option<Arc<WasmModule>> {
+        self.wasm
+            .get(&(tenant.to_string(), id.to_string()))
+            .map(|e| e.value().clone())
+    }
 
-    pub fn default_quota(&self) -> ModuleQuota { self.default_quota.clone() }
+    pub fn has(&self, tenant: &str, id: &str) -> bool {
+        self.wasm.contains_key(&(tenant.to_string(), id.to_string()))
+    }
 
-    pub fn global_memory_limit_mb(&self) -> u64 { self.global_memory_limit_mb }
+    pub fn engine(&self) -> Arc<Engine> {
+        self.engine.clone()
+    }
 
-    pub fn acquire_timeout(&self) -> Duration { self.acquire_timeout }
+    pub fn default_quota(&self) -> ModuleQuota {
+        self.default_quota.clone()
+    }
+
+    pub fn global_memory_limit_mb(&self) -> u64 {
+        self.global_memory_limit_mb
+    }
+
+    pub fn acquire_timeout(&self) -> Duration {
+        self.acquire_timeout
+    }
 
     // ── Mutation ──────────────────────────────────────────────────────
     pub fn insert_if_absent(
         &self,
-        id: String,
+        tenant: &str,
+        id: &str,
         module: Arc<WasmModule>,
     ) -> Result<(), Arc<WasmModule>> {
-        if self.wasm.contains_key(&id) {
+        let key = (tenant.to_string(), id.to_string());
+        if self.wasm.contains_key(&key) {
             return Err(module);
         }
-        self.wasm.insert(id, module);
+        self.wasm.insert(key, module);
         Ok(())
     }
 
     pub fn insert_replace(
         &self,
-        id: String,
+        tenant: &str,
+        id: &str,
         module: Arc<WasmModule>,
     ) -> Option<Arc<WasmModule>> {
-        self.wasm.insert(id, module)
+        self.wasm
+            .insert((tenant.to_string(), id.to_string()), module)
     }
 
-    pub fn remove(&self, id: &str) -> Option<Arc<WasmModule>> {
-        self.wasm.remove(id).map(|(_, m)| m)
+    pub fn remove(&self, tenant: &str, id: &str) -> Option<Arc<WasmModule>> {
+        self.wasm
+            .remove(&(tenant.to_string(), id.to_string()))
+            .map(|(_, m)| m)
     }
 
     // ── Signature ─────────────────────────────────────────────────────
-    pub fn has_trusted_keys(&self) -> bool { !self.trusted_keys.is_empty() }
+    pub fn has_trusted_keys(&self) -> bool {
+        !self.trusted_keys.is_empty()
+    }
 
     pub fn verify_signature(&self, bytes: &[u8], sig_bytes: &[u8]) -> anyhow::Result<()> {
         if self.trusted_keys.is_empty() {
@@ -98,7 +132,6 @@ impl ModuleRegistry {
         verify_bytes(bytes, sig_bytes, &self.trusted_keys)
     }
 
-    // ── Build quota state (validates against global cap) ─────────────
     pub fn build_quota_state(&self, quota: &ModuleQuota) -> anyhow::Result<Arc<ModuleQuotaState>> {
         if quota.max_memory_mb > 0 && quota.max_memory_mb > self.global_memory_limit_mb {
             anyhow::bail!(
@@ -110,7 +143,7 @@ impl ModuleRegistry {
         Ok(Arc::new(ModuleQuotaState::from_quota(quota, self.acquire_timeout)))
     }
 
-    // ── Loader from disk (startup) ────────────────────────────────────
+    // ── Loader ────────────────────────────────────────────────────────
     pub fn load_wasm_dir(&self, dir: &std::path::Path) -> anyhow::Result<usize> {
         let entries = match std::fs::read_dir(dir) {
             Ok(e) => e,
@@ -119,24 +152,71 @@ impl ModuleRegistry {
                 return Ok(0);
             }
             Err(e) => {
-                return Err(anyhow::anyhow!("read modules dir {}: {e}", dir.display()));
+                return Err(anyhow::anyhow!("read {}: {e}", dir.display()));
             }
         };
+
+        let mut total = 0usize;
+        for entry_res in entries {
+            let entry = match entry_res {
+                Ok(e) => e,
+                Err(e) => {
+                    warn!(err = %e, "skip unreadable dir entry");
+                    continue;
+                }
+            };
+            let path = entry.path();
+            if !path.is_dir() {
+                continue;
+            }
+            let tenant = path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("")
+                .to_string();
+            if tenant.is_empty() || tenant.starts_with('.') {
+                continue;
+            }
+            match self.load_tenant_dir(&path, &tenant) {
+                Ok(n) => total += n,
+                Err(e) => warn!(tenant = %tenant, err = %e, "tenant load failed"),
+            }
+        }
+        Ok(total)
+    }
+
+    fn load_tenant_dir(&self, dir: &std::path::Path, tenant: &str) -> anyhow::Result<usize> {
+        let entries = std::fs::read_dir(dir)
+            .with_context(|| format!("read tenant dir {}", dir.display()))?;
 
         let mut loaded = 0usize;
         for entry_res in entries {
             let entry = match entry_res {
                 Ok(e) => e,
-                Err(e) => { warn!(err = %e, "skip unreadable dir entry"); continue; }
+                Err(e) => {
+                    warn!(err = %e, "skip unreadable entry");
+                    continue;
+                }
             };
             let path = entry.path();
-            if path.extension().and_then(|s| s.to_str()) != Some("wasm") { continue; }
-            if path.file_name().and_then(|s| s.to_str())
-                .map(|s| s.starts_with('.')).unwrap_or(false) { continue; }
+            if path.extension().and_then(|s| s.to_str()) != Some("wasm") {
+                continue;
+            }
+            if path
+                .file_name()
+                .and_then(|s| s.to_str())
+                .map(|s| s.starts_with('.'))
+                .unwrap_or(false)
+            {
+                continue;
+            }
 
             let bytes = match std::fs::read(&path) {
                 Ok(b) => b,
-                Err(e) => { warn!(path = %path.display(), err = %e, "skip: read failed"); continue; }
+                Err(e) => {
+                    warn!(path = %path.display(), err = %e, "skip: read failed");
+                    continue;
+                }
             };
 
             if !self.trusted_keys.is_empty() {
@@ -155,10 +235,12 @@ impl ModuleRegistry {
                 info!(path = %path.display(), "wasm signature verified");
             }
 
-            let file_stem = path.file_stem().and_then(|s| s.to_str())
-                .unwrap_or("unknown").to_string();
+            let file_stem = path
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or("unknown")
+                .to_string();
 
-            // Read sidecar quota if present; else use default.
             let quota = read_quota_sidecar(dir, &file_stem)
                 .unwrap_or_else(|| self.default_quota.clone());
 
@@ -174,14 +256,19 @@ impl ModuleRegistry {
                 id: file_stem.clone(),
                 version: "0.0.0".to_string(),
                 capabilities: vec![],
-                tenant: "default".to_string(),
+                tenant: tenant.to_string(),
                 quota,
             };
 
             match WasmModule::load(self.engine.clone(), manifest, &bytes, quota_state) {
                 Ok(m) => {
-                    info!(id = %file_stem, path = %path.display(), "wasm module loaded");
-                    self.wasm.insert(file_stem, Arc::new(m));
+                    info!(
+                        tenant = %tenant,
+                        id = %file_stem,
+                        path = %path.display(),
+                        "wasm module loaded"
+                    );
+                    self.insert_replace(tenant, &file_stem, Arc::new(m));
                     loaded += 1;
                 }
                 Err(e) => warn!(path = %path.display(), err = %e, "skip: load failed"),
@@ -204,13 +291,12 @@ fn read_quota_sidecar(dir: &std::path::Path, id: &str) -> Option<ModuleQuota> {
 }
 
 pub(crate) fn write_quota_sidecar(
-    dir: &std::path::Path,
+    tenant_dir: &std::path::Path,
     id: &str,
     q: &ModuleQuota,
 ) -> anyhow::Result<()> {
-    let path = dir.join(format!("{id}.wasm.quota.json"));
-    let json = serde_json::to_vec_pretty(q)
-        .context("serialize quota")?;
+    let path = tenant_dir.join(format!("{id}.wasm.quota.json"));
+    let json = serde_json::to_vec_pretty(q).context("serialize quota")?;
     atomic_write(&path, &json)
         .map_err(|e| anyhow::anyhow!("write sidecar {}: {e}", path.display()))
 }

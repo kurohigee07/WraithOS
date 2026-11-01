@@ -58,6 +58,7 @@ impl WasmModule {
         payload: serde_json::Value,
     ) -> Result<serde_json::Value, QuotaExecError> {
         let module_id = self.manifest.id.clone();
+        let tenant_id = self.manifest.tenant.clone();
         let span = tracing::Span::current();
 
         // 1. Rate limit (sync, instant reject)
@@ -65,6 +66,7 @@ impl WasmModule {
             metrics::counter!(
                 "module_quota_rejected_total",
                 "module" => module_id.clone(),
+                "tenant" => tenant_id.clone(),
                 "reason" => "rate",
             ).increment(1);
             metrics::counter!(
@@ -112,6 +114,7 @@ impl WasmModule {
         metrics::histogram!(
             "wasm_pool_wait_seconds",
             "module" => module_id.clone(),
+            "tenant" => tenant_id.clone(),
         ).record(pool_wait.elapsed().as_secs_f64());
 
         // 4. Execute
@@ -123,6 +126,7 @@ impl WasmModule {
                 metrics::counter!(
                     "wasm_executions_total",
                     "module" => module_id.clone(),
+                    "tenant" => tenant_id.clone(),
                     "result" => "ok",
                 ).increment(1);
                 span.record("outcome", "ok");
@@ -131,6 +135,7 @@ impl WasmModule {
                 metrics::counter!(
                     "wasm_executions_total",
                     "module" => module_id.clone(),
+                    "tenant" => tenant_id.clone(),
                     "result" => "error",
                 ).increment(1);
                 span.record("outcome", "error");
@@ -139,6 +144,7 @@ impl WasmModule {
         metrics::histogram!(
             "wasm_execution_duration_seconds",
             "module" => module_id,
+            "tenant" => tenant_id,
         ).record(elapsed);
         result
     }

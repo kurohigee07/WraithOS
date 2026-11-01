@@ -13,6 +13,7 @@ pub mod module_registry;
 pub mod quota;
 pub mod rhai_worker;
 pub mod telemetry;
+pub mod tenant;
 pub mod wasm;
 
 pub use capabilities::CapabilitySet;
@@ -25,4 +26,5 @@ pub use module::OrchestratorModule;
 pub use module_registry::ModuleRegistry;
 pub use quota::{ModuleQuotaState, TokenBucket};
 pub use rhai_worker::RhaiWorker;
+pub use tenant::TenantRegistry;
 pub use wasm::module::WasmModule;
