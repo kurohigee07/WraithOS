@@ -108,6 +108,7 @@ async fn main() -> anyhow::Result<()> {
         ctx: ctx.clone(),
         registry: registry.clone(),
         started_at,
+        modules_dir: config.modules_dir.clone(),
     };
     let metrics_server: Option<(tokio::task::JoinHandle<()>, tokio::sync::oneshot::Sender<()>)> =
         match config.metrics_bind.as_deref() {

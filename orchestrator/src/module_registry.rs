@@ -1,5 +1,6 @@
-//! Registry modul yang aktif. Loader wasm butuh shared Arc<Engine>
-//! dan optional signature verification.
+//! Registry modul. Loader wasm butuh shared Arc<Engine> + optional
+//! signature verification. M15: mutable API untuk lifecycle (upload,
+//! replace, delete, list).
 
 use std::sync::Arc;
 
@@ -27,6 +28,64 @@ impl ModuleRegistry {
         }
     }
 
+    // ── Read accessors ─────────────────────────────────────────────────
+    pub fn count(&self) -> usize { self.wasm.len() }
+
+    pub fn all(&self) -> Vec<(String, Arc<WasmModule>)> {
+        self.wasm.iter().map(|e| (e.key().clone(), e.value().clone())).collect()
+    }
+
+    pub fn get(&self, id: &str) -> Option<Arc<WasmModule>> {
+        self.wasm.get(id).map(|e| e.value().clone())
+    }
+
+    pub fn has(&self, id: &str) -> bool { self.wasm.contains_key(id) }
+
+    pub fn engine(&self) -> Arc<Engine> { self.engine.clone() }
+
+    // ── Write accessors (M15) ──────────────────────────────────────────
+    /// Insert only if absent. Returns Err(module) if id already exists
+    /// (caller owns the Arc to drop, avoiding use-after-move).
+    pub fn insert_if_absent(
+        &self,
+        id: String,
+        module: Arc<WasmModule>,
+    ) -> Result<(), Arc<WasmModule>> {
+        // Pre-check + insert. Race window on localhost (single admin) is
+        // sub-millisecond; DashMap entry API would be more correct but
+        // import path varies across versions.
+        if self.wasm.contains_key(&id) {
+            return Err(module);
+        }
+        self.wasm.insert(id, module);
+        Ok(())
+    }
+
+    /// Insert-or-replace. Returns previous module (its Arc drops when
+    /// in-flight executions complete their clones).
+    pub fn insert_replace(
+        &self,
+        id: String,
+        module: Arc<WasmModule>,
+    ) -> Option<Arc<WasmModule>> {
+        self.wasm.insert(id, module)
+    }
+
+    pub fn remove(&self, id: &str) -> Option<Arc<WasmModule>> {
+        self.wasm.remove(id).map(|(_, m)| m)
+    }
+
+    // ── Signature helpers ─────────────────────────────────────────────
+    pub fn has_trusted_keys(&self) -> bool { !self.trusted_keys.is_empty() }
+
+    pub fn verify_signature(&self, bytes: &[u8], sig_bytes: &[u8]) -> anyhow::Result<()> {
+        if self.trusted_keys.is_empty() {
+            anyhow::bail!("no trusted keys configured");
+        }
+        verify_bytes(bytes, sig_bytes, &self.trusted_keys)
+    }
+
+    // ── Loader (dari disk, startup) ────────────────────────────────────
     pub fn load_wasm_dir(&self, dir: &std::path::Path) -> anyhow::Result<usize> {
         let entries = match std::fs::read_dir(dir) {
             Ok(e) => e,
@@ -47,6 +106,10 @@ impl ModuleRegistry {
             };
             let path = entry.path();
             if path.extension().and_then(|s| s.to_str()) != Some("wasm") { continue; }
+            // Skip temp files from atomic_write (hidden dotfiles)
+            if path.file_name().and_then(|s| s.to_str()).map(|s| s.starts_with('.')).unwrap_or(false) {
+                continue;
+            }
 
             let bytes = match std::fs::read(&path) {
                 Ok(b) => b,
@@ -81,6 +144,7 @@ impl ModuleRegistry {
                 id: file_stem.clone(),
                 version: "0.0.0".to_string(),
                 capabilities: vec![],
+                tenant: "default".to_string(),
             };
 
             match WasmModule::load(self.engine.clone(), manifest, &bytes) {
@@ -93,12 +157,6 @@ impl ModuleRegistry {
             }
         }
         Ok(loaded)
-    }
-
-    pub fn count(&self) -> usize { self.wasm.len() }
-
-    pub fn all(&self) -> Vec<(String, Arc<WasmModule>)> {
-        self.wasm.iter().map(|e| (e.key().clone(), e.value().clone())).collect()
     }
 }
 

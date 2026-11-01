@@ -6,6 +6,7 @@ pub mod config;
 pub mod context;
 pub mod error;
 pub mod events;
+pub mod http_api;
 pub mod module;
 pub mod module_registry;
 pub mod rhai_worker;
