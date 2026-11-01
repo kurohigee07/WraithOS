@@ -26,5 +26,5 @@ pub use module::OrchestratorModule;
 pub use module_registry::ModuleRegistry;
 pub use quota::{ModuleQuotaState, TokenBucket};
 pub use rhai_worker::RhaiWorker;
-pub use tenant::TenantRegistry;
+pub use tenant::{TenantPermit, TenantRegistry, TenantState};
 pub use wasm::module::WasmModule;

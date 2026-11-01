@@ -61,6 +61,15 @@ pub struct TenantConfig {
     /// Plaintext token (dev/testing only; logs warning). If both set, hash wins.
     #[serde(default)]
     pub token_plain: Option<String>,
+    /// Max # of modules per tenant. None = unlimited.
+    #[serde(default)]
+    pub max_modules: Option<usize>,
+    /// Max concurrent wasm executions per tenant. None = only global pool.
+    #[serde(default)]
+    pub max_concurrent_wasm: Option<u32>,
+    /// Aggregate rate limit (requests/sec) across all tenant modules. None = unlimited.
+    #[serde(default)]
+    pub rate_limit_per_sec: Option<u32>,
 }
 
 #[derive(Debug, Deserialize)]
