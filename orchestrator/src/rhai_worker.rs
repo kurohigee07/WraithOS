@@ -79,6 +79,14 @@ impl RhaiWorker {
         Ok(())
     }
 
+    #[tracing::instrument(
+        skip_all,
+        fields(
+            event_kind = %event.kind,
+            source = %event.source_module,
+            outcome = tracing::field::Empty,
+        ),
+    )]
     async fn dispatch(&self, event: OrchestratorEvent) {
         let start = std::time::Instant::now();
         let source_label = event.source_module.clone();
@@ -147,6 +155,12 @@ impl RhaiWorker {
             self.event_bus.publish(ev);
         }
 
+        // Compute outcome SEBELUM match agar `result` tidak partially moved.
+        let outcome = match &result {
+            Ok(Ok(())) => "ok",
+            _ => "error",
+        };
+
         match result {
             Ok(Ok(())) => debug!(event_kind = %event.kind, "rhai script ok"),
             Ok(Err(e)) => error!(event_kind = %event.kind, err = %e, "rhai script failed"),
@@ -165,5 +179,7 @@ impl RhaiWorker {
         ).increment(1);
         metrics::histogram!("rhai_script_duration_seconds")
             .record(start.elapsed().as_secs_f64());
+
+        tracing::Span::current().record("outcome", outcome);
     }
 }

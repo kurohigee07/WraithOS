@@ -1,14 +1,27 @@
-//! Prometheus metrics + health endpoints. Bind 127.0.0.1 default;
-//! override via `metrics_bind` di config.
+//! Prometheus metrics + health endpoints + debug state.
 
 use std::net::SocketAddr;
+use std::sync::Arc;
+use std::time::Instant;
 
 use axum::extract::State;
 use axum::routing::get;
-use axum::Router;
+use axum::{Json, Router};
 use metrics_exporter_prometheus::{PrometheusBuilder, PrometheusHandle};
 use tokio::sync::oneshot;
 use tracing::error;
+
+use crate::context::AppContext;
+use crate::module::OrchestratorModule;
+use crate::module_registry::ModuleRegistry;
+
+#[derive(Clone)]
+pub struct ApiState {
+    pub prom: PrometheusHandle,
+    pub ctx: Arc<AppContext>,
+    pub registry: Arc<ModuleRegistry>,
+    pub started_at: Instant,
+}
 
 pub fn install() -> anyhow::Result<PrometheusHandle> {
     PrometheusBuilder::new()
@@ -18,7 +31,7 @@ pub fn install() -> anyhow::Result<PrometheusHandle> {
 
 pub async fn spawn(
     bind: SocketAddr,
-    state: PrometheusHandle,
+    state: ApiState,
     shutdown: oneshot::Receiver<()>,
 ) -> anyhow::Result<tokio::task::JoinHandle<()>> {
     let listener = tokio::net::TcpListener::bind(bind)
@@ -29,6 +42,7 @@ pub async fn spawn(
         .route("/metrics", get(metrics_handler))
         .route("/healthz", get(health_handler))
         .route("/readyz", get(health_handler))
+        .route("/debug/state", get(debug_state_handler))
         .with_state(state);
 
     let handle = tokio::spawn(async move {
@@ -43,10 +57,39 @@ pub async fn spawn(
     Ok(handle)
 }
 
-async fn metrics_handler(State(handle): State<PrometheusHandle>) -> String {
-    handle.render()
+async fn metrics_handler(State(s): State<ApiState>) -> String {
+    s.prom.render()
 }
 
 async fn health_handler() -> &'static str {
     "ok"
+}
+
+async fn debug_state_handler(State(s): State<ApiState>) -> Json<serde_json::Value> {
+    let modules: Vec<serde_json::Value> = s
+        .registry
+        .all()
+        .iter()
+        .map(|(id, m)| {
+            serde_json::json!({
+                "id": id,
+                "version": m.manifest().version,
+                "capabilities": m.manifest().capabilities,
+            })
+        })
+        .collect();
+
+    Json(serde_json::json!({
+        "uptime_secs": s.started_at.elapsed().as_secs(),
+        "modules": modules,
+        "wasm_pool": {
+            "total": s.ctx.wasm_pool.total(),
+            "available": s.ctx.wasm_pool.available(),
+        },
+        "sockets": {
+            "active": s.ctx.sockets.len(),
+            "max": s.ctx.sockets.max(),
+            "available": s.ctx.sockets.available(),
+        },
+    }))
 }

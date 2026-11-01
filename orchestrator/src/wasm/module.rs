@@ -47,6 +47,10 @@ impl OrchestratorModule for WasmModule {
         Ok(())
     }
 
+    #[tracing::instrument(
+        skip_all,
+        fields(module = %self.manifest.id, outcome = tracing::field::Empty),
+    )]
     async fn execute(
         &self,
         ctx: Arc<AppContext>,
@@ -86,6 +90,7 @@ impl OrchestratorModule for WasmModule {
             "wasm_execution_duration_seconds",
             "module" => module_id,
         ).record(elapsed);
+        tracing::Span::current().record("outcome", outcome);
         result
     }
 
