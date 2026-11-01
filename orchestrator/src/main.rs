@@ -52,6 +52,12 @@ async fn main() -> anyhow::Result<()> {
     }
 
     // ── Wasmtime engine (shared, epoch-enabled) + ticker ────────────────
+    // Metrics recorder MUST be installed before any metrics::* macro.
+    // Probe loop di bawah akan me-emit wasm_executions_total.
+    let prom_handle = telemetry::install()
+        .context("install metrics recorder")?;
+
+    let started_at = std::time::Instant::now();
     let engine = build_engine()?;
     let _ticker = EpochTicker::spawn(engine.clone(), EPOCH_TICK);
     info!("wasmtime engine + epoch ticker up");
@@ -67,26 +73,6 @@ async fn main() -> anyhow::Result<()> {
     let bus = EventBus::new(1024);
 
     // ── Metrics server (opsional) ──────────────────────────────────────
-    let prom_handle = telemetry::install()
-        .context("install metrics recorder")?;
-    let metrics_server: Option<(tokio::task::JoinHandle<()>, tokio::sync::oneshot::Sender<()>)> =
-        match config.metrics_bind.as_deref() {
-            Some("") | None => {
-                info!("metrics disabled (metrics_bind empty or none)");
-                None
-            }
-            Some(bind) => {
-                let addr: std::net::SocketAddr = bind
-                    .parse()
-                    .with_context(|| format!("invalid metrics_bind: {bind}"))?;
-                let (m_tx, m_rx) = tokio::sync::oneshot::channel::<()>();
-                let handle = telemetry::spawn(addr, prom_handle, m_rx)
-                    .await
-                    .context("spawn metrics server")?;
-                info!(%addr, "metrics server up");
-                Some((handle, m_tx))
-            }
-        };
 
     // ── Wasm modules ────────────────────────────────────────────────────
     let registry = ModuleRegistry::new(engine.clone());
@@ -114,6 +100,33 @@ async fn main() -> anyhow::Result<()> {
             Err(e) => info!(id = %id, err = %e, "wasm alloc trapped as expected"),
         }
     }
+
+
+    let registry = Arc::new(registry);
+    let api_state = telemetry::ApiState {
+        prom: prom_handle,
+        ctx: ctx.clone(),
+        registry: registry.clone(),
+        started_at,
+    };
+    let metrics_server: Option<(tokio::task::JoinHandle<()>, tokio::sync::oneshot::Sender<()>)> =
+        match config.metrics_bind.as_deref() {
+            Some("") | None => {
+                info!("metrics disabled (metrics_bind empty or none)");
+                None
+            }
+            Some(bind) => {
+                let addr: std::net::SocketAddr = bind
+                    .parse()
+                    .with_context(|| format!("invalid metrics_bind: {bind}"))?;
+                let (m_tx, m_rx) = tokio::sync::oneshot::channel::<()>();
+                let handle = telemetry::spawn(addr, api_state, m_rx)
+                    .await
+                    .context("spawn metrics server")?;
+                info!(%addr, "metrics server up");
+                Some((handle, m_tx))
+            }
+        };
 
     // ── Rhai worker ─────────────────────────────────────────────────────
     let script = config.script.load()?;
