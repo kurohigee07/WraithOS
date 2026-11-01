@@ -43,7 +43,7 @@ pub fn router() -> Router<ApiState> {
 
 // ── ApiError ────────────────────────────────────────────────────────
 #[derive(Debug)]
-enum ApiError {
+pub(crate) enum ApiError {
     BadRequest(String),
     Conflict(String),
     NotFound(String),
@@ -377,7 +377,7 @@ async fn put_quota_shared(
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────
-fn verify_tenant(s: &ApiState, tenant: &str, headers: &HeaderMap) -> Result<(), ApiError> {
+pub(crate) fn verify_tenant(s: &ApiState, tenant: &str, headers: &HeaderMap) -> Result<(), ApiError> {
     match s.tenants.verify(tenant, headers.get("authorization")) {
         Ok(()) => Ok(()),
         Err(AuthError::UnknownTenant) => {
@@ -399,7 +399,7 @@ fn extract_id(headers: &HeaderMap) -> Result<String, ApiError> {
         .ok_or_else(|| ApiError::BadRequest("X-Module-Id header required".into()))
 }
 
-fn parse_quota_header(headers: &HeaderMap) -> Result<Option<ModuleQuota>, ApiError> {
+pub(crate) fn parse_quota_header(headers: &HeaderMap) -> Result<Option<ModuleQuota>, ApiError> {
     let raw = match headers.get("x-module-quota") {
         Some(v) => v,
         None => return Ok(None),
@@ -412,7 +412,7 @@ fn parse_quota_header(headers: &HeaderMap) -> Result<Option<ModuleQuota>, ApiErr
     Ok(Some(q))
 }
 
-fn validate_id(id: &str) -> Result<(), ApiError> {
+pub(crate) fn validate_id(id: &str) -> Result<(), ApiError> {
     if id.is_empty() || id.len() > 64 {
         return Err(ApiError::BadRequest("module id must be 1..=64 chars".into()));
     }

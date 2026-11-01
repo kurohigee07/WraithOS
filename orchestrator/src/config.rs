@@ -95,6 +95,9 @@ pub struct Config {
     pub capabilities: Vec<Capability>,
     /// Hex-encoded ed25519 pubkeys (64 hex chars each).
     /// If non-empty, every `*.wasm` requires valid sibling `*.wasm.sig`.
+    /// Cargo home used by the build pipeline. None = $HOME/.cargo.
+    #[serde(default)]
+    pub cargo_home: Option<PathBuf>,
     pub trusted_signer_keys: Vec<String>,
 }
 
@@ -117,6 +120,7 @@ impl Default for Config {
             script: ScriptConfig::default(),
             default_tenant: default_tenant_name(),
             tenants: std::collections::HashMap::new(),
+            cargo_home: None,
             trusted_signer_keys: vec![],
             capabilities: vec![
                 Capability::Log,

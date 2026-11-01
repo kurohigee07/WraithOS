@@ -23,6 +23,8 @@ pub struct ApiState {
     pub started_at: Instant,
     pub modules_dir: std::path::PathBuf,
     pub tenants: std::sync::Arc<crate::tenant::TenantRegistry>,
+    pub build_semaphore: std::sync::Arc<tokio::sync::Semaphore>,
+    pub cargo_home: std::path::PathBuf,
 }
 
 pub fn install() -> anyhow::Result<PrometheusHandle> {
@@ -46,6 +48,7 @@ pub async fn spawn(
         .route("/readyz", get(health_handler))
         .route("/debug/state", get(debug_state_handler))
         .merge(crate::http_api::router())
+        .merge(crate::build_api::router())
         .with_state(state);
 
     let handle = tokio::spawn(async move {

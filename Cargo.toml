@@ -78,6 +78,7 @@ metrics-exporter-prometheus = "0.17"
 clap = { version = "4", features = ["derive"] }
 toml = "0.8"
 argon2 = { version = "0.5", features = ["std"] }
+tempfile = "3"
 ed25519-dalek = { version = "2", default-features = false, features = ["std"] }
 hex = "0.4"
 
