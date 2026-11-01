@@ -1,0 +1,16 @@
+package orchestrator:host;
+
+interface http {
+    get: func(url: string) -> result<string, string>;
+}
+
+interface tcp {
+    connect: func(host: string, port: u16) -> result<u32, string>;
+    close: func(handle: u32) -> result<_, string>;
+}
+
+world plugin {
+    import http;
+    import tcp;
+    export run: func(payload: string) -> result<string, string>;
+}
