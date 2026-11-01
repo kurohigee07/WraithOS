@@ -1,10 +1,7 @@
 name: Rust
 
 on:
-  push:
-    branches: [ "main" ]
-  pull_request:
-    branches: [ "main" ]
+  workflow_dispatch:  # disabled during M11-M20 development; re-enable when CI ready
 
 env:
   CARGO_TERM_COLOR: always
