@@ -53,9 +53,23 @@ impl ScriptConfig {
     }
 }
 
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct TenantConfig {
+    /// Argon2 PHC string (e.g. "$argon2id$v=19$m=..."). Production recommended.
+    #[serde(default)]
+    pub token_hash: Option<String>,
+    /// Plaintext token (dev/testing only; logs warning). If both set, hash wins.
+    #[serde(default)]
+    pub token_plain: Option<String>,
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(default)]
 pub struct Config {
+    #[serde(default = "default_tenant_name")]
+    pub default_tenant: String,
+    #[serde(default)]
+    pub tenants: std::collections::HashMap<String, TenantConfig>,
     pub db_path: PathBuf,
     pub modules_dir: PathBuf,
     pub http_timeout_secs: u64,
@@ -75,6 +89,8 @@ pub struct Config {
     pub trusted_signer_keys: Vec<String>,
 }
 
+fn default_tenant_name() -> String { "default".to_string() }
+
 impl Default for Config {
     fn default() -> Self {
         Self {
@@ -90,6 +106,8 @@ impl Default for Config {
             log_format: LogFormat::Pretty,
             metrics_bind: Some("127.0.0.1:9090".to_string()),
             script: ScriptConfig::default(),
+            default_tenant: default_tenant_name(),
+            tenants: std::collections::HashMap::new(),
             trusted_signer_keys: vec![],
             capabilities: vec![
                 Capability::Log,

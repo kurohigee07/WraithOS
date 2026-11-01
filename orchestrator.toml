@@ -34,6 +34,21 @@ emit_event("rhai.processed", "{\"source\":\"rhai\"}");
 # max_concurrent = 0
 # rate_limit_per_sec = 0
 
+# ── Multi-tenant (M17) ─────────────────────────────────────────────
+# default_tenant dipakai untuk route /modules (backward compat) dan
+# subdir modules/{default_tenant}/. Default: "default" (no auth).
+# default_tenant = "default"
+
+# Tenant tambahan. Route: /t/{tenant}/modules. Storage: modules/{tenant}/.
+# token_hash: argon2 PHC string (production). Generate:
+#   python3 -c "from argon2 import PasswordHasher; print(PasswordHasher().hash('mytoken'))"
+# token_plain: plaintext (dev only; logs warning)
+# [tenants.alice]
+# token_hash = "$argon2id$v=19$m=19456,t=2,p=1$..."
+#
+# [tenants.bob]
+# token_plain = "dev-token"
+
 trusted_signer_keys = []
 
 [[capabilities]]
