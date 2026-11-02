@@ -1,4 +1,5 @@
-use crate::wasm::orchestrator::host::{http, tcp};
+use crate::events::OrchestratorEvent;
+use crate::wasm::orchestrator::host::{events, http, tcp};
 use crate::wasm::state::WasmHostState;
 
 impl http::Host for WasmHostState {
@@ -52,6 +53,21 @@ impl tcp::Host for WasmHostState {
             .sockets
             .remove(handle)
             .ok_or_else(|| format!("socket handle {handle} not found"))?;
+        Ok(())
+    }
+}
+
+
+impl events::Host for WasmHostState {
+    async fn emit(&mut self, kind: String, payload_json: String) -> Result<(), String> {
+        self.ctx.capabilities.check_emit_event(&kind).map_err(|e| e.to_string())?;
+        let payload: serde_json::Value = serde_json::from_str(&payload_json)
+            .map_err(|e| format!("invalid payload json: {e}"))?;
+        self.ctx.event_bus.publish(OrchestratorEvent {
+            kind,
+            payload,
+            source_module: self.module_id.clone(),
+        });
         Ok(())
     }
 }

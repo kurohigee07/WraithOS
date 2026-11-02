@@ -61,6 +61,10 @@ emit_event("rhai.processed", "{\"source\":\"rhai\"}");
 trusted_signer_keys = []
 
 [[capabilities]]
+type = "emit-event"
+allowed_kinds = ["*"]
+
+[[capabilities]]
 type = "log"
 
 [[capabilities]]

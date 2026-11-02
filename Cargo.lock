@@ -4533,6 +4533,7 @@ name = "wraith-sdk"
 version = "0.1.0"
 dependencies = [
  "reqwest",
+ "rustls",
  "serde",
  "serde_json",
  "thiserror",

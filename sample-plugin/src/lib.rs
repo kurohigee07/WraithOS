@@ -19,38 +19,10 @@ fn json_escape(s: &str) -> String {
     out
 }
 
-fn extract_alloc_mb(payload: &str) -> Option<usize> {
-    let needle = "\"alloc_mb\":";
-    let pos = payload.find(needle)?;
-    let rest = &payload[pos + needle.len()..];
-    let digits: String = rest
-        .chars()
-        .skip_while(|c| c.is_whitespace())
-        .take_while(|c| c.is_ascii_digit())
-        .collect();
-    if digits.is_empty() {
-        return None;
-    }
-    digits.parse().ok()
-}
-
 struct SamplePlugin;
 
 impl Guest for SamplePlugin {
     fn run(payload: String) -> Result<String, String> {
-        // Fast-path OOM test: alokasi N MB. Jika > wasm_memory_limit_mb,
-        // memory.grow trap -> execute return Err.
-        if let Some(mb) = extract_alloc_mb(&payload) {
-            let bytes = mb.saturating_mul(1024 * 1024);
-            let buf: Vec<u8> = vec![0xAA_u8; bytes];
-            let checksum: u64 = buf.iter().step_by(4096).map(|&b| b as u64).sum();
-            return Ok(format!(
-                r#"{{"alloc_mb":{},"checksum":{}}}"#,
-                mb, checksum,
-            ));
-        }
-
-        // Normal path: probe http.get + tcp.connect via host bridge.
         let http_part = match orchestrator::host::http::get("https://example.com") {
             Ok(body) => format!(r#"{{"ok":true,"len":{}}}"#, body.len()),
             Err(e) => format!(r#"{{"ok":false,"err":"{}"}}"#, json_escape(&e)),
@@ -64,11 +36,18 @@ impl Guest for SamplePlugin {
             Err(e) => format!(r#"{{"ok":false,"err":"{}"}}"#, json_escape(&e)),
         };
 
+        let emit_payload = format!(r#"{{"from":"{}"}}"#, json_escape(&payload));
+        let emit_part = match orchestrator::host::events::emit("sample.emitted", &emit_payload) {
+            Ok(()) => r#"{"ok":true}"#.to_string(),
+            Err(e) => format!(r#"{{"ok":false,"err":"{}"}}"#, json_escape(&e)),
+        };
+
         Ok(format!(
-            r#"{{"probe":"{}","http":{},"tcp":{}}}"#,
+            r#"{{"probe":"{}","http":{},"tcp":{},"emit":{}}}"#,
             json_escape(&payload),
             http_part,
             tcp_part,
+            emit_part,
         ))
     }
 }

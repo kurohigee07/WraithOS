@@ -24,6 +24,7 @@ pub enum Capability {
     TcpConnect { allowed_ports: Vec<u16> },
     DbQuery { allowed_tables: Vec<String> },
     Log,
+    EmitEvent { allowed_kinds: Vec<String> },
 }
 
 /// Per-module resource quota. Semua field 0 = inherit global / unlimited.

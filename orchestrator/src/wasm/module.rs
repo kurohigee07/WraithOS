@@ -160,7 +160,7 @@ impl WasmModule {
             ctx.config.wasm_memory_limit_mb
         };
 
-        let mut store = Store::new(&self.engine, WasmHostState::new(ctx, memory_mb));
+        let mut store = Store::new(&self.engine, WasmHostState::new(ctx, memory_mb, self.manifest.id.clone()));
         store.set_epoch_deadline(EPOCH_DEADLINE_TICKS);
         store.limiter(|state| &mut state.limits);
 
