@@ -369,3 +369,31 @@ Dashboard `/ui` confirmed live inside WraithOS:
 - A/B atomic update verified bidirectional
 
 Rust project == WraithOS runtime. One binary, one OS.
+
+---
+
+## Termux Deployment — VERIFIED (2026-11-02 22:40)
+
+Orchestrator runs **native** on Android ARM64 (Termux, no emulation):
+- Binary: wraith-termux-aarch64.tar.gz (8.3MB compressed, 16MB extracted)
+- Cross-compiled via `cargo zigbuild --target aarch64-unknown-linux-musl`
+- Static musl ELF works on Android (Termux userland)
+- PID 28226, uptime verified, healthz ok
+- All endpoints working: /healthz, /readyz, /metrics, /audit/logs, /debug/state
+- Dashboard accessible at http://127.0.0.1:9090/ui from phone browser
+- Rhai EventBus functional (smoke event processed)
+
+### Termux package contents (in wraithos/termux-package/)
+- orchestrator (16MB aarch64 musl binary)
+- orchestrator.toml (optimized for phone: 128MB mem, 64 sockets)
+- run.sh, stop.sh, status.sh (helper scripts)
+- README.txt (usage)
+
+### Recovery via PAR URL
+OCI bucket: oci:wraith-bucket/termux/wraith-termux-aarch64.tar.gz
+Pre-Authenticated URL works (no auth needed at download time)
+Expiry: ~7 days from 2026-11-02
+
+### After VPS Oracle terminates
+The HP Termux instance becomes the permanent orchestrator host.
+No service interruption. Dashboard accessible from phone.
