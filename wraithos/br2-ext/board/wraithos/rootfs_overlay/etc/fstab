@@ -1,4 +1,7 @@
-# /etc/fstab: WraithOS
-# tmpfs untuk runtime data (sub-millisecond execution)
-tmpfs   /var/lib/orchestrator   tmpfs   defaults,size=512M,mode=0755  0 0
-tmpfs   /modules                tmpfs   defaults,size=256M,mode=0755  0 0
+# WraithOS fstab — only /data mounted here
+# Bind mounts handled by /etc/init.d/S30data (after dirs created)
+/dev/vda4   /data   ext4    defaults,noatime   0  2
+
+# tmpfs
+tmpfs       /run    tmpfs   defaults,size=16M,mode=0755   0  0
+tmpfs       /tmp    tmpfs   defaults,size=64M,mode=1777   0  0
