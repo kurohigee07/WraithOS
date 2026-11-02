@@ -314,3 +314,44 @@ Kalau 6/6 pass -> WraithOS Level 2 SELESAI.
 - M30: Signed release bundles (SHA256SUMS + GPG)
 - M31: aarch64 build for Raspberry Pi
 - M32: LUKS encrypted /data partition
+
+---
+
+## WraithOS Integration Status — VERIFIED
+
+**Rust orchestrator IS inside WraithOS** (not a separate project):
+
+- Binary: `/sbin/wraith-init` = `target/x86_64-unknown-linux-musl/release/orchestrator`
+- Auto-start: `/etc/init.d/S99wraith-init`
+- Config: `/etc/wraith/orchestrator.toml` (bind-mounted from `/data/wraith/`)
+- DB: `/var/lib/orchestrator/orchestrator.db` (persistent via /data)
+- Logs: `/var/lib/orchestrator/wraith.log`
+- Modules: `/modules/` (persistent via /data)
+
+**All orchestrator features work inside WraithOS:**
+
+- `/healthz` → ok
+- `/metrics` → Prometheus
+- `/debug/state` → JSON snapshot
+- `/audit/logs` → execution history
+- `/ui` → HTMX dashboard (embedded via include_str!)
+- `/ws/events` → WebSocket live stream
+- `/modules` → module CRUD
+- `/t/{tenant}/modules` → multi-tenant
+- `/modules/build` → build pipeline
+
+**Network access (QEMU → external):**
+
+Boot with `-netdev user,hostfwd=tcp::9091-:9090`.
+Then from VPS host: `curl http://127.0.0.1:9091/ui`
+Or via SSH tunnel from laptop: `ssh -L 9091:127.0.0.1:9091 opc@vps`
+
+**Future work (if continuing):**
+
+- M29: Web first-boot wizard (separate port :8080, embedded HTML)
+- M30: aarch64 build for Raspberry Pi
+- M31: LUKS encrypted /data
+- M32: Signed releases
+
+The orchestrator dashboard (`/ui`) is **already production-ready** inside
+WraithOS. No additional integration needed — it's the same binary.
