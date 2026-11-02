@@ -1,21 +1,3 @@
-# WraithOS shell profile
 export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 export HOME=/root
 export TERM=${TERM:-linux}
-
-# Gray prompt: root@wraithos:~# (light gray text, subtle bold)
-export PS1='\[\e[0;37m\]\u@\h\[\e[0m\]:\[\e[1;37m\]\w\[\e[0m\]\$ '
-
-# Aliases
-alias ls='ls --color=auto'
-alias ll='ls -lah'
-alias la='ls -A'
-alias grep='grep --color=auto'
-
-# Welcome banner
-if [ -n "$PS1" ] && [ -z "$WRAITHOS_SHOWN" ]; then
-    echo ""
-    echo "  WraithOS 0.20.3  |  type 'wraith-help' for commands"
-    echo ""
-    export WRAITHOS_SHOWN=1
-fi
