@@ -4518,6 +4518,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "wraith-cli"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "serde_json",
+ "tokio",
+ "wraith-sdk",
+]
+
+[[package]]
+name = "wraith-sdk"
+version = "0.1.0"
+dependencies = [
+ "reqwest",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio",
+]
+
+[[package]]
 name = "writeable"
 version = "0.6.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
