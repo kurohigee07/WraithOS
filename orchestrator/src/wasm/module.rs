@@ -28,7 +28,37 @@ pub enum QuotaExecError {
     Internal(anyhow::Error),
 }
 
+impl std::fmt::Display for QuotaExecError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            QuotaExecError::RateLimited { retry_after_ms } => write!(f, "rate limited, retry after {}ms", retry_after_ms),
+            QuotaExecError::ConcurrencyTimeout => write!(f, "concurrency timeout"),
+            QuotaExecError::Internal(e) => write!(f, "{}", e),
+        }
+    }
+}
+
 impl WasmModule {
+    async fn log_execution(
+        db: &sqlx::SqlitePool,
+        tenant: String,
+        module_id: String,
+        status: &'static str,
+        duration_ms: u64,
+        error_msg: Option<String>,
+    ) {
+        let _ = sqlx::query(
+            "INSERT INTO execution_logs (tenant, module_id, status, duration_ms, error_message) VALUES (?, ?, ?, ?, ?)"
+        )
+        .bind(tenant)
+        .bind(module_id)
+        .bind(status)
+        .bind(duration_ms as i64)
+        .bind(error_msg)
+        .execute(db)
+        .await;
+    }
+
     pub fn load(
         engine: Arc<Engine>,
         manifest: ModuleManifest,
@@ -119,8 +149,14 @@ impl WasmModule {
 
         // 4. Execute
         let start = Instant::now();
+        let db_pool = ctx.db.clone();
         let result = self.execute_impl(ctx, payload).await;
         let elapsed = start.elapsed().as_secs_f64();
+        let (status, err_msg) = match &result {
+            Ok(_) => ("ok", None),
+            Err(e) => ("error", Some(format!("{e}"))),
+        };
+
         match &result {
             Ok(_) => {
                 metrics::counter!(
@@ -141,6 +177,14 @@ impl WasmModule {
                 span.record("outcome", "error");
             }
         }
+
+        let db = db_pool;
+        let t_id = tenant_id.clone();
+        let m_id = module_id.clone();
+        let dur = (elapsed * 1000.0) as u64;
+        tokio::spawn(async move {
+            Self::log_execution(&db, t_id, m_id, status, dur, err_msg).await;
+        });
         metrics::histogram!(
             "wasm_execution_duration_seconds",
             "module" => module_id,

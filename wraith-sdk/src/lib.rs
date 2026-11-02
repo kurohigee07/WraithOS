@@ -119,3 +119,23 @@ impl WraithClient {
         Self::handle_response(resp).await
     }
 }
+
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExecutionLog {
+    pub id: i64,
+    pub tenant: String,
+    pub module_id: String,
+    pub status: String,
+    pub duration_ms: i64,
+    pub error_message: Option<String>,
+    pub executed_at: String,
+}
+
+impl WraithClient {
+    pub async fn get_logs(&self) -> Result<Vec<ExecutionLog>, SdkError> {
+        let resp = self.req(reqwest::Method::GET, "/audit/logs").send().await?;
+        let val = Self::handle_response(resp).await?;
+        Ok(serde_json::from_value(val).unwrap_or_default())
+    }
+}
