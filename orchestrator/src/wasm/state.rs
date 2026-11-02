@@ -9,17 +9,18 @@ pub struct WasmHostState {
     pub wasi: WasiCtx,
     pub table: ResourceTable,
     pub limits: StoreLimits,
+    pub module_id: String,
 }
 
 impl WasmHostState {
-    pub fn new(ctx: Arc<AppContext>, memory_limit_mb: u64) -> Self {
+    pub fn new(ctx: Arc<AppContext>, memory_limit_mb: u64, module_id: String) -> Self {
         let memory_bytes = (memory_limit_mb as usize).saturating_mul(1024 * 1024);
         let limits = StoreLimitsBuilder::new()
             .memory_size(memory_bytes)
             .trap_on_grow_failure(true)
             .build();
         let wasi = WasiCtxBuilder::new().inherit_stdio().build();
-        Self { ctx, wasi, table: ResourceTable::new(), limits }
+        Self { ctx, wasi, table: ResourceTable::new(), limits, module_id }
     }
 }
 

@@ -16,3 +16,4 @@ modules/*.wasm
 *.swp
 .DS_Store
 logs/
+core.*

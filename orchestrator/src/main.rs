@@ -65,13 +65,12 @@ async fn main() -> anyhow::Result<()> {
 
     // ── AppContext + capability ─────────────────────────────────────────
     let caps = CapabilitySet::from_capabilities(&config.capabilities);
+    let bus = EventBus::new(1024);
     let ctx = Arc::new(
-        AppContext::build(config.to_app_context(), caps)
+        AppContext::build(config.to_app_context(), caps, bus.clone())
             .await
             .context("failed to build AppContext")?,
     );
-
-    let bus = EventBus::new(1024);
 
     // ── Metrics server (opsional) ──────────────────────────────────────
 
@@ -180,6 +179,9 @@ async fn main() -> anyhow::Result<()> {
             match derived_rx.recv().await {
                 Ok(ev) if ev.kind == "rhai.processed" => {
                     info!(payload = %ev.payload, "derived event observed");
+                }
+                Ok(ev) if ev.kind == "sample.emitted" => {
+                    info!(payload = %ev.payload, source = %ev.source_module, "wasm event observed");
                 }
                 Ok(_) => {}
                 Err(tokio::sync::broadcast::error::RecvError::Closed) => break,

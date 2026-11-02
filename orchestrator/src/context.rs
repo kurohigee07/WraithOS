@@ -14,6 +14,7 @@ use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 use tracing::{debug, info};
 
 use crate::capabilities::CapabilitySet;
+use crate::events::EventBus;
 use crate::error::{OrchestratorError, Result};
 
 #[derive(Debug, Clone)]
@@ -193,6 +194,7 @@ pub struct AppContext {
     pub sockets: SocketRegistry,
     pub wasm_pool: WasmPool,
     pub capabilities: Arc<CapabilitySet>,
+    pub event_bus: EventBus,
     pub config: AppContextConfig,
 }
 
@@ -200,6 +202,7 @@ impl AppContext {
     pub async fn build(
         config: AppContextConfig,
         capabilities: CapabilitySet,
+        event_bus: EventBus,
     ) -> anyhow::Result<Self> {
         // Validate config nilai kritis (user-provided via TOML).
         if config.max_sockets == 0 {
@@ -238,6 +241,7 @@ impl AppContext {
             sockets: SocketRegistry::new(config.max_sockets),
             wasm_pool: WasmPool::new(config.max_concurrent_wasm, config.wasm_acquire_timeout),
             capabilities: Arc::new(capabilities),
+            event_bus,
             config,
         })
     }

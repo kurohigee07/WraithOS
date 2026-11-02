@@ -9,8 +9,13 @@ interface tcp {
     close: func(handle: u32) -> result<_, string>;
 }
 
+interface events {
+    emit: func(kind: string, payload-json: string) -> result<_, string>;
+}
+
 world plugin {
     import http;
     import tcp;
+    import events;
     export run: func(payload: string) -> result<string, string>;
 }
