@@ -6,6 +6,8 @@ use std::time::Instant;
 
 use axum::extract::State;
 use axum::routing::get;
+use tower_http::timeout::TimeoutLayer;
+use std::time::Duration;
 use axum::{Json, Router};
 use metrics_exporter_prometheus::{PrometheusBuilder, PrometheusHandle};
 use tokio::sync::oneshot;
@@ -45,12 +47,13 @@ pub async fn spawn(
     let app = Router::new()
         .route("/metrics", get(metrics_handler))
         .route("/healthz", get(health_handler))
-        .route("/readyz", get(health_handler))
+        .route("/readyz", get(readiness_handler))
         .route("/debug/state", get(debug_state_handler))
         .merge(crate::http_api::router())
         .merge(crate::build_api::router())
         .merge(crate::ui::router())
         .merge(crate::ws::router())
+        .layer(TimeoutLayer::with_status_code(axum::http::StatusCode::REQUEST_TIMEOUT, Duration::from_secs(60)))
         .with_state(state);
 
     let handle = tokio::spawn(async move {
@@ -63,6 +66,48 @@ pub async fn spawn(
     });
 
     Ok(handle)
+}
+
+async fn readiness_handler(State(s): State<ApiState>) -> axum::response::Response {
+    use axum::http::StatusCode;
+    use axum::response::IntoResponse;
+
+    // Check 1: SQLite reachable
+    if let Err(e) = sqlx::query("SELECT 1").fetch_one(&s.ctx.db).await {
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            axum::Json(serde_json::json!({
+                "status": "not ready",
+                "reason": "db",
+                "error": e.to_string(),
+            })),
+        ).into_response();
+    }
+
+    // Check 2: Wasm pool has slots
+    if s.ctx.wasm_pool.available() == 0 {
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            axum::Json(serde_json::json!({
+                "status": "not ready",
+                "reason": "wasm_pool_saturated",
+                "available": 0,
+            })),
+        ).into_response();
+    }
+
+    // Check 3: registry loaded (at least 0 is OK, but no panic)
+    let module_count = s.registry.all().len();
+
+    (
+        StatusCode::OK,
+        axum::Json(serde_json::json!({
+            "status": "ready",
+            "modules_loaded": module_count,
+            "wasm_pool_available": s.ctx.wasm_pool.available(),
+            "uptime_secs": s.started_at.elapsed().as_secs(),
+        })),
+    ).into_response()
 }
 
 async fn metrics_handler(State(s): State<ApiState>) -> String {
