@@ -49,6 +49,7 @@ pub async fn spawn(
         .route("/debug/state", get(debug_state_handler))
         .merge(crate::http_api::router())
         .merge(crate::build_api::router())
+        .merge(crate::ui::router())
         .with_state(state);
 
     let handle = tokio::spawn(async move {

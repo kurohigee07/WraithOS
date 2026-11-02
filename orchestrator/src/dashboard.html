@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Wraith Orchestrator</title>
+<script src="https://unpkg.com/htmx.org@2.0.4"></script>
+<style>
+  :root { --bg:#0a0e1a; --surface:#131824; --border:#1e2433; --text:#e5e7eb; --muted:#6b7280; --accent:#8b5cf6; --ok:#10b981; --err:#ef4444; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--text); font-size: 14px; min-height: 100vh; }
+  header { padding: 20px 24px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 12px; }
+  header h1 { font-size: 20px; font-weight: 600; }
+  header h1 span { color: var(--accent); }
+  .badge { background: var(--surface); border: 1px solid var(--border); padding: 2px 8px; border-radius: 4px; font-size: 11px; color: var(--muted); }
+  nav { display: flex; gap: 2px; padding: 0 24px; border-bottom: 1px solid var(--border); }
+  nav button { background: transparent; border: none; color: var(--muted); padding: 12px 16px; cursor: pointer; font-size: 13px; border-bottom: 2px solid transparent; font-family: inherit; }
+  nav button.active { color: var(--text); border-bottom-color: var(--accent); }
+  nav button:hover { color: var(--text); }
+  main { padding: 24px; }
+  .tab { display: none; }
+  .tab.active { display: block; }
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; margin-bottom: 24px; }
+  .stat { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 16px; }
+  .stat .label { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; }
+  .stat .value { font-size: 24px; font-weight: 600; margin-top: 4px; }
+  .stat .value.ok { color: var(--ok); }
+  .stat .value.err { color: var(--err); }
+  table { width: 100%; border-collapse: collapse; background: var(--surface); border-radius: 8px; overflow: hidden; }
+  table th { text-align: left; padding: 12px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--muted); border-bottom: 1px solid var(--border); font-weight: 500; }
+  table td { padding: 12px; border-bottom: 1px solid var(--border); font-size: 13px; }
+  table tr:last-child td { border-bottom: none; }
+  table tr:hover { background: rgba(139, 92, 246, 0.05); }
+  .btn { background: var(--accent); color: white; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 12px; font-family: inherit; }
+  .btn:hover { opacity: 0.9; }
+  .status { padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 500; }
+  .status.ok { background: rgba(16, 185, 129, 0.15); color: var(--ok); }
+  .status.error { background: rgba(239, 68, 68, 0.15); color: var(--err); }
+  #toast { position: fixed; bottom: 24px; right: 24px; background: var(--surface); border: 1px solid var(--border); padding: 12px 16px; border-radius: 8px; max-width: 500px; display: none; z-index: 100; font-size: 12px; font-family: monospace; word-break: break-all; }
+  #toast.show { display: block; }
+  #toast.ok { border-color: var(--ok); }
+  #toast.err { border-color: var(--err); }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>👻 <span>Wraith</span></h1>
+  <span class="badge">Orchestrator Dashboard</span>
+</header>
+
+<nav>
+  <button class="active" onclick="showTab('modules', this)">Modules</button>
+  <button onclick="showTab('logs', this)">Audit Logs</button>
+  <button onclick="showTab('metrics', this)">Metrics</button>
+</nav>
+
+<main>
+  <section id="modules" class="tab active">
+    <div class="stats" hx-get="/ui/fragments/stats" hx-trigger="load, every 3s"></div>
+    <table>
+      <thead>
+        <tr><th>Tenant</th><th>Module</th><th>Version</th><th>Quota</th><th>Actions</th></tr>
+      </thead>
+      <tbody hx-get="/ui/fragments/modules" hx-trigger="load, every 3s"></tbody>
+    </table>
+  </section>
+
+  <section id="logs" class="tab">
+    <table>
+      <thead>
+        <tr><th>ID</th><th>Tenant</th><th>Module</th><th>Status</th><th>Duration</th><th>When</th></tr>
+      </thead>
+      <tbody hx-get="/ui/fragments/logs" hx-trigger="load, every 3s"></tbody>
+    </table>
+  </section>
+
+  <section id="metrics" class="tab">
+    <div hx-get="/ui/fragments/metrics" hx-trigger="load, every 3s"></div>
+  </section>
+</main>
+
+<div id="toast"></div>
+
+<script>
+function showTab(id, btn) {
+  document.querySelectorAll('.tab').forEach(function(t) { t.classList.remove('active'); });
+  document.querySelectorAll('nav button').forEach(function(b) { b.classList.remove('active'); });
+  document.getElementById(id).classList.add('active');
+  btn.classList.add('active');
+}
+
+function execModule(id) {
+  toast('Executing ' + id + '...', '');
+  fetch('/modules/' + id + '/execute', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: '{}'
+  })
+  .then(function(r) {
+    return r.json().then(function(body) { return {ok: r.ok, body: body}; });
+  })
+  .then(function(res) {
+    var msg = JSON.stringify(res.body);
+    if (msg.length > 300) msg = msg.slice(0, 300) + '...';
+    if (res.ok) toast('OK: ' + msg, 'ok');
+    else toast('ERR: ' + (res.body.error || msg), 'err');
+  })
+  .catch(function(e) { toast('Network: ' + e.message, 'err'); });
+}
+
+function toast(msg, kind) {
+  var el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className = 'show ' + kind;
+  clearTimeout(window._tt);
+  window._tt = setTimeout(function() { el.className = ''; }, 5000);
+}
+</script>
+
+</body>
+</html>
