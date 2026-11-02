@@ -1,0 +1,33 @@
+# Wraith Orchestrator — Termux config
+db_path = "orchestrator.db"
+modules_dir = "./modules"
+http_timeout_secs = 30
+max_sockets = 64
+max_concurrent_wasm = 2
+wasm_acquire_timeout_secs = 10
+wasm_memory_limit_mb = 128
+log_level = "info"
+log_format = "pretty"
+metrics_bind = "127.0.0.1:9090"
+default_tenant = "default"
+
+[script]
+inline = '''
+log_info("rhai received: " + event_kind);
+emit_event("rhai.processed", "{\"source\":\"rhai\"}");
+'''
+
+[[capabilities]]
+type = "log"
+
+[[capabilities]]
+type = "emit-event"
+allowed_kinds = ["*"]
+
+[[capabilities]]
+type = "http-get"
+allowed_hosts = ["*"]
+
+[[capabilities]]
+type = "tcp-connect"
+allowed_ports = [80, 443]
