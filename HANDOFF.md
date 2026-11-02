@@ -243,3 +243,46 @@ Kalau 6/6 pass -> WraithOS Level 2 SELESAI.
 ---
 
 **End of Handoff Document**
+
+---
+
+## WraithOS Level 2 MVP — VERIFIED (2026-11-02)
+
+### Artifacts
+- Kernel: bzImage 11 MB (Linux 6.6, eBPF + cgroups v2 + panic=5)
+- Rootfs: rootfs.squashfs 7.1 MB (immutable)
+- Binary: wraith-init 23 MB (static musl, embedded in rootfs)
+- Image size: 18 MB total
+
+### Verification (in QEMU with KVM)
+- [x] Kernel boots (5-8s with KVM acceleration)
+- [x] /bin/sh as init works (init=/bin/sh bypass for test)
+- [x] /sbin/wraith-init present (23 MB ELF 64-bit static)
+- [x] /etc/wraith/orchestrator.toml present
+- [x] tmpfs mounted: /modules (256M), /var/lib/orchestrator (512M)
+- [x] Kernel cmdline: panic=5 confirmed
+- [x] cgroups v2: /sys/fs/cgroup/cgroup.controllers present
+- [x] eBPF filesystem: bpf on /sys/fs/bpf type bpf
+- [x] Loopback network: ping 127.0.0.1 0.036ms
+- [x] Orchestrator PID 83 running
+- [x] HTTP /healthz responds "ok" (HTTP/1.1 200 OK)
+- [x] SQLite DB running in tmpfs
+- [x] Rhai event processing (smoke test delivered=2)
+
+### Known Issues (non-blocking for MVP)
+1. BusyBox init stuck at S40network (wait_iface timeout on eth0)
+   - Workaround: boot with init=/bin/sh, manually setup lo + start orchestrator
+   - Fix: rename interfaces to en* wildcard OR disable wait_iface
+2. No auto-start of orchestrator.service (systemd not active, BusyBox init)
+   - Workaround: manual /sbin/wraith-init
+   - Fix: add /etc/init.d/S99orchestrator
+3. wget in BusyBox requires loopback UP before use
+   - Fix: bring up lo in init script or disable wait_iface
+
+### Next Steps for Level 3
+- Fix init scripts (auto-start + network)
+- Add post-image.sh to bundle bootable .img with GRUB
+- RAUC A/B update (atomic rollback)
+- LUKS encrypted /var/lib/orchestrator
+- aarch64 build (Raspberry Pi)
+- Web first-boot wizard
