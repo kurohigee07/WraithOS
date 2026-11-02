@@ -53,6 +53,7 @@
   <button class="active" onclick="showTab('modules', this)">Modules</button>
   <button onclick="showTab('logs', this)">Audit Logs</button>
   <button onclick="showTab('metrics', this)">Metrics</button>
+  <button onclick="showTab('live', this)">Live Events</button>
 </nav>
 
 <main>
@@ -77,6 +78,20 @@
 
   <section id="metrics" class="tab">
     <div hx-get="/ui/fragments/metrics" hx-trigger="load, every 3s"></div>
+  </section>
+  <section id="live" class="tab">
+    <div class="stats">
+      <div class="stat"><div class="label">WS Status</div><div class="value" id="ws-status" style="color:var(--muted)">connecting...</div></div>
+      <div class="stat"><div class="label">Events Received</div><div class="value" id="ws-count">0</div></div>
+    </div>
+    <table>
+      <thead>
+        <tr><th>Time</th><th>Kind</th><th>Source</th><th>Payload</th></tr>
+      </thead>
+      <tbody id="event-log">
+        <tr><td colspan="4" style="text-align:center;color:var(--muted);padding:24px">waiting for events...</td></tr>
+      </tbody>
+    </table>
   </section>
 </main>
 
@@ -116,6 +131,45 @@ function toast(msg, kind) {
   clearTimeout(window._tt);
   window._tt = setTimeout(function() { el.className = ''; }, 5000);
 }
+
+var wsCount = 0;
+function connectWs() {
+  var ws = new WebSocket('ws://' + window.location.host + '/ws/events');
+  var statusEl = document.getElementById('ws-status');
+  var countEl = document.getElementById('ws-count');
+  var logEl = document.getElementById('event-log');
+
+  ws.onopen = function() {
+    statusEl.textContent = 'connected';
+    statusEl.style.color = 'var(--ok)';
+  };
+  ws.onclose = function() {
+    statusEl.textContent = 'reconnecting...';
+    statusEl.style.color = 'var(--err)';
+    setTimeout(connectWs, 3000);
+  };
+  ws.onerror = function() {
+    statusEl.textContent = 'error';
+    statusEl.style.color = 'var(--err)';
+  };
+  ws.onmessage = function(e) {
+    var ev = JSON.parse(e.data);
+    if (wsCount === 0) logEl.innerHTML = '';
+    wsCount++;
+    countEl.textContent = wsCount;
+
+    var tr = document.createElement('tr');
+    var time = new Date().toLocaleTimeString();
+    var payload = JSON.stringify(ev.payload);
+    if (payload.length > 120) payload = payload.slice(0, 120) + '...';
+    tr.innerHTML = '<td style="color:var(--muted);font-size:11px">' + time +
+      '</td><td><strong>' + ev.kind + '</strong></td><td>' + ev.source_module +
+      '</td><td style="font-family:monospace;font-size:11px">' + payload + '</td>';
+    logEl.prepend(tr);
+    while (logEl.children.length > 50) logEl.removeChild(logEl.lastChild);
+  };
+}
+connectWs();
 </script>
 
 </body>
