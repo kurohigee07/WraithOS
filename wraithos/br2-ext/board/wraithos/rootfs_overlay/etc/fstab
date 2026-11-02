@@ -1,9 +1,3 @@
-proc        /proc       proc        defaults                    0  0
-sysfs       /sys        sysfs       defaults                    0  0
-devpts      /dev/pts    devpts      defaults                    0  0
-tmpfs       /dev/shm    tmpfs       defaults,size=16M,mode=1777 0  0
+# WraithOS fstab (mounts handled explicitly in inittab)
 /dev/vda1   /boot       vfat        defaults,noatime            0  0
 /dev/vda4   /data       ext4        defaults,noatime            0  0
-tmpfs       /run        tmpfs       defaults,size=16M,mode=0755 0  0
-tmpfs       /tmp        tmpfs       defaults,size=64M,mode=1777 0  0
-tmpfs       /var/log    tmpfs       defaults,size=8M,mode=0755  0  0

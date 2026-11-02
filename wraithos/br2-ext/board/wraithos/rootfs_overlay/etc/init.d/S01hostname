@@ -2,10 +2,7 @@
 case "$1" in
     start)
         if [ -f /etc/hostname ]; then
-            hostname $(cat /etc/hostname)
+            hostname $(cat /etc/hostname) 2>/dev/null || true
         fi
-        # Also add to /etc/hosts if not there
-        grep -q "$(cat /etc/hostname)" /etc/hosts 2>/dev/null || \
-            echo "127.0.1.1  $(cat /etc/hostname)" >> /etc/hosts
         ;;
 esac
