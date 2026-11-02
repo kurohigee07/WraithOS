@@ -17,3 +17,6 @@ modules/*.wasm
 .DS_Store
 logs/
 core.*
+wraithos/termux-package/orchestrator
+wraithos/termux-package/*.db*
+wraithos/termux-package/logs/
