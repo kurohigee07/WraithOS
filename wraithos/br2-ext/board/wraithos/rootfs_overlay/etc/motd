@@ -1,0 +1,11 @@
+
+  Welcome to WraithOS
+  ───────────────────
+  Orchestrator: http://127.0.0.1:9090/healthz
+  Modules:      /modules  (persistent via /data)
+  Config:       /etc/wraith/orchestrator.toml
+  Logs:         /var/lib/orchestrator/wraith.log
+
+  Update:       wraith-update /path/to/rootfs.squashfs
+  Rollback:     rm /boot/boot_b && reboot
+

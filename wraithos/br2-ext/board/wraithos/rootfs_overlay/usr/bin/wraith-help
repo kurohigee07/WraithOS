@@ -1,0 +1,32 @@
+#!/bin/sh
+cat << 'HELP'
+
+  WraithOS Quick Reference
+  ─────────────────────────
+
+  System:
+    rauc status              → gak tersedia (custom A/B)
+    cat /proc/cmdline        → cek slot aktif (slot=A atau B)
+    mount | grep 'on / '     → cek rootfs
+
+  Orchestrator:
+    wget -qO- http://127.0.0.1:9090/healthz
+    wget -qO- http://127.0.0.1:9090/metrics
+    wget -qO- http://127.0.0.1:9090/debug/state
+    cat /var/lib/orchestrator/wraith.log   → log
+
+  Modules:
+    ls /modules                              → daftar modul
+    wraith list                              → list via CLI (kalau ada binary)
+
+  Update:
+    wraith-update /path/to/rootfs.squashfs   → update ke slot lain
+    rm /boot/boot_b && reboot                → rollback ke A
+    ls /boot/                                → cek marker
+
+  Persistent data:
+    /data/orchestrator   → DB, logs
+    /data/modules        → Wasm modul
+    /data/wraith         → config
+
+HELP
