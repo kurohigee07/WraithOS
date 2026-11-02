@@ -1,6 +1,6 @@
 [workspace]
-members = ["orchestrator", "shared-types", "sample-plugin"]
-default-members = ["orchestrator", "shared-types"]
+members = ["orchestrator", "shared-types", "sample-plugin", "wraith-sdk", "wraith-cli"]
+default-members = ["orchestrator", "shared-types", "wraith-cli", "wraith-sdk"]
 resolver = "2"
 
 [workspace.package]
