@@ -39,9 +39,6 @@ cp "${BIN_DIR}/bzImage" "$BOOT_STAGE/bzImage"
 cp "${BOARD_DIR}/grub.cfg" "$BOOT_STAGE/grub/grub.cfg"
 
 # grubenv with default ORDER=A B
-"$GRUB_EDITENV" "$BOOT_STAGE/grub/grubenv" create
-"$GRUB_EDITENV" "$BOOT_STAGE/grub/grubenv" set ORDER="A B"
-echo "  grubenv: $(stat -c%s "$BOOT_STAGE/grub/grubenv") bytes"
 
 # GRUB modules
 cp "$GRUB_CORE_DIR"/*.mod "$BOOT_STAGE/grub/i386-pc/" 2>/dev/null || true
@@ -57,15 +54,17 @@ rm -f "$CORE_IMG"
     -O i386-pc \
     -o "$CORE_IMG" \
     -p "(hd0,msdos1)/grub" \
-    biosdisk part_msdos fat ext2 squashfs normal configfile linux
+    biosdisk part_msdos fat normal configfile linux test
 echo "  core.img: $(stat -c%s "$CORE_IMG") bytes"
 
-# ─── [3/6] Rootfs slots A/B ─────────────────────────────────────────
-echo "[3/6] Preparing rootfs slots"
-cp "${BIN_DIR}/rootfs.squashfs" "${BIN_DIR}/rootfs-a.img"
-truncate -s 128M "${BIN_DIR}/rootfs-a.img"
-cp "${BIN_DIR}/rootfs-a.img" "${BIN_DIR}/rootfs-b.img"
-echo "  slots: A+B 128M each"
+# ─── [3/6] Rootfs slots (direct reference, no cp) ──────────────────
+echo "[3/6] Using rootfs.squashfs directly (genimage pads to 128M)"
+
+# ─── [3.5/6] Stage grub/ into inputpath (genimage resolve files from here)
+echo "[3.5/6] Staging grub/ to inputpath"
+rm -rf "${BIN_DIR}/grub"
+cp -r "${BOOT_STAGE}/grub" "${BIN_DIR}/grub"
+echo "  staged: $(ls "${BIN_DIR}/grub" | tr '\n' ' ')"
 
 # ─── [4/6] Run genimage ─────────────────────────────────────────────
 echo "[4/6] Running genimage"
@@ -94,8 +93,7 @@ echo "  core.img: installed"
 
 # ─── [6/6] Cleanup ──────────────────────────────────────────────────
 echo "[6/6] Cleanup"
-rm -rf "$BOOT_STAGE" "$GEN_TMP" "$CORE_IMG"
-rm -f "${BIN_DIR}/rootfs-a.img" "${BIN_DIR}/rootfs-b.img"
+rm -rf "$BOOT_STAGE" "$GEN_TMP" "$CORE_IMG" "${BIN_DIR}/grub"
 
 # ─── Done ───────────────────────────────────────────────────────────
 echo ""

@@ -1,5 +1,7 @@
+# WraithOS network — minimal, non-blocking
+# auto: interfaces brought up at boot
 auto lo
 iface lo inet loopback
 
-auto en*
-iface en* inet dhcp
+# en* NOT brought up automatically — user configures manually
+# or use S41network-optional for DHCP with 3s timeout

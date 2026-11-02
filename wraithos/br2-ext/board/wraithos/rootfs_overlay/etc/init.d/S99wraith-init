@@ -1,26 +1,15 @@
 #!/bin/sh
-# Auto-start WraithOS orchestrator
 case "$1" in
     start)
         echo -n "Starting Wraith orchestrator: "
-        # fstab handles /data, bind mounts done by S40mounts
-        # Only start if config exists
         if [ -f /etc/wraith/orchestrator.toml ]; then
-            /sbin/wraith-init --config /etc/wraith/orchestrator.toml > /var/log/wraith.log 2>&1 &
+            /sbin/wraith-init --config /etc/wraith/orchestrator.toml \
+                > /var/lib/orchestrator/wraith.log 2>&1 &
             echo "OK"
         else
-            echo "SKIPPED (no config)"
+            echo "SKIPPED"
         fi
         ;;
-    stop)
-        killall wraith-init 2>/dev/null
-        ;;
-    restart)
-        $0 stop
-        sleep 1
-        $0 start
-        ;;
-    *)
-        echo "Usage: $0 {start|stop|restart}"
-        exit 1
+    stop) killall wraith-init 2>/dev/null ;;
+    restart) $0 stop; sleep 1; $0 start ;;
 esac

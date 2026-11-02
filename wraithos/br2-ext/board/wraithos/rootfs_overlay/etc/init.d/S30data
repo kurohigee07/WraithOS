@@ -1,33 +1,31 @@
 #!/bin/sh
-# Setup /data partition: mount, create structure, bind mounts, seed config
 case "$1" in
     start)
         echo -n "Setting up /data: "
-
-        # Mount /data (from fstab)
-        mountpoint -q /data || mount /dev/vda4 /data
-
-        if ! mountpoint -q /data; then
-            echo "FAIL (cannot mount /data)"
+        mkdir -p /data
+        if ! grep -q '/data' /proc/mounts 2>/dev/null; then
+            mount -t ext4 /dev/vda4 /data 2>/dev/null
+        fi
+        if ! grep -q '/data' /proc/mounts 2>/dev/null; then
+            echo "FAIL"
             exit 1
         fi
-
-        # Create persistent structure
         mkdir -p /data/orchestrator /data/modules /data/wraith
+        grep -q ' /var/lib/orchestrator ' /proc/mounts || \
+            mount --bind /data/orchestrator /var/lib/orchestrator
+        grep -q ' /modules ' /proc/mounts || \
+            mount --bind /data/modules /modules
+        grep -q ' /etc/wraith ' /proc/mounts || \
+            mount --bind /data/wraith /etc/wraith
+        # Mount /boot
+grep -q ' /boot ' /proc/mounts || \
+    mount -t vfat /dev/vda1 /boot 2>/dev/null
 
-        # Bind mounts (targets created by overlay)
-        mountpoint -q /var/lib/orchestrator || mount --bind /data/orchestrator /var/lib/orchestrator
-        mountpoint -q /modules || mount --bind /data/modules /modules
-        mountpoint -q /etc/wraith || mount --bind /data/wraith /etc/wraith
-
-        # Seed config on first boot
-        if [ ! -f /etc/wraith/orchestrator.toml ]; then
+if [ ! -f /etc/wraith/orchestrator.toml ]; then
             cp /etc/wraith.default/orchestrator.toml /etc/wraith/orchestrator.toml
             echo "OK (first boot)"
         else
             echo "OK"
         fi
-        ;;
-    stop)
         ;;
 esac

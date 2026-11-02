@@ -1,7 +1,7 @@
 # Orchestrator runtime config. Semua field punya default jika dihilangkan.
 
-db_path = "orchestrator.db"
-modules_dir = "./modules"
+db_path = "/var/lib/orchestrator/orchestrator.db"
+modules_dir = "/modules"
 http_timeout_secs = 30
 max_sockets = 256
 # Batasi Wasm paralel. Rule of thumb: < CPU count, agar tokio worker

@@ -286,3 +286,31 @@ Kalau 6/6 pass -> WraithOS Level 2 SELESAI.
 - LUKS encrypted /var/lib/orchestrator
 - aarch64 build (Raspberry Pi)
 - Web first-boot wizard
+
+---
+
+## WraithOS M28 — A/B Atomic Update VERIFIED (2026-11-02 14:09 UTC)
+
+### Confirmed working:
+- Slot A boot: root=/dev/vda2, orchestrator runs, healthz ok
+- A→B update: wraith-update dd to vda3, boot_b marker, reboot → slot=B
+- Slot B boot: root=/dev/vda3, orchestrator runs, healthz ok
+- B→A rollback: rm /boot/boot_b, reboot → slot=A
+- All bidirectional verified in QEMU with KVM
+
+### Architecture:
+- 4 partitions: boot(FAT32 64M) + rootfs-a(squashfs 128M) + rootfs-b(squashfs 128M) + data(ext4 256M)
+- GRUB markers: /boot/boot_b (or boot_a) as default override
+- Custom updater: /usr/bin/wraith-update (no RAUC, no grub-editenv dependency)
+- Kernel cmdline: slot=A/B for runtime detection
+
+### Known cosmetic issues (non-blocking):
+- /tmp fstab not auto-applied (workaround: manual mount tmpfs)
+- S40network/sysctl warns (cosmetic, boot continues)
+- Buildroot "Welcome to Buildroot" banner (issue file not overridden yet)
+
+### Next steps:
+- M29: Web first-boot wizard (embedded HTML + Rust handler)
+- M30: Signed release bundles (SHA256SUMS + GPG)
+- M31: aarch64 build for Raspberry Pi
+- M32: LUKS encrypted /data partition
