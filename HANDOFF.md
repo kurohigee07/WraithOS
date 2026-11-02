@@ -355,3 +355,17 @@ Or via SSH tunnel from laptop: `ssh -L 9091:127.0.0.1:9091 opc@vps`
 
 The orchestrator dashboard (`/ui`) is **already production-ready** inside
 WraithOS. No additional integration needed — it's the same binary.
+
+---
+
+## Final Verification — 2026-11-02
+
+Dashboard `/ui` confirmed live inside WraithOS:
+- HTML response: `<!DOCTYPE html>... <title>Wraith Orchestrator</title>`
+- `/debug/state` JSON: `{"modules":[],...,"uptime_secs":32}`
+- Orchestrator binary auto-starts on boot
+- All 25 milestones functional inside OS
+- Persistent SQLite in `/data` bind mount
+- A/B atomic update verified bidirectional
+
+Rust project == WraithOS runtime. One binary, one OS.
