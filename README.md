@@ -9,7 +9,8 @@ Two deliverables in one repository:
   scripting, multi-tenant quotas, Prometheus metrics, WebSocket events, build
   pipeline)
 - **WraithOS** — the appliance OS (Buildroot + BusyBox, immutable SquashFS rootfs,
-  kernel tuned with eBPF + cgroups v2, boot-to-orchestrator in 5 seconds)
+  kernel tuned with eBPF + cgroups v2, boot-to-orchestrator in 5 seconds,
+  A/B atomic update with rollback)
 
 WraithOS image size: **18 MB total** (11 MB kernel + 7 MB rootfs). Compare Ubuntu
 server 2+ GB.
@@ -38,10 +39,13 @@ server 2+ GB.
 - Buildroot 2024.02.9 + BusyBox (musl libc)
 - Immutable SquashFS rootfs (read-only, anti-tamper)
 - Kernel 6.6 tuned: eBPF + AF_PACKET + cgroups v2 + panic=5 + watchdog
-- tmpfs runtime: /modules + /var/lib/orchestrator (sub-ms Wasm execution)
-- Auto-start orchestrator via /etc/init.d/S99wraith-init
+- 4-partition A/B layout: boot (FAT32) + rootfs-a + rootfs-b + data (ext4)
+- **Atomic A/B update**: `wraith-update` writes to inactive slot, GRUB boots via marker
+- **Rollback**: remove `/boot/boot_b`, reboot, reverts to slot A
+- Persistent `/data` partition survives slot switch (DB, modules, config)
+- GRUB bootloader (BIOS) with marker-based slot selection
 - Boot time: 5-8 seconds (KVM accelerated) or 15-20s (TCG emulation)
-- Image size: 18 MB
+- Image size: 577 MB total (boot 64M + rootfs-a 128M + rootfs-b 128M + data 256M)
 
 ## Architecture
 
@@ -288,6 +292,47 @@ Kernel tuning (wraithos/br2-ext/board/wraithos/kernel.fragment):
     CONFIG_WATCHDOG_NOWAYOUT=y, CONFIG_PANIC_TIMEOUT=5, CONFIG_PANIC_ON_OOPS=y
     CONFIG_SQUASHFS=y, CONFIG_OVERLAY_FS=y
 
+
+## A/B Update (WraithOS)
+
+WraithOS uses a custom atomic update mechanism (no RAUC dependency):
+
+- Two rootfs slots: A (`/dev/vda2`), B (`/dev/vda3`), each 128 MB SquashFS
+- `/boot` FAT32 partition holds kernel + GRUB config
+- GRUB checks for `/boot/boot_b` marker at boot:
+  - Marker exists → boot slot B
+  - Marker absent → boot slot A (default)
+- Update script writes new squashfs to inactive slot, then sets marker
+- Rollback = remove marker, reboot
+
+### Update flow
+
+    # On running WraithOS (slot A active):
+    dd if=/dev/vda2 of=/data/new.squashfs bs=1M       # copy current slot as test image
+    wraith-update /data/new.squashfs                  # writes to vda3, sets boot_b marker
+    reboot -f                                         # GRUB detects marker, boots slot B
+
+    # Verify
+    cat /proc/cmdline                                 # slot=B root=/dev/vda3
+    wget -qO- http://127.0.0.1:9090/healthz          # ok
+
+    # Rollback to slot A:
+    rm /boot/boot_b
+    reboot -f
+
+### Verified in QEMU (KVM)
+
+| Test | Result |
+|------|--------|
+| Fresh boot | slot=A, orchestrator live, healthz `ok` |
+| Update A→B | dd to vda3, marker set, reboot → slot=B |
+| Boot slot B | slot=B, /dev/vda3, orchestrator live, healthz `ok` |
+| Rollback B→A | rm boot_b, reboot → slot=A |
+| Boot slot A | slot=A, /dev/vda2, orchestrator live, healthz `ok` |
+
+Persistent state (`/data` partition) survives slot switches: DB, modules,
+and config unchanged after update or rollback.
+
 ## Security model
 
 Trust boundaries:
@@ -325,8 +370,8 @@ Out of scope (single-user self-host assumption):
     M20           OCI backup automation                               done
     M21-M25       SDK, CLI, EventBus, audit log, dashboard, WebSocket done
     M26           multi-arch release packaging                        done
-    M27 (MVP)     WraithOS Level 2 - boot, orchestrator live          done
-    M28           RAUC A/B atomic update                              planned
+    M27           WraithOS Level 2 - boot, orchestrator live          done
+    M28           A/B atomic update (custom, marker-based)            done
     M29           Web first-boot wizard                               planned
     M30           aarch64 build for Raspberry Pi                      planned
     M31           LUKS encrypted data partition                       planned
