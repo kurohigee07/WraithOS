@@ -38,6 +38,7 @@ pub fn router() -> Router<ApiState> {
         .route("/modules/{id}", put(replace_d).delete(delete_d))
         .route("/modules/{id}/execute", post(execute_d))
         .route("/modules/{id}/quota", get(get_quota_d).put(put_quota_d))
+        .route("/audit/logs", get(audit_logs_handler))
         .layer(DefaultBodyLimit::max(10 * 1024 * 1024))
 }
 
@@ -601,4 +602,30 @@ async fn put_quota_d(
     let tenant = s.tenants.default_name().to_string();
     verify_tenant(&s, &tenant, &headers)?;
     put_quota_shared(&s, &tenant, &id, new_quota).await
+}
+
+
+#[derive(serde::Serialize, sqlx::FromRow)]
+struct ExecutionLog {
+    id: i64,
+    tenant: String,
+    module_id: String,
+    status: String,
+    duration_ms: i64,
+    error_message: Option<String>,
+    executed_at: String,
+}
+
+async fn audit_logs_handler(State(s): State<ApiState>) -> Result<Json<Vec<ExecutionLog>>, ApiError> {
+    let logs = sqlx::query_as::<_, ExecutionLog>(
+        "SELECT id, tenant, module_id, status, duration_ms, error_message, executed_at 
+         FROM execution_logs 
+         ORDER BY id DESC 
+         LIMIT 50"
+    )
+    .fetch_all(&s.ctx.db)
+    .await
+    .map_err(|e| ApiError::Internal(format!("db query: {e}")))?;
+
+    Ok(Json(logs))
 }

@@ -36,6 +36,8 @@ enum Commands {
     Delete {
         id: String,
     },
+    /// View execution logs (last 50)
+    Logs,
 }
 
 #[tokio::main]
@@ -70,6 +72,14 @@ async fn main() -> anyhow::Result<()> {
         Commands::Delete { id } => {
             client.delete(&id, tenant).await?;
             println!("Deleted: {}", id);
+        }
+        Commands::Logs => {
+            let logs = client.get_logs().await?;
+            println!("{:<6} {:<15} {:<15} {:<8} {:<8} {}", "ID", "TENANT", "MODULE", "STATUS", "TIME(ms)", "EXECUTED_AT");
+            println!("{}", "-".repeat(80));
+            for l in logs {
+                println!("{:<6} {:<15} {:<15} {:<8} {:<8} {}", l.id, l.tenant, l.module_id, l.status, l.duration_ms, l.executed_at);
+            }
         }
     }
     Ok(())

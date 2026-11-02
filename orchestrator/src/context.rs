@@ -224,6 +224,23 @@ impl AppContext {
             .await
             .context("failed to construct sqlite pool")?;
 
+        sqlx::query(
+            r#"
+            CREATE TABLE IF NOT EXISTS execution_logs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                tenant TEXT NOT NULL,
+                module_id TEXT NOT NULL,
+                status TEXT NOT NULL,
+                duration_ms INTEGER NOT NULL,
+                error_message TEXT,
+                executed_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+            "#,
+        )
+        .execute(&db)
+        .await
+        .context("failed to initialize execution_logs table")?;
+
         info!(
             db = %config.db_path.display(),
             max_conn = config.max_db_connections,
