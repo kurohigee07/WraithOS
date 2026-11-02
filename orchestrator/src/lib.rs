@@ -16,6 +16,7 @@ pub mod rhai_worker;
 pub mod telemetry;
 pub mod tenant;
 pub mod ui;
+pub mod ws;
 pub mod wasm;
 
 pub use capabilities::CapabilitySet;

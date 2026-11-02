@@ -50,6 +50,7 @@ pub async fn spawn(
         .merge(crate::http_api::router())
         .merge(crate::build_api::router())
         .merge(crate::ui::router())
+        .merge(crate::ws::router())
         .with_state(state);
 
     let handle = tokio::spawn(async move {

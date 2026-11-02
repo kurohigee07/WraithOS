@@ -72,7 +72,7 @@ wasmtime-wasi = { version = "48.0", default-features = false, features = ["p2"] 
 # ── Rhai ────────────────────────────────────────────────────────────────
 rhai = { version = "1.22", features = ["sync", "serde", "internals"] }
 
-axum = "0.8"
+axum = { version = "0.8", features = ["ws"] }
 metrics = "0.24"
 metrics-exporter-prometheus = "0.17"
 clap = { version = "4", features = ["derive"] }
