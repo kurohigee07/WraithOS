@@ -6,6 +6,8 @@ interface http {
 
 interface tcp {
     connect: func(host: string, port: u16) -> result<u32, string>;
+    read: func(handle: u32, max-bytes: u32) -> result<list<u8>, string>;
+    write: func(handle: u32, data: list<u8>) -> result<u32, string>;
     close: func(handle: u32) -> result<_, string>;
 }
 

@@ -73,5 +73,5 @@ allowed_hosts = ["example.com"]
 
 [[capabilities]]
 type = "tcp-connect"
-allowed_ports = [443]
+allowed_ports = [80, 443]
 

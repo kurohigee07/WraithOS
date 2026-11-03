@@ -23,32 +23,54 @@ struct SamplePlugin;
 
 impl Guest for SamplePlugin {
     fn run(payload: String) -> Result<String, String> {
+        let mut parts: Vec<String> = Vec::new();
+        parts.push(format!(r#""probe":"{}""#, json_escape(&payload)));
+
+        // 1. HTTP via reqwest bridge
         let http_part = match orchestrator::host::http::get("https://example.com") {
-            Ok(body) => format!(r#"{{"ok":true,"len":{}}}"#, body.len()),
-            Err(e) => format!(r#"{{"ok":false,"err":"{}"}}"#, json_escape(&e)),
+            Ok(body) => format!(r#""http":{{"ok":true,"len":{}}}"#, body.len()),
+            Err(e) => format!(r#""http":{{"ok":false,"err":"{}"}}"#, json_escape(&e)),
         };
+        parts.push(http_part);
 
-        let tcp_part = match orchestrator::host::tcp::connect("example.com", 443) {
+        // 2. Raw TCP: real HTTP GET over port 80
+        let tcp_part = match orchestrator::host::tcp::connect("example.com", 80) {
             Ok(handle) => {
-                let closed = orchestrator::host::tcp::close(handle).is_ok();
-                format!(r#"{{"ok":true,"handle":{},"closed":{}}}"#, handle, closed)
+                let req = b"GET / HTTP/1.0\r\nHost: example.com\r\n\r\n";
+                let write_res = orchestrator::host::tcp::write(handle, req);
+                let read_res = orchestrator::host::tcp::read(handle, 8192);
+                let close_res = orchestrator::host::tcp::close(handle);
+                match (write_res, read_res, close_res) {
+                    (Ok(written), Ok(response), Ok(())) => {
+                        let preview_len = response.len().min(120);
+                        let preview = String::from_utf8_lossy(&response[..preview_len]);
+                        format!(
+                            r#""tcp":{{"ok":true,"written":{},"read_len":{},"preview":"{}"}}"#,
+                            written,
+                            response.len(),
+                            json_escape(&preview),
+                        )
+                    }
+                    (w, r, c) => format!(
+                        r#""tcp":{{"ok":false,"write_err":"{}","read_err":"{}","close_err":"{}"}}"#,
+                        json_escape(&w.err().unwrap_or_default()),
+                        json_escape(&r.err().unwrap_or_default()),
+                        json_escape(&c.err().unwrap_or_default()),
+                    ),
+                }
             }
-            Err(e) => format!(r#"{{"ok":false,"err":"{}"}}"#, json_escape(&e)),
+            Err(e) => format!(r#""tcp":{{"ok":false,"err":"{}"}}"#, json_escape(&e)),
         };
+        parts.push(tcp_part);
 
-        let emit_payload = format!(r#"{{"from":"{}"}}"#, json_escape(&payload));
-        let emit_part = match orchestrator::host::events::emit("sample.emitted", &emit_payload) {
-            Ok(()) => r#"{"ok":true}"#.to_string(),
-            Err(e) => format!(r#"{{"ok":false,"err":"{}"}}"#, json_escape(&e)),
+        // 3. Emit event
+        let emit_part = match orchestrator::host::events::emit("sample.emitted", "{}") {
+            Ok(()) => r#""emit":{"ok":true}"#.to_string(),
+            Err(e) => format!(r#""emit":{{"ok":false,"err":"{}"}}"#, json_escape(&e)),
         };
+        parts.push(emit_part);
 
-        Ok(format!(
-            r#"{{"probe":"{}","http":{},"tcp":{},"emit":{}}}"#,
-            json_escape(&payload),
-            http_part,
-            tcp_part,
-            emit_part,
-        ))
+        Ok(format!("{{{}}}", parts.join(",")))
     }
 }
 

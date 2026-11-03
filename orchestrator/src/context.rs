@@ -1,10 +1,11 @@
 //! AppContext: state bersama, di-wrap `Arc<AppContext>` dan dishare ke plugin.
 
-use std::net::TcpStream;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
+use tokio::net::TcpStream;
+use tokio::sync::Mutex;
 
 use anyhow::Context as _;
 use dashmap::DashMap;
@@ -108,7 +109,7 @@ impl Drop for WasmPermit {
 
 // ─── SocketRegistry ────────────────────────────────────────────────────
 struct SocketEntry {
-    stream: TcpStream,
+    stream: Arc<Mutex<TcpStream>>,
     owner: String,
     _permit: OwnedSemaphorePermit,
 }
@@ -143,7 +144,7 @@ impl SocketRegistry {
         self.inner.insert(
             handle,
             SocketEntry {
-                stream,
+                stream: Arc::new(Mutex::new(stream)),
                 owner,
                 _permit: permit,
             },
@@ -154,7 +155,7 @@ impl SocketRegistry {
 
     pub fn with<F, T>(&self, handle: u32, owner: &str, f: F) -> Result<T>
     where
-        F: FnOnce(&TcpStream) -> std::io::Result<T>,
+        F: FnOnce(&Arc<Mutex<TcpStream>>) -> std::io::Result<T>,
     {
         let entry = self
             .inner
@@ -166,7 +167,18 @@ impl SocketRegistry {
         f(&entry.stream).map_err(OrchestratorError::Io)
     }
 
-    pub fn remove(&self, handle: u32, owner: &str) -> Option<TcpStream> {
+    pub fn get_stream(&self, handle: u32, owner: &str) -> Result<Arc<Mutex<TcpStream>>> {
+        let entry = self
+            .inner
+            .get(&handle)
+            .ok_or(OrchestratorError::SocketNotFound(handle))?;
+        if entry.owner != owner {
+            return Err(OrchestratorError::SocketNotFound(handle));
+        }
+        Ok(entry.stream.clone())
+    }
+
+    pub fn remove(&self, handle: u32, owner: &str) -> Option<Arc<Mutex<TcpStream>>> {
         let entry = self.inner.get(&handle)?;
         if entry.owner != owner {
             return None;
