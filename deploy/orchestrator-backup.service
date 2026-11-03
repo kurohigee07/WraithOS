@@ -5,4 +5,5 @@ After=network-online.target
 
 [Service]
 Type=oneshot
+WorkingDirectory=%h/orchestrator-project
 ExecStart=%h/orchestrator-project/deploy/backup.sh
