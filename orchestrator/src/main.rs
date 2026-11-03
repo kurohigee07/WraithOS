@@ -131,7 +131,7 @@ async fn main() -> anyhow::Result<()> {
         config.to_app_context().wasm_acquire_timeout,
     );
     let loaded = registry
-        .load_wasm_dir(&config.modules_dir)
+        .load_wasm_dir(&config.modules_dir, ctx.capabilities.clone())
         .context("load wasm modules")?;
     info!(wasm_loaded = loaded, dir = %config.modules_dir.display(), "module registry ready");
 

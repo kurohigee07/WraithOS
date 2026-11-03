@@ -148,7 +148,11 @@ impl ModuleRegistry {
     }
 
     // ── Loader ────────────────────────────────────────────────────────
-    pub fn load_wasm_dir(&self, dir: &std::path::Path) -> anyhow::Result<usize> {
+    pub fn load_wasm_dir(
+        &self,
+        dir: &std::path::Path,
+        capabilities: Arc<crate::capabilities::CapabilitySet>,
+    ) -> anyhow::Result<usize> {
         let entries = match std::fs::read_dir(dir) {
             Ok(e) => e,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
@@ -181,7 +185,7 @@ impl ModuleRegistry {
             if tenant.is_empty() || tenant.starts_with('.') {
                 continue;
             }
-            match self.load_tenant_dir(&path, &tenant) {
+            match self.load_tenant_dir(&path, &tenant, capabilities.clone()) {
                 Ok(n) => total += n,
                 Err(e) => warn!(tenant = %tenant, err = %e, "tenant load failed"),
             }
@@ -189,7 +193,12 @@ impl ModuleRegistry {
         Ok(total)
     }
 
-    fn load_tenant_dir(&self, dir: &std::path::Path, tenant: &str) -> anyhow::Result<usize> {
+    fn load_tenant_dir(
+        &self,
+        dir: &std::path::Path,
+        tenant: &str,
+        capabilities: Arc<crate::capabilities::CapabilitySet>,
+    ) -> anyhow::Result<usize> {
         let entries =
             std::fs::read_dir(dir).with_context(|| format!("read tenant dir {}", dir.display()))?;
 
@@ -256,15 +265,25 @@ impl ModuleRegistry {
                 }
             };
 
+            // Per-module capabilities: prefer sidecar, else global fallback
+            let caps_vec = read_capabilities_sidecar(dir, &file_stem).unwrap_or_default();
+            let caps_arc = if caps_vec.is_empty() {
+                capabilities.clone()
+            } else {
+                Arc::new(crate::capabilities::CapabilitySet::from_capabilities(
+                    &caps_vec,
+                ))
+            };
+
             let manifest = ModuleManifest {
                 id: file_stem.clone(),
                 version: "0.0.0".to_string(),
-                capabilities: vec![],
+                capabilities: caps_vec,
                 tenant: tenant.to_string(),
                 quota,
             };
 
-            match WasmModule::load(self.engine.clone(), manifest, &bytes, quota_state) {
+            match WasmModule::load(self.engine.clone(), manifest, &bytes, quota_state, caps_arc) {
                 Ok(m) => {
                     info!(
                         tenant = %tenant,
@@ -302,6 +321,32 @@ pub(crate) fn write_quota_sidecar(
     let path = tenant_dir.join(format!("{id}.wasm.quota.json"));
     let json = serde_json::to_vec_pretty(q).context("serialize quota")?;
     atomic_write(&path, &json).map_err(|e| anyhow::anyhow!("write sidecar {}: {e}", path.display()))
+}
+
+fn read_capabilities_sidecar(
+    dir: &std::path::Path,
+    id: &str,
+) -> Option<Vec<shared_types::Capability>> {
+    let path = dir.join(format!("{id}.wasm.capabilities.json"));
+    let s = std::fs::read_to_string(&path).ok()?;
+    match serde_json::from_str::<Vec<shared_types::Capability>>(&s) {
+        Ok(c) => Some(c),
+        Err(e) => {
+            tracing::warn!(path = %path.display(), err = %e, "capabilities sidecar parse failed");
+            None
+        }
+    }
+}
+
+pub(crate) fn write_capabilities_sidecar(
+    tenant_dir: &std::path::Path,
+    id: &str,
+    caps: &[shared_types::Capability],
+) -> anyhow::Result<()> {
+    let path = tenant_dir.join(format!("{id}.wasm.capabilities.json"));
+    let json = serde_json::to_vec_pretty(caps)?;
+    atomic_write(&path, &json)
+        .map_err(|e| anyhow::anyhow!("write capabilities sidecar {}: {e}", path.display()))
 }
 
 fn verify_bytes(

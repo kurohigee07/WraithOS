@@ -6,8 +6,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 impl http::Host for WasmHostState {
     async fn get(&mut self, url: String) -> Result<String, String> {
         let parsed = reqwest::Url::parse(&url).map_err(|e| format!("invalid url: {e}"))?;
-        self.ctx
-            .capabilities
+        self.capabilities
             .check_http(&parsed)
             .map_err(|e| e.to_string())?;
         let resp = self
@@ -29,8 +28,7 @@ impl http::Host for WasmHostState {
 
 impl tcp::Host for WasmHostState {
     async fn connect(&mut self, host: String, port: u16) -> Result<u32, String> {
-        self.ctx
-            .capabilities
+        self.capabilities
             .check_tcp(&host, port)
             .map_err(|e| e.to_string())?;
         let addr = format!("{host}:{port}");
@@ -88,8 +86,7 @@ impl tcp::Host for WasmHostState {
 
 impl events::Host for WasmHostState {
     async fn emit(&mut self, kind: String, payload_json: String) -> Result<(), String> {
-        self.ctx
-            .capabilities
+        self.capabilities
             .check_emit_event(&kind)
             .map_err(|e| e.to_string())?;
         let payload: serde_json::Value = serde_json::from_str(&payload_json)

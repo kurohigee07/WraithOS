@@ -11,9 +11,10 @@ use axum::http::{HeaderMap, HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post, put};
 use axum::{Json, Router};
-use shared_types::{ModuleManifest, ModuleQuota};
+use shared_types::{Capability, ModuleManifest, ModuleQuota};
 use tracing::{info, warn};
 
+use crate::capabilities::CapabilitySet;
 use crate::module::OrchestratorModule;
 use crate::module_registry::write_quota_sidecar;
 use crate::telemetry::ApiState;
@@ -166,7 +167,7 @@ async fn upload_shared(
         .registry
         .build_quota_state(&quota)
         .map_err(|e| ApiError::BadRequest(format!("quota: {e}")))?;
-    let module = load_module(s, tenant, &id, &body, &quota, quota_state)?;
+    let module = load_module(s, tenant, &id, &body, &quota, quota_state, headers)?;
 
     let tenant_dir = s.modules_dir.join(tenant);
     let path = tenant_dir.join(format!("{id}.wasm"));
@@ -174,6 +175,12 @@ async fn upload_shared(
         .map_err(|e| ApiError::Internal(format!("disk: {e}")))?;
     write_quota_sidecar(&tenant_dir, &id, &quota)
         .map_err(|e| ApiError::Internal(format!("sidecar: {e}")))?;
+    crate::module_registry::write_capabilities_sidecar(
+        &tenant_dir,
+        &id,
+        &module.manifest().capabilities,
+    )
+    .map_err(|e| ApiError::Internal(format!("caps sidecar: {e}")))?;
 
     if s.registry
         .insert_if_absent(tenant, &id, Arc::new(module))
@@ -217,7 +224,7 @@ async fn replace_shared(
         .registry
         .build_quota_state(&quota)
         .map_err(|e| ApiError::BadRequest(format!("quota: {e}")))?;
-    let module = load_module(s, tenant, id, &body, &quota, quota_state)?;
+    let module = load_module(s, tenant, id, &body, &quota, quota_state, headers)?;
 
     let tenant_dir = s.modules_dir.join(tenant);
     let path = tenant_dir.join(format!("{id}.wasm"));
@@ -225,6 +232,12 @@ async fn replace_shared(
         .map_err(|e| ApiError::Internal(format!("disk: {e}")))?;
     write_quota_sidecar(&tenant_dir, id, &quota)
         .map_err(|e| ApiError::Internal(format!("sidecar: {e}")))?;
+    crate::module_registry::write_capabilities_sidecar(
+        &tenant_dir,
+        id,
+        &module.manifest().capabilities,
+    )
+    .map_err(|e| ApiError::Internal(format!("caps sidecar: {e}")))?;
 
     let previous = s.registry.insert_replace(tenant, id, Arc::new(module));
     let status = if previous.is_some() {
@@ -364,8 +377,14 @@ async fn put_quota_shared(
         .registry
         .build_quota_state(&new_quota)
         .map_err(|e| ApiError::Internal(format!("build quota state: {e}")))?;
-    let new_module = WasmModule::load(s.registry.engine(), new_manifest, &bytes, qs)
-        .map_err(|e| ApiError::Internal(format!("reload: {e}")))?;
+    let new_module = WasmModule::load(
+        s.registry.engine(),
+        new_manifest,
+        &bytes,
+        qs,
+        s.ctx.capabilities.clone(),
+    )
+    .map_err(|e| ApiError::Internal(format!("reload: {e}")))?;
 
     write_quota_sidecar(&tenant_dir, id, &new_quota)
         .map_err(|e| ApiError::Internal(format!("write sidecar: {e}")))?;
@@ -453,6 +472,25 @@ fn verify_if_needed(s: &ApiState, headers: &HeaderMap, body: &[u8]) -> Result<()
         .map_err(|e| ApiError::BadRequest(format!("signature: {e}")))
 }
 
+fn resolve_capabilities(
+    ctx: &crate::context::AppContext,
+    headers: &HeaderMap,
+) -> Result<(Vec<Capability>, Arc<CapabilitySet>), ApiError> {
+    match headers.get("x-module-capabilities") {
+        Some(raw) => {
+            let s_str = raw.to_str().map_err(|e| {
+                ApiError::BadRequest(format!("X-Module-Capabilities not utf8: {e}"))
+            })?;
+            let parsed: Vec<Capability> = serde_json::from_str(s_str).map_err(|e| {
+                ApiError::BadRequest(format!("X-Module-Capabilities not json: {e}"))
+            })?;
+            let arc = Arc::new(CapabilitySet::from_capabilities(&parsed));
+            Ok((parsed, arc))
+        }
+        None => Ok((vec![], ctx.capabilities.clone())),
+    }
+}
+
 fn load_module(
     s: &ApiState,
     tenant: &str,
@@ -460,15 +498,18 @@ fn load_module(
     body: &[u8],
     quota: &ModuleQuota,
     quota_state: Arc<crate::quota::ModuleQuotaState>,
+    headers: &HeaderMap,
 ) -> Result<WasmModule, ApiError> {
+    let (caps_vec, caps_arc) = resolve_capabilities(&s.ctx, headers)?;
+
     let manifest = ModuleManifest {
         id: id.to_string(),
         version: "0.0.0".to_string(),
-        capabilities: vec![],
+        capabilities: caps_vec,
         tenant: tenant.to_string(),
         quota: quota.clone(),
     };
-    WasmModule::load(s.registry.engine(), manifest, body, quota_state)
+    WasmModule::load(s.registry.engine(), manifest, body, quota_state, caps_arc)
         .map_err(|e| ApiError::BadRequest(format!("invalid wasm: {e}")))
 }
 

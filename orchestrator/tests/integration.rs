@@ -299,3 +299,131 @@ async fn build_disabled_by_default() {
         "build route should be unavailable, got {status}"
     );
 }
+
+#[tokio::test]
+async fn per_module_capability_denies_wrong_host() {
+    let (s, _tmp) = state().await;
+    let app = telemetry::build_router(s);
+
+    // Restrict http to "localhost" only. sample.wasm tries example.com -> denied.
+    let caps_json = r#"[{"type":"http-get","allowed_hosts":["localhost"]}]"#;
+    let wasm = sample_wasm();
+
+    let resp = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/modules")
+                .header("x-module-id", "restricted-mod")
+                .header("x-module-capabilities", caps_json)
+                .body(Body::from(wasm))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::CREATED);
+
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/modules/restricted-mod/execute")
+                .header("content-type", "application/json")
+                .body(Body::from("{}"))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let body_str = std::str::from_utf8(&body).unwrap();
+    assert!(
+        body_str.contains("\"http\":{")
+            && body_str.contains("\"ok\":false")
+            && body_str.contains("capability denied")
+            && body_str.contains("example.com"),
+        "expected capability denial for example.com. Body: {body_str}"
+    );
+}
+
+#[tokio::test]
+async fn per_module_capability_allows_matching_host() {
+    let (s, _tmp) = state().await;
+    let app = telemetry::build_router(s);
+
+    let caps_json = r#"[{"type":"http-get","allowed_hosts":["example.com"]},{"type":"tcp-connect","allowed_ports":[80]}]"#;
+    let wasm = sample_wasm();
+
+    let resp = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/modules")
+                .header("x-module-id", "allowed-mod")
+                .header("x-module-capabilities", caps_json)
+                .body(Body::from(wasm))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::CREATED);
+
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/modules/allowed-mod/execute")
+                .header("content-type", "application/json")
+                .body(Body::from("{}"))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let body_str = std::str::from_utf8(&body).unwrap();
+    assert!(
+        body_str.contains("\"http\":{\"len\":") || body_str.contains("\"ok\":true"),
+        "expected http success. Body: {body_str}"
+    );
+}
+
+#[tokio::test]
+async fn no_caps_header_falls_back_to_global() {
+    let (s, _tmp) = state().await;
+    let app = telemetry::build_router(s);
+    let wasm = sample_wasm();
+
+    let resp = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/modules")
+                .header("x-module-id", "global-caps-mod")
+                .body(Body::from(wasm))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::CREATED);
+
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/modules/global-caps-mod/execute")
+                .header("content-type", "application/json")
+                .body(Body::from("{}"))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+}
