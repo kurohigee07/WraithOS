@@ -78,6 +78,15 @@ pub struct TenantConfig {
 pub struct Config {
     #[serde(default = "default_tenant_name")]
     pub default_tenant: String,
+    /// If true, ALL endpoints except /healthz and /readyz require
+    /// Authorization: Bearer <token>. Default tenant must have token_hash
+    /// or token_plain configured, else startup fails.
+    #[serde(default)]
+    pub require_auth: bool,
+    /// If false (default), POST /modules/build returns 404. Requires explicit
+    /// opt-in due to arbitrary code execution risk (build.rs runs as service user).
+    #[serde(default)]
+    pub enable_build: bool,
     #[serde(default)]
     pub tenants: std::collections::HashMap<String, TenantConfig>,
     pub db_path: PathBuf,
@@ -122,6 +131,8 @@ impl Default for Config {
             metrics_bind: Some("127.0.0.1:9090".to_string()),
             script: ScriptConfig::default(),
             default_tenant: default_tenant_name(),
+            require_auth: false,
+            enable_build: false,
             tenants: std::collections::HashMap::new(),
             cargo_home: None,
             trusted_signer_keys: vec![],

@@ -38,6 +38,8 @@ emit_event("rhai.processed", "{\"source\":\"rhai\"}");
 # default_tenant dipakai untuk route /modules (backward compat) dan
 # subdir modules/{default_tenant}/. Default: "default" (no auth).
 # default_tenant = "default"
+# require_auth = true  # all endpoints except /healthz /readyz need Bearer
+# enable_build = false  # POST /modules/build disabled by default (RCE risk)
 
 # Tenant tambahan. Route: /t/{tenant}/modules. Storage: modules/{tenant}/.
 # token_hash: argon2 PHC string (production). Generate:
