@@ -1,19 +1,66 @@
-name: Rust
+name: CI
 
 on:
-  workflow_dispatch:  # disabled during M11-M20 development; re-enable when CI ready
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
 
 env:
   CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
 
 jobs:
-  build:
-
+  fmt-clippy:
+    name: fmt + clippy
     runs-on: ubuntu-latest
-
     steps:
-    - uses: actions/checkout@v4
-    - name: Build
-      run: cargo build --verbose
-    - name: Run tests
-      run: cargo test --verbose
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: fmt-clippy
+      - name: cargo fmt
+        run: cargo fmt --all -- --check
+      - name: cargo clippy
+        run: cargo clippy -p orchestrator --lib -- -D warnings
+
+  test:
+    name: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-wasip2
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: test
+      - name: build sample-plugin (wasm32-wasip2)
+        run: cargo build -p sample-plugin --target wasm32-wasip2 --release
+      - name: unit tests + integration tests
+        run: cargo test -p orchestrator -p wraith-sdk -p wraith-cli --all-targets
+
+  build-musl:
+    name: build musl static (x86_64)
+    runs-on: ubuntu-latest
+    needs: [test]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-unknown-linux-musl
+      - uses: mlugg/setup-zig@v2
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: musl
+      - name: install cargo-zigbuild
+        run: cargo install --locked cargo-zigbuild
+      - name: build static musl
+        run: cargo zigbuild --release --target x86_64-unknown-linux-musl -p orchestrator
+      - name: verify static linkage
+        run: |
+          file target/x86_64-unknown-linux-musl/release/orchestrator
+          file target/x86_64-unknown-linux-musl/release/orchestrator | grep -q "statically linked"

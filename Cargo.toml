@@ -73,6 +73,7 @@ wasmtime-wasi = { version = "48.0", default-features = false, features = ["p2"] 
 rhai = { version = "1.22", features = ["sync", "serde", "internals"] }
 
 axum = { version = "0.8", features = ["ws"] }
+tower = { version = "0.5", features = ["util"] }
 tower-http = { version = "0.6", features = ["timeout"] }
 metrics = "0.24"
 metrics-exporter-prometheus = "0.17"
