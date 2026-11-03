@@ -397,3 +397,61 @@ Expiry: ~7 days from 2026-11-02
 ### After VPS Oracle terminates
 The HP Termux instance becomes the permanent orchestrator host.
 No service interruption. Dashboard accessible from phone.
+
+---
+
+## Session Update: 2026-11-03 (v0.21.5 -> v0.23.5)
+
+**10 tags, cross-arch full stack complete.**
+
+### Completed today
+
+| Tag | Scope |
+|---|---|
+| v0.21.5 | Socket ownership isolation + log race fix |
+| v0.22.0 | TCP real read/write (WIT + async host bridge) |
+| v0.22.1 | CI workflow + integration test (10 tests) |
+| v0.22.2 | Auth middleware + build gate |
+| v0.23.0 | Per-module capabilities (not global) |
+| v0.23.1 | ARM aarch64 build + boot |
+| v0.23.2 | ARM bash + lockdown |
+| v0.23.3 | ARM immutable squashfs |
+| v0.23.4 | ARM A/B + GRUB EFI (bidirectional verified) |
+| v0.23.5 | ARM size optimization (17MB squashfs) |
+
+### Reviewer feedback resolved
+
+Original Arena review flagged 7 items, all addressed:
+- Zero integration test -> 10 integration tests
+- Auth boundary missing -> auth_middleware + startup validation
+- Capability global (fundamental) -> per-module manifest + sidecar
+- TCP teater -> read/write full I/O
+- Socket ownership global -> owner-tracked, cross-module denied
+- Startup probe in production -> removed
+- ARM target -> WraithOS ARM boot verified
+
+### Current state
+
+- **x86_64 WraithOS**: 577MB, BIOS GRUB, A/B + data
+- **ARM64 WraithOS**: 458MB, EFI GRUB, A/B + data, rootfs 17MB squashfs
+- **Orchestrator binaries**: x86 23MB, ARM 19MB, static musl
+- **Feature parity**: x86 == ARM (A/B, persistent /data, bash lockdown, orchestrator)
+
+### Remaining (from TODO.md)
+
+**Fase 1**: Build pipeline sandbox (bubblewrap/systemd-nspawn) - RCE risk
+**Fase 2**: M29 wizard, M31 LUKS, M32 signing
+**Fase 3**: HTMX lokal + XSS, boot counter auto-revert, CI fmt-clippy fix, dist cleanup, docs sync
+
+### Direction
+
+User chose PaaS direction (sell to developers). Appliance track (ARM WraithOS) was investment for Oracle Always Free ARM deployment, not PaaS feature work. PaaS core priority going forward.
+
+### Next session priority
+
+1. Build sandbox (4-6 hours, critical)
+2. HTMX lokal + XSS (2 hours)
+3. M29 wizard (2-3 hours)
+4. CI fmt-clippy fix (1 hour)
+
+All code at v0.23.5. OCI artifacts current. Both arch boot verified.
