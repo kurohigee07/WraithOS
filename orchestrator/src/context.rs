@@ -107,8 +107,14 @@ impl Drop for WasmPermit {
 }
 
 // ─── SocketRegistry ────────────────────────────────────────────────────
+struct SocketEntry {
+    stream: TcpStream,
+    owner: String,
+    _permit: OwnedSemaphorePermit,
+}
+
 pub struct SocketRegistry {
-    inner: DashMap<u32, (TcpStream, OwnedSemaphorePermit)>,
+    inner: DashMap<u32, SocketEntry>,
     next: AtomicU32,
     permits: Arc<Semaphore>,
     max: usize,
@@ -125,7 +131,7 @@ impl SocketRegistry {
         }
     }
 
-    pub fn insert(&self, stream: TcpStream) -> Result<u32> {
+    pub fn insert(&self, stream: TcpStream, owner: String) -> Result<u32> {
         let permit = self.permits.clone().try_acquire_owned().map_err(|_| {
             OrchestratorError::CapabilityDenied(format!(
                 "socket registry at capacity ({}/{})",
@@ -134,12 +140,19 @@ impl SocketRegistry {
             ))
         })?;
         let handle = self.next.fetch_add(1, Ordering::Relaxed);
-        self.inner.insert(handle, (stream, permit));
+        self.inner.insert(
+            handle,
+            SocketEntry {
+                stream,
+                owner,
+                _permit: permit,
+            },
+        );
         metrics::gauge!("socket_registry_active").set(self.inner.len() as f64);
         Ok(handle)
     }
 
-    pub fn with<F, T>(&self, handle: u32, f: F) -> Result<T>
+    pub fn with<F, T>(&self, handle: u32, owner: &str, f: F) -> Result<T>
     where
         F: FnOnce(&TcpStream) -> std::io::Result<T>,
     {
@@ -147,12 +160,19 @@ impl SocketRegistry {
             .inner
             .get(&handle)
             .ok_or(OrchestratorError::SocketNotFound(handle))?;
-        let (stream, _permit) = entry.value();
-        f(stream).map_err(OrchestratorError::Io)
+        if entry.owner != owner {
+            return Err(OrchestratorError::SocketNotFound(handle));
+        }
+        f(&entry.stream).map_err(OrchestratorError::Io)
     }
 
-    pub fn remove(&self, handle: u32) -> Option<TcpStream> {
-        let removed = self.inner.remove(&handle).map(|(_, (s, _p))| s);
+    pub fn remove(&self, handle: u32, owner: &str) -> Option<TcpStream> {
+        let entry = self.inner.get(&handle)?;
+        if entry.owner != owner {
+            return None;
+        }
+        drop(entry);
+        let removed = self.inner.remove(&handle).map(|(_, e)| e.stream);
         if removed.is_some() {
             metrics::gauge!("socket_registry_active").set(self.inner.len() as f64);
         }
@@ -331,20 +351,44 @@ mod tests {
         let reg = SocketRegistry::new(2);
         assert_eq!(reg.available(), 2);
 
-        let h1 = reg.insert(c1).expect("insert 1");
-        let h2 = reg.insert(c2).expect("insert 2");
+        let h1 = reg.insert(c1, "mod-a".to_string()).expect("insert 1");
+        let h2 = reg.insert(c2, "mod-a".to_string()).expect("insert 2");
         assert_eq!(reg.len(), 2);
         assert_eq!(reg.available(), 0);
 
-        match reg.insert(c3) {
+        match reg.insert(c3, "mod-a".to_string()) {
             Err(OrchestratorError::CapabilityDenied(_)) => {}
             other => panic!("expected CapabilityDenied, got {other:?}"),
         }
 
-        assert!(reg.remove(h1).is_some());
+        assert!(reg.remove(h1, "mod-a").is_some());
         assert_eq!(reg.available(), 1);
-        assert!(reg.remove(h2).is_some());
+        assert!(reg.remove(h2, "mod-a").is_some());
         assert_eq!(reg.available(), 2);
+    }
+
+    #[test]
+    fn socket_ownership_isolation() {
+        let (_l1, c1) = loopback_pair();
+        let reg = SocketRegistry::new(4);
+
+        let h = reg.insert(c1, "module-a".to_string()).expect("insert");
+
+        // Module B cannot access module A's handle (NotFound, not Forbidden)
+        match reg.with(h, "module-b", |_| Ok::<(), std::io::Error>(())) {
+            Err(OrchestratorError::SocketNotFound(_)) => {}
+            other => panic!("expected SocketNotFound, got {:?}", other),
+        }
+
+        // Module B cannot close module A's handle
+        assert!(reg.remove(h, "module-b").is_none());
+
+        // Module A still has it
+        assert_eq!(reg.len(), 1);
+
+        // Module A can close own handle
+        assert!(reg.remove(h, "module-a").is_some());
+        assert_eq!(reg.len(), 0);
     }
 
     #[tokio::test]
