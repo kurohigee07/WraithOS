@@ -4,7 +4,10 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Instant;
 
+use axum::extract::Request;
 use axum::extract::State;
+use axum::middleware::{self, Next};
+use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use axum::{Json, Router};
 use metrics_exporter_prometheus::{PrometheusBuilder, PrometheusHandle};
@@ -27,6 +30,8 @@ pub struct ApiState {
     pub tenants: std::sync::Arc<crate::tenant::TenantRegistry>,
     pub build_semaphore: std::sync::Arc<tokio::sync::Semaphore>,
     pub cargo_home: std::path::PathBuf,
+    pub require_auth: bool,
+    pub enable_build: bool,
 }
 
 pub fn install() -> anyhow::Result<PrometheusHandle> {
@@ -35,16 +40,71 @@ pub fn install() -> anyhow::Result<PrometheusHandle> {
         .map_err(|e| anyhow::anyhow!("install metrics recorder: {e}"))
 }
 
+pub async fn auth_middleware(
+    State(state): State<ApiState>,
+    request: Request,
+    next: Next,
+) -> Response {
+    let path = request.uri().path();
+
+    // Public endpoints: process liveness only
+    if path == "/healthz" || path == "/readyz" {
+        return next.run(request).await;
+    }
+
+    // Defensive fail-closed: if require_auth but no token configured,
+    // do not silently allow. Startup should have caught this.
+    if !state.tenants.default_has_auth() {
+        return (
+            axum::http::StatusCode::UNAUTHORIZED,
+            axum::Json(serde_json::json!({
+                "error": "auth required but no token configured for default tenant"
+            })),
+        )
+            .into_response();
+    }
+
+    let auth = request.headers().get("authorization").cloned();
+    match state
+        .tenants
+        .verify(state.tenants.default_name(), auth.as_ref())
+    {
+        Ok(()) => next.run(request).await,
+        Err(_) => (
+            axum::http::StatusCode::UNAUTHORIZED,
+            axum::Json(serde_json::json!({"error": "unauthorized"})),
+        )
+            .into_response(),
+    }
+}
+
 pub fn build_router(state: ApiState) -> Router {
-    Router::new()
+    let require_auth = state.require_auth;
+    let enable_build = state.enable_build;
+
+    let mut router = Router::new()
         .route("/metrics", get(metrics_handler))
         .route("/healthz", get(health_handler))
         .route("/readyz", get(readiness_handler))
         .route("/debug/state", get(debug_state_handler))
         .merge(crate::http_api::router())
-        .merge(crate::build_api::router())
         .merge(crate::ui::router())
-        .merge(crate::ws::router())
+        .merge(crate::ws::router());
+
+    // Build pipeline off by default (arbitrary code execution risk)
+    if enable_build {
+        router = router.merge(crate::build_api::router());
+    }
+
+    // Auth middleware: conditional on require_auth
+    if require_auth {
+        router = router.layer(middleware::from_fn_with_state(
+            state.clone(),
+            auth_middleware,
+        ));
+    }
+
+    router
         .layer(TimeoutLayer::with_status_code(
             axum::http::StatusCode::REQUEST_TIMEOUT,
             Duration::from_secs(60),

@@ -85,6 +85,20 @@ async fn main() -> anyhow::Result<()> {
     if migrated > 0 {
         info!(migrated, "flat modules migrated to default tenant");
     }
+    // Validate auth config: require_auth=true needs default tenant token
+    if config.require_auth
+        && !config
+            .tenants
+            .get(&config.default_tenant)
+            .map(|t| t.token_hash.is_some() || t.token_plain.is_some())
+            .unwrap_or(false)
+    {
+        anyhow::bail!(
+            "config.require_auth=true but default tenant '{}' has no token_hash/token_plain",
+            config.default_tenant
+        );
+    }
+
     let tenant_acquire_timeout = config.to_app_context().wasm_acquire_timeout;
     let cargo_home = config.cargo_home.clone().unwrap_or_else(|| {
         let home = std::env::var("HOME").unwrap_or_else(|_| "/home/opc".to_string());
@@ -135,6 +149,8 @@ async fn main() -> anyhow::Result<()> {
         tenants: tenants.clone(),
         build_semaphore: Arc::new(tokio::sync::Semaphore::new(1)),
         cargo_home: cargo_home.clone(),
+        require_auth: config.require_auth,
+        enable_build: config.enable_build,
     };
     let metrics_server: Option<(
         tokio::task::JoinHandle<()>,

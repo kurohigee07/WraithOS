@@ -57,6 +57,61 @@ async fn state() -> (ApiState, tempfile::TempDir) {
         tenants,
         build_semaphore: Arc::new(tokio::sync::Semaphore::new(1)),
         cargo_home: std::path::PathBuf::from("/nonexistent"),
+        require_auth: false,
+        enable_build: false,
+    };
+    (s, tmp)
+}
+
+async fn state_with_auth() -> (ApiState, tempfile::TempDir) {
+    let tmp = tempfile::tempdir().unwrap();
+    let cfg = AppContextConfig {
+        db_path: tmp.path().join("t.db"),
+        http_timeout: Duration::from_secs(5),
+        max_db_connections: 1,
+        max_sockets: 16,
+        max_concurrent_wasm: 2,
+        wasm_acquire_timeout: Duration::from_secs(2),
+        wasm_memory_limit_mb: 128,
+    };
+    let caps = CapabilitySet::from_capabilities(&[Capability::Log]);
+    let bus = EventBus::new(16);
+    let ctx = Arc::new(AppContext::build(cfg, caps, bus).await.unwrap());
+    let reg = Arc::new(ModuleRegistry::new(
+        build_engine().unwrap(),
+        vec![],
+        ModuleQuota::default(),
+        128,
+        Duration::from_secs(2),
+    ));
+    let mut tmap = std::collections::HashMap::new();
+    tmap.insert(
+        "default".to_string(),
+        orchestrator::config::TenantConfig {
+            token_hash: None,
+            token_plain: Some("test-token".to_string()),
+            max_modules: None,
+            max_concurrent_wasm: None,
+            rate_limit_per_sec: None,
+        },
+    );
+    let tenants = Arc::new(
+        TenantRegistry::from_config(tmap, "default".into(), Duration::from_secs(2)).unwrap(),
+    );
+    let prom = metrics_exporter_prometheus::PrometheusBuilder::new()
+        .build_recorder()
+        .handle();
+    let s = ApiState {
+        prom,
+        ctx,
+        registry: reg,
+        started_at: std::time::Instant::now(),
+        modules_dir: tmp.path().to_path_buf(),
+        tenants,
+        build_semaphore: Arc::new(tokio::sync::Semaphore::new(1)),
+        cargo_home: std::path::PathBuf::from("/nonexistent"),
+        require_auth: true,
+        enable_build: false,
     };
     (s, tmp)
 }
@@ -169,4 +224,78 @@ async fn unknown_module_returns_404() {
         .await
         .unwrap();
     assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn auth_required_401_without_header() {
+    let (s, _tmp) = state_with_auth().await;
+    let app = telemetry::build_router(s);
+
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .uri("/modules")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn auth_accepts_valid_bearer() {
+    let (s, _tmp) = state_with_auth().await;
+    let app = telemetry::build_router(s);
+
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .uri("/modules")
+                .header("authorization", "Bearer test-token")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+}
+
+#[tokio::test]
+async fn auth_healthz_public() {
+    let (s, _tmp) = state_with_auth().await;
+    let app = telemetry::build_router(s);
+
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .uri("/healthz")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+}
+
+#[tokio::test]
+async fn build_disabled_by_default() {
+    let (s, _tmp) = state().await;
+    let app = telemetry::build_router(s);
+
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/modules/build")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let status = resp.status();
+    assert!(
+        status == StatusCode::NOT_FOUND || status == StatusCode::METHOD_NOT_ALLOWED,
+        "build route should be unavailable, got {status}"
+    );
 }

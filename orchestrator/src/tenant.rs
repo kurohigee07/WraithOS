@@ -162,6 +162,16 @@ impl TenantRegistry {
         })
     }
 
+    /// True if default tenant has any token configured (hash or plain).
+    /// Used by auth middleware: if require_auth=true and this is false,
+    /// auth would be pointless (verify() returns Ok when no token set).
+    pub fn default_has_auth(&self) -> bool {
+        self.entries
+            .get(&self.default)
+            .map(|e| e.cfg.token_hash.is_some() || e.cfg.token_plain.is_some())
+            .unwrap_or(false)
+    }
+
     pub fn len(&self) -> usize {
         self.entries.len()
     }
