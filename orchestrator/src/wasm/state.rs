@@ -20,12 +20,21 @@ impl WasmHostState {
             .trap_on_grow_failure(true)
             .build();
         let wasi = WasiCtxBuilder::new().inherit_stdio().build();
-        Self { ctx, wasi, table: ResourceTable::new(), limits, module_id }
+        Self {
+            ctx,
+            wasi,
+            table: ResourceTable::new(),
+            limits,
+            module_id,
+        }
     }
 }
 
 impl WasiView for WasmHostState {
     fn ctx(&mut self) -> WasiCtxView<'_> {
-        WasiCtxView { ctx: &mut self.wasi, table: &mut self.table }
+        WasiCtxView {
+            ctx: &mut self.wasi,
+            table: &mut self.table,
+        }
     }
 }

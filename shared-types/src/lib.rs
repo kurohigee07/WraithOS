@@ -28,7 +28,7 @@ pub enum Capability {
 }
 
 /// Per-module resource quota. Semua field 0 = inherit global / unlimited.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ModuleQuota {
     /// Linear memory cap. 0 = inherit `AppContextConfig.wasm_memory_limit_mb`.
     /// Non-zero must be <= global ceiling.
@@ -40,10 +40,4 @@ pub struct ModuleQuota {
     /// Token bucket rate (requests/sec). 0 = unlimited.
     #[serde(default)]
     pub rate_limit_per_sec: u32,
-}
-
-impl Default for ModuleQuota {
-    fn default() -> Self {
-        Self { max_memory_mb: 0, max_concurrent: 0, rate_limit_per_sec: 0 }
-    }
 }

@@ -31,7 +31,9 @@ pub enum QuotaExecError {
 impl std::fmt::Display for QuotaExecError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            QuotaExecError::RateLimited { retry_after_ms } => write!(f, "rate limited, retry after {}ms", retry_after_ms),
+            QuotaExecError::RateLimited { retry_after_ms } => {
+                write!(f, "rate limited, retry after {}ms", retry_after_ms)
+            }
             QuotaExecError::ConcurrencyTimeout => write!(f, "concurrency timeout"),
             QuotaExecError::Internal(e) => write!(f, "{}", e),
         }
@@ -74,7 +76,13 @@ impl WasmModule {
         Plugin::add_to_linker::<_, HasSelf<_>>(&mut linker, |state| state)
             .map_err(|e| anyhow::anyhow!("failed to add plugin host fns: {e}"))?;
 
-        Ok(Self { manifest, engine, component, linker, quota })
+        Ok(Self {
+            manifest,
+            engine,
+            component,
+            linker,
+            quota,
+        })
     }
 
     /// Quota-aware execution. Use from HTTP layer for proper error mapping.
@@ -98,12 +106,14 @@ impl WasmModule {
                 "module" => module_id.clone(),
                 "tenant" => tenant_id.clone(),
                 "reason" => "rate",
-            ).increment(1);
+            )
+            .increment(1);
             metrics::counter!(
                 "wasm_executions_total",
                 "module" => module_id,
                 "result" => "rate_limited",
-            ).increment(1);
+            )
+            .increment(1);
             span.record("outcome", "rate_limited");
             return Err(QuotaExecError::RateLimited { retry_after_ms });
         }
@@ -111,17 +121,19 @@ impl WasmModule {
         // 2. Per-module concurrency
         let _module_permit = match self.quota.acquire_concurrency().await {
             Ok(p) => p,
-            Err(()) => {
+            Err(_) => {
                 metrics::counter!(
                     "module_quota_rejected_total",
                     "module" => module_id.clone(),
                     "reason" => "concurrency",
-                ).increment(1);
+                )
+                .increment(1);
                 metrics::counter!(
                     "wasm_executions_total",
                     "module" => module_id,
                     "result" => "timeout",
-                ).increment(1);
+                )
+                .increment(1);
                 span.record("outcome", "timeout");
                 return Err(QuotaExecError::ConcurrencyTimeout);
             }
@@ -136,7 +148,8 @@ impl WasmModule {
                     "wasm_executions_total",
                     "module" => module_id,
                     "result" => "error",
-                ).increment(1);
+                )
+                .increment(1);
                 span.record("outcome", "error");
                 return Err(QuotaExecError::Internal(anyhow::anyhow!("pool: {e}")));
             }
@@ -145,7 +158,8 @@ impl WasmModule {
             "wasm_pool_wait_seconds",
             "module" => module_id.clone(),
             "tenant" => tenant_id.clone(),
-        ).record(pool_wait.elapsed().as_secs_f64());
+        )
+        .record(pool_wait.elapsed().as_secs_f64());
 
         // 4. Execute
         let start = Instant::now();
@@ -164,7 +178,8 @@ impl WasmModule {
                     "module" => module_id.clone(),
                     "tenant" => tenant_id.clone(),
                     "result" => "ok",
-                ).increment(1);
+                )
+                .increment(1);
                 span.record("outcome", "ok");
             }
             Err(_) => {
@@ -173,7 +188,8 @@ impl WasmModule {
                     "module" => module_id.clone(),
                     "tenant" => tenant_id.clone(),
                     "result" => "error",
-                ).increment(1);
+                )
+                .increment(1);
                 span.record("outcome", "error");
             }
         }
@@ -189,7 +205,8 @@ impl WasmModule {
             "wasm_execution_duration_seconds",
             "module" => module_id,
             "tenant" => tenant_id,
-        ).record(elapsed);
+        )
+        .record(elapsed);
         result
     }
 
@@ -204,7 +221,10 @@ impl WasmModule {
             ctx.config.wasm_memory_limit_mb
         };
 
-        let mut store = Store::new(&self.engine, WasmHostState::new(ctx, memory_mb, self.manifest.id.clone()));
+        let mut store = Store::new(
+            &self.engine,
+            WasmHostState::new(ctx, memory_mb, self.manifest.id.clone()),
+        );
         store.set_epoch_deadline(EPOCH_DEADLINE_TICKS);
         store.limiter(|state| &mut state.limits);
 
@@ -219,10 +239,12 @@ impl WasmModule {
         let outcome = bindings
             .call_run(&mut store, &payload_str)
             .await
-            .map_err(|e| QuotaExecError::Internal(anyhow::anyhow!("wasm export `run` trapped: {e}")))?;
+            .map_err(|e| {
+                QuotaExecError::Internal(anyhow::anyhow!("wasm export `run` trapped: {e}"))
+            })?;
 
-        let result_str = outcome
-            .map_err(|e| QuotaExecError::Internal(anyhow::anyhow!("guest error: {e}")))?;
+        let result_str =
+            outcome.map_err(|e| QuotaExecError::Internal(anyhow::anyhow!("guest error: {e}")))?;
 
         let value = serde_json::from_str(&result_str)
             .context("deserialize guest result")
@@ -247,9 +269,9 @@ impl OrchestratorModule for WasmModule {
         payload: serde_json::Value,
     ) -> anyhow::Result<serde_json::Value> {
         self.execute_quota(ctx, payload).await.map_err(|e| match e {
-            QuotaExecError::RateLimited { retry_after_ms } => anyhow::anyhow!(
-                "rate limited, retry after {retry_after_ms}ms"
-            ),
+            QuotaExecError::RateLimited { retry_after_ms } => {
+                anyhow::anyhow!("rate limited, retry after {retry_after_ms}ms")
+            }
             QuotaExecError::ConcurrencyTimeout => anyhow::anyhow!("concurrency timeout"),
             QuotaExecError::Internal(e) => e,
         })

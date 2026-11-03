@@ -41,8 +41,9 @@ impl ScriptConfig {
     pub fn load(&self) -> anyhow::Result<String> {
         match (&self.inline, &self.path) {
             (Some(s), None) => Ok(s.clone()),
-            (None, Some(p)) => std::fs::read_to_string(p)
-                .with_context(|| format!("read script {}", p.display())),
+            (None, Some(p)) => {
+                std::fs::read_to_string(p).with_context(|| format!("read script {}", p.display()))
+            }
             (None, None) => Err(anyhow::anyhow!(
                 "script config: at least one of `inline` or `path` required"
             )),
@@ -101,7 +102,9 @@ pub struct Config {
     pub trusted_signer_keys: Vec<String>,
 }
 
-fn default_tenant_name() -> String { "default".to_string() }
+fn default_tenant_name() -> String {
+    "default".to_string()
+}
 
 impl Default for Config {
     fn default() -> Self {
@@ -139,8 +142,8 @@ impl Config {
     pub fn load(path: &std::path::Path) -> anyhow::Result<Self> {
         let content = std::fs::read_to_string(path)
             .with_context(|| format!("read config {}", path.display()))?;
-        let cfg: Config = toml::from_str(&content)
-            .with_context(|| format!("parse config {}", path.display()))?;
+        let cfg: Config =
+            toml::from_str(&content).with_context(|| format!("parse config {}", path.display()))?;
         Ok(cfg)
     }
 

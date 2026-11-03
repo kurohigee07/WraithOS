@@ -1,9 +1,13 @@
 use clap::{Parser, Subcommand};
-use wraith_sdk::WraithClient;
 use std::path::PathBuf;
+use wraith_sdk::WraithClient;
 
 #[derive(Parser)]
-#[command(name = "wraith", version = "0.1.0", about = "Wraith-V2 Orchestrator CLI")]
+#[command(
+    name = "wraith",
+    version = "0.1.0",
+    about = "Wraith-V2 Orchestrator CLI"
+)]
 struct Cli {
     #[arg(long, default_value = "http://127.0.0.1:9090", global = true)]
     server: String,
@@ -33,9 +37,7 @@ enum Commands {
         payload: String,
     },
     /// Delete a module
-    Delete {
-        id: String,
-    },
+    Delete { id: String },
     /// View execution logs (last 50)
     Logs,
 }
@@ -75,10 +77,16 @@ async fn main() -> anyhow::Result<()> {
         }
         Commands::Logs => {
             let logs = client.get_logs().await?;
-            println!("{:<6} {:<15} {:<15} {:<8} {:<8} {}", "ID", "TENANT", "MODULE", "STATUS", "TIME(ms)", "EXECUTED_AT");
+            println!(
+                "{:<6} {:<15} {:<15} {:<8} {:<8} {}",
+                "ID", "TENANT", "MODULE", "STATUS", "TIME(ms)", "EXECUTED_AT"
+            );
             println!("{}", "-".repeat(80));
             for l in logs {
-                println!("{:<6} {:<15} {:<15} {:<8} {:<8} {}", l.id, l.tenant, l.module_id, l.status, l.duration_ms, l.executed_at);
+                println!(
+                    "{:<6} {:<15} {:<15} {:<8} {:<8} {}",
+                    l.id, l.tenant, l.module_id, l.status, l.duration_ms, l.executed_at
+                );
             }
         }
     }

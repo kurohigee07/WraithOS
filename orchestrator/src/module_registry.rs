@@ -70,7 +70,8 @@ impl ModuleRegistry {
     }
 
     pub fn has(&self, tenant: &str, id: &str) -> bool {
-        self.wasm.contains_key(&(tenant.to_string(), id.to_string()))
+        self.wasm
+            .contains_key(&(tenant.to_string(), id.to_string()))
     }
 
     pub fn engine(&self) -> Arc<Engine> {
@@ -140,7 +141,10 @@ impl ModuleRegistry {
                 self.global_memory_limit_mb
             );
         }
-        Ok(Arc::new(ModuleQuotaState::from_quota(quota, self.acquire_timeout)))
+        Ok(Arc::new(ModuleQuotaState::from_quota(
+            quota,
+            self.acquire_timeout,
+        )))
     }
 
     // ── Loader ────────────────────────────────────────────────────────
@@ -186,8 +190,8 @@ impl ModuleRegistry {
     }
 
     fn load_tenant_dir(&self, dir: &std::path::Path, tenant: &str) -> anyhow::Result<usize> {
-        let entries = std::fs::read_dir(dir)
-            .with_context(|| format!("read tenant dir {}", dir.display()))?;
+        let entries =
+            std::fs::read_dir(dir).with_context(|| format!("read tenant dir {}", dir.display()))?;
 
         let mut loaded = 0usize;
         for entry_res in entries {
@@ -241,8 +245,8 @@ impl ModuleRegistry {
                 .unwrap_or("unknown")
                 .to_string();
 
-            let quota = read_quota_sidecar(dir, &file_stem)
-                .unwrap_or_else(|| self.default_quota.clone());
+            let quota =
+                read_quota_sidecar(dir, &file_stem).unwrap_or_else(|| self.default_quota.clone());
 
             let quota_state = match self.build_quota_state(&quota) {
                 Ok(s) => s,
@@ -297,8 +301,7 @@ pub(crate) fn write_quota_sidecar(
 ) -> anyhow::Result<()> {
     let path = tenant_dir.join(format!("{id}.wasm.quota.json"));
     let json = serde_json::to_vec_pretty(q).context("serialize quota")?;
-    atomic_write(&path, &json)
-        .map_err(|e| anyhow::anyhow!("write sidecar {}: {e}", path.display()))
+    atomic_write(&path, &json).map_err(|e| anyhow::anyhow!("write sidecar {}: {e}", path.display()))
 }
 
 fn verify_bytes(
@@ -314,8 +317,8 @@ fn verify_bytes(
     let sig = Signature::from_bytes(&sig_arr);
 
     for key_hex in trusted_keys {
-        let key_bytes = hex::decode(key_hex.trim())
-            .with_context(|| format!("decode hex key '{key_hex}'"))?;
+        let key_bytes =
+            hex::decode(key_hex.trim()).with_context(|| format!("decode hex key '{key_hex}'"))?;
         if key_bytes.len() != 32 {
             warn!(len = key_bytes.len(), "trusted key not 32 bytes; skipping");
             continue;

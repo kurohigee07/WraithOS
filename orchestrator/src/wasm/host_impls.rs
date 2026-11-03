@@ -22,7 +22,9 @@ impl http::Host for WasmHostState {
         if !status.is_success() {
             return Err(format!("http status {status}"));
         }
-        resp.text().await.map_err(|e| format!("http body read failed: {e}"))
+        resp.text()
+            .await
+            .map_err(|e| format!("http body read failed: {e}"))
     }
 }
 
@@ -57,10 +59,12 @@ impl tcp::Host for WasmHostState {
     }
 }
 
-
 impl events::Host for WasmHostState {
     async fn emit(&mut self, kind: String, payload_json: String) -> Result<(), String> {
-        self.ctx.capabilities.check_emit_event(&kind).map_err(|e| e.to_string())?;
+        self.ctx
+            .capabilities
+            .check_emit_event(&kind)
+            .map_err(|e| e.to_string())?;
         let payload: serde_json::Value = serde_json::from_str(&payload_json)
             .map_err(|e| format!("invalid payload json: {e}"))?;
         self.ctx.event_bus.publish(OrchestratorEvent {

@@ -45,10 +45,7 @@ impl RhaiWorker {
         })
     }
 
-    pub async fn run(
-        mut self,
-        mut shutdown: oneshot::Receiver<()>,
-    ) -> anyhow::Result<()> {
+    pub async fn run(mut self, mut shutdown: oneshot::Receiver<()>) -> anyhow::Result<()> {
         loop {
             let event = tokio::select! {
                 biased;
@@ -102,8 +99,7 @@ impl RhaiWorker {
         let kind = event.kind.clone();
 
         let log_allowed = self.log_allowed;
-        let sink: Arc<Mutex<Vec<OrchestratorEvent>>> =
-            Arc::new(Mutex::new(Vec::new()));
+        let sink: Arc<Mutex<Vec<OrchestratorEvent>>> = Arc::new(Mutex::new(Vec::new()));
         let sink_for_engine = sink.clone();
 
         // CRITICAL: rhai sinkron dan CPU-bound. Wajib spawn_blocking.
@@ -117,8 +113,9 @@ impl RhaiWorker {
             });
 
             let emit_sink = sink_for_engine;
-            engine.register_fn("emit_event", move |k: &str, p: &str| {
-                match serde_json::from_str::<serde_json::Value>(p) {
+            engine.register_fn(
+                "emit_event",
+                move |k: &str, p: &str| match serde_json::from_str::<serde_json::Value>(p) {
                     Ok(v) => {
                         if let Ok(mut g) = emit_sink.lock() {
                             g.push(OrchestratorEvent {
@@ -131,8 +128,8 @@ impl RhaiWorker {
                     Err(_) => {
                         error!(kind = k, "rhai emit_event: payload is not json");
                     }
-                }
-            });
+                },
+            );
 
             let mut scope = Scope::new();
             scope.push("event_kind", kind);
@@ -176,9 +173,9 @@ impl RhaiWorker {
         metrics::counter!(
             "rhai_events_processed_total",
             "source" => source_label,
-        ).increment(1);
-        metrics::histogram!("rhai_script_duration_seconds")
-            .record(start.elapsed().as_secs_f64());
+        )
+        .increment(1);
+        metrics::histogram!("rhai_script_duration_seconds").record(start.elapsed().as_secs_f64());
 
         tracing::Span::current().record("outcome", outcome);
     }

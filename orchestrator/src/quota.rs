@@ -4,9 +4,10 @@
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
+use crate::tenant::ConcurrencyError;
 use shared_types::ModuleQuota;
-use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 use std::sync::Arc;
+use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 
 // ── Token bucket ────────────────────────────────────────────────────
 struct BucketInner {
@@ -79,7 +80,11 @@ impl ModuleQuotaState {
         } else {
             None
         };
-        Self { rate, semaphore, acquire_timeout }
+        Self {
+            rate,
+            semaphore,
+            acquire_timeout,
+        }
     }
 
     pub fn try_acquire_rate(&self) -> Result<(), u64> {
@@ -93,16 +98,14 @@ impl ModuleQuotaState {
     /// cap configured (only global pool applies). Err(()) on timeout / closed.
     pub async fn acquire_concurrency(
         &self,
-    ) -> Result<Option<OwnedSemaphorePermit>, ()> {
+    ) -> Result<Option<OwnedSemaphorePermit>, ConcurrencyError> {
         match &self.semaphore {
             Some(sem) => {
-                let permit = tokio::time::timeout(
-                    self.acquire_timeout,
-                    sem.clone().acquire_owned(),
-                )
-                .await
-                .map_err(|_| ())?
-                .map_err(|_| ())?;
+                let permit =
+                    tokio::time::timeout(self.acquire_timeout, sem.clone().acquire_owned())
+                        .await
+                        .map_err(|_| ConcurrencyError::Timeout)?
+                        .map_err(|_| ConcurrencyError::Closed)?;
                 Ok(Some(permit))
             }
             None => Ok(None),

@@ -18,10 +18,7 @@ pub fn router() -> Router<ApiState> {
     Router::new().route("/ws/events", get(ws_handler))
 }
 
-async fn ws_handler(
-    ws: WebSocketUpgrade,
-    State(s): State<ApiState>,
-) -> impl IntoResponse {
+async fn ws_handler(ws: WebSocketUpgrade, State(s): State<ApiState>) -> impl IntoResponse {
     ws.on_upgrade(move |socket| handle_socket(socket, s))
 }
 

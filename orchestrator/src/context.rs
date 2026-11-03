@@ -14,8 +14,8 @@ use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 use tracing::{debug, info};
 
 use crate::capabilities::CapabilitySet;
-use crate::events::EventBus;
 use crate::error::{OrchestratorError, Result};
+use crate::events::EventBus;
 
 #[derive(Debug, Clone)]
 pub struct AppContextConfig {
@@ -65,22 +65,17 @@ impl WasmPool {
     }
 
     pub async fn acquire(&self) -> Result<WasmPermit> {
-        let permit = tokio::time::timeout(
-            self.acquire_timeout,
-            self.sem.clone().acquire_owned(),
-        )
-        .await
-        .map_err(|_| {
-            OrchestratorError::CapabilityDenied(format!(
-                "wasm pool acquire timeout after {:?} ({}/{} in flight)",
-                self.acquire_timeout,
-                self.total - self.sem.available_permits(),
-                self.total,
-            ))
-        })?
-        .map_err(|e| {
-            OrchestratorError::CapabilityDenied(format!("wasm pool closed: {e}"))
-        })?;
+        let permit = tokio::time::timeout(self.acquire_timeout, self.sem.clone().acquire_owned())
+            .await
+            .map_err(|_| {
+                OrchestratorError::CapabilityDenied(format!(
+                    "wasm pool acquire timeout after {:?} ({}/{} in flight)",
+                    self.acquire_timeout,
+                    self.total - self.sem.available_permits(),
+                    self.total,
+                ))
+            })?
+            .map_err(|e| OrchestratorError::CapabilityDenied(format!("wasm pool closed: {e}")))?;
 
         let n = self.inflight.fetch_add(1, Ordering::Relaxed) + 1;
         metrics::gauge!("wasm_pool_in_flight").set(n as f64);
@@ -131,17 +126,13 @@ impl SocketRegistry {
     }
 
     pub fn insert(&self, stream: TcpStream) -> Result<u32> {
-        let permit = self
-            .permits
-            .clone()
-            .try_acquire_owned()
-            .map_err(|_| {
-                OrchestratorError::CapabilityDenied(format!(
-                    "socket registry at capacity ({}/{})",
-                    self.inner.len(),
-                    self.max
-                ))
-            })?;
+        let permit = self.permits.clone().try_acquire_owned().map_err(|_| {
+            OrchestratorError::CapabilityDenied(format!(
+                "socket registry at capacity ({}/{})",
+                self.inner.len(),
+                self.max
+            ))
+        })?;
         let handle = self.next.fetch_add(1, Ordering::Relaxed);
         self.inner.insert(handle, (stream, permit));
         metrics::gauge!("socket_registry_active").set(self.inner.len() as f64);
@@ -170,6 +161,10 @@ impl SocketRegistry {
 
     pub fn len(&self) -> usize {
         self.inner.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.inner.is_empty()
     }
 
     pub fn max(&self) -> usize {
@@ -217,8 +212,8 @@ impl AppContext {
 
         install_crypto_provider()?;
 
-        let http = build_http_client(config.http_timeout)
-            .context("failed to construct reqwest client")?;
+        let http =
+            build_http_client(config.http_timeout).context("failed to construct reqwest client")?;
 
         let db = build_sqlite_pool(&config.db_path, config.max_db_connections)
             .await
@@ -300,10 +295,7 @@ fn build_http_client(timeout: Duration) -> anyhow::Result<reqwest::Client> {
         .context("reqwest ClientBuilder::build failed")
 }
 
-async fn build_sqlite_pool(
-    path: &std::path::Path,
-    max_conn: u32,
-) -> anyhow::Result<SqlitePool> {
+async fn build_sqlite_pool(path: &std::path::Path, max_conn: u32) -> anyhow::Result<SqlitePool> {
     let opts = SqliteConnectOptions::new()
         .filename(path)
         .create_if_missing(true)

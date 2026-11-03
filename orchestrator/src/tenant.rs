@@ -23,6 +23,12 @@ use crate::config::TenantConfig;
 use crate::quota::TokenBucket;
 
 #[derive(Debug)]
+pub enum ConcurrencyError {
+    Timeout,
+    Closed,
+}
+
+#[derive(Debug)]
 pub enum AuthError {
     UnknownTenant,
     MissingToken,
@@ -39,7 +45,10 @@ pub struct TenantPermit {
 
 impl Drop for TenantPermit {
     fn drop(&mut self) {
-        let n = self.in_flight.fetch_sub(1, Ordering::Relaxed).saturating_sub(1);
+        let n = self
+            .in_flight
+            .fetch_sub(1, Ordering::Relaxed)
+            .saturating_sub(1);
         metrics::gauge!("tenant_in_flight", "tenant" => self.tenant.clone()).set(n as f64);
     }
 }
@@ -78,19 +87,16 @@ impl TenantState {
         }
     }
 
-    async fn acquire_concurrency(&self) -> Result<Option<TenantPermit>, ()> {
+    async fn acquire_concurrency(&self) -> Result<Option<TenantPermit>, ConcurrencyError> {
         match &self.concurrency {
             Some(sem) => {
-                let permit = tokio::time::timeout(
-                    self.acquire_timeout,
-                    sem.clone().acquire_owned(),
-                )
-                .await
-                .map_err(|_| ())?
-                .map_err(|_| ())?;
+                let permit =
+                    tokio::time::timeout(self.acquire_timeout, sem.clone().acquire_owned())
+                        .await
+                        .map_err(|_| ConcurrencyError::Timeout)?
+                        .map_err(|_| ConcurrencyError::Closed)?;
                 let n = self.in_flight.fetch_add(1, Ordering::Relaxed) + 1;
-                metrics::gauge!("tenant_in_flight", "tenant" => self.name.clone())
-                    .set(n as f64);
+                metrics::gauge!("tenant_in_flight", "tenant" => self.name.clone()).set(n as f64);
                 Ok(Some(TenantPermit {
                     _permit: permit,
                     in_flight: self.in_flight.clone(),
@@ -150,11 +156,18 @@ impl TenantRegistry {
             default = %default,
             "tenant registry initialized"
         );
-        Ok(Self { entries: built, default })
+        Ok(Self {
+            entries: built,
+            default,
+        })
     }
 
     pub fn len(&self) -> usize {
         self.entries.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.entries.is_empty()
     }
 
     pub fn default_name(&self) -> &str {
@@ -165,11 +178,7 @@ impl TenantRegistry {
         self.entries.contains_key(tenant)
     }
 
-    pub fn verify(
-        &self,
-        tenant: &str,
-        auth: Option<&HeaderValue>,
-    ) -> Result<(), AuthError> {
+    pub fn verify(&self, tenant: &str, auth: Option<&HeaderValue>) -> Result<(), AuthError> {
         let entry = self.entries.get(tenant).ok_or(AuthError::UnknownTenant)?;
         let cfg = &entry.cfg;
 
@@ -207,18 +216,14 @@ impl TenantRegistry {
     pub async fn acquire_concurrency(
         &self,
         tenant: &str,
-    ) -> Result<Option<TenantPermit>, ()> {
+    ) -> Result<Option<TenantPermit>, ConcurrencyError> {
         match self.entries.get(tenant) {
             Some(e) => e.state.acquire_concurrency().await,
             None => Ok(None),
         }
     }
 
-    pub fn check_capacity(
-        &self,
-        tenant: &str,
-        current_count: usize,
-    ) -> Result<(), (usize, usize)> {
+    pub fn check_capacity(&self, tenant: &str, current_count: usize) -> Result<(), (usize, usize)> {
         match self.entries.get(tenant) {
             Some(e) => e.state.check_capacity(current_count),
             None => Ok(()),
@@ -288,9 +293,8 @@ pub fn migrate_flat_to_default(dir: &Path) -> anyhow::Result<usize> {
             warn!(src = %path.display(), dest = %dest.display(), "migration: dest exists, skip");
             continue;
         }
-        std::fs::rename(&path, &dest).with_context(|| {
-            format!("move {} -> {}", path.display(), dest.display())
-        })?;
+        std::fs::rename(&path, &dest)
+            .with_context(|| format!("move {} -> {}", path.display(), dest.display()))?;
         moved += 1;
     }
 
@@ -359,9 +363,18 @@ mod tests {
         let no = HeaderValue::from_str("Basic xyz").unwrap();
 
         assert!(reg.verify("alice", Some(&ok)).is_ok());
-        assert!(matches!(reg.verify("alice", Some(&bad)), Err(AuthError::BadToken)));
-        assert!(matches!(reg.verify("alice", Some(&no)), Err(AuthError::MissingToken)));
-        assert!(matches!(reg.verify("alice", None), Err(AuthError::MissingToken)));
+        assert!(matches!(
+            reg.verify("alice", Some(&bad)),
+            Err(AuthError::BadToken)
+        ));
+        assert!(matches!(
+            reg.verify("alice", Some(&no)),
+            Err(AuthError::MissingToken)
+        ));
+        assert!(matches!(
+            reg.verify("alice", None),
+            Err(AuthError::MissingToken)
+        ));
     }
 
     #[test]
@@ -390,7 +403,10 @@ mod tests {
         let p = reg.acquire_concurrency("alice").await.expect("first");
         assert!(reg.acquire_concurrency("alice").await.is_err());
         drop(p);
-        let _p2 = reg.acquire_concurrency("alice").await.expect("after release");
+        let _p2 = reg
+            .acquire_concurrency("alice")
+            .await
+            .expect("after release");
     }
 
     #[test]

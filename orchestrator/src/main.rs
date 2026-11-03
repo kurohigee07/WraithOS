@@ -8,8 +8,8 @@ use orchestrator::telemetry;
 use orchestrator::tenant::{migrate_flat_to_default, TenantRegistry};
 use orchestrator::wasm::{build_engine, EpochTicker, EPOCH_TICK};
 use orchestrator::{
-    AppContext, CapabilitySet, Cli, Config, EventBus, LogFormat, ModuleRegistry,
-    OrchestratorEvent, RhaiWorker,
+    AppContext, CapabilitySet, Cli, Config, EventBus, LogFormat, ModuleRegistry, OrchestratorEvent,
+    RhaiWorker,
 };
 
 #[tokio::main]
@@ -20,7 +20,10 @@ async fn main() -> anyhow::Result<()> {
     let mut config = if cli.config.exists() {
         Config::load(&cli.config)?
     } else {
-        eprintln!("[bootstrap] config {} not found; using defaults", cli.config.display());
+        eprintln!(
+            "[bootstrap] config {} not found; using defaults",
+            cli.config.display()
+        );
         Config::default()
     };
     if let Some(d) = cli.modules_dir {
@@ -43,7 +46,9 @@ async fn main() -> anyhow::Result<()> {
     // Sanity: bila max_concurrent_wasm >= CPU count, tokio worker pool bisa
     // starve saat guest CPU-bound. Ini warning, bukan error — user boleh
     // override jika tahu apa yang dilakukan.
-    let cpus = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(1);
+    let cpus = std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(1);
     if config.max_concurrent_wasm >= cpus {
         warn!(
             max_concurrent_wasm = config.max_concurrent_wasm,
@@ -55,8 +60,7 @@ async fn main() -> anyhow::Result<()> {
     // ── Wasmtime engine (shared, epoch-enabled) + ticker ────────────────
     // Metrics recorder MUST be installed before any metrics::* macro.
     // Probe loop di bawah akan me-emit wasm_executions_total.
-    let prom_handle = telemetry::install()
-        .context("install metrics recorder")?;
+    let prom_handle = telemetry::install().context("install metrics recorder")?;
 
     let started_at = std::time::Instant::now();
     let engine = build_engine()?;
@@ -100,7 +104,7 @@ async fn main() -> anyhow::Result<()> {
         config.default_tenant.clone(),
         tenant_acquire_timeout,
     )
-        .context("tenant registry")?;
+    .context("tenant registry")?;
     let tenants = Arc::new(tenants);
     info!(count = tenants.len() as u32, "tenant registry ready");
 
@@ -121,7 +125,6 @@ async fn main() -> anyhow::Result<()> {
     // (probe + memory-bomb test), polluting audit log and adding latency for
     // modules with HTTP side effects. Verify runtime via POST /modules/{id}/execute.
 
-
     let registry = Arc::new(registry);
     let api_state = telemetry::ApiState {
         prom: prom_handle,
@@ -133,24 +136,26 @@ async fn main() -> anyhow::Result<()> {
         build_semaphore: Arc::new(tokio::sync::Semaphore::new(1)),
         cargo_home: cargo_home.clone(),
     };
-    let metrics_server: Option<(tokio::task::JoinHandle<()>, tokio::sync::oneshot::Sender<()>)> =
-        match config.metrics_bind.as_deref() {
-            Some("") | None => {
-                info!("metrics disabled (metrics_bind empty or none)");
-                None
-            }
-            Some(bind) => {
-                let addr: std::net::SocketAddr = bind
-                    .parse()
-                    .with_context(|| format!("invalid metrics_bind: {bind}"))?;
-                let (m_tx, m_rx) = tokio::sync::oneshot::channel::<()>();
-                let handle = telemetry::spawn(addr, api_state, m_rx)
-                    .await
-                    .context("spawn metrics server")?;
-                info!(%addr, "metrics server up");
-                Some((handle, m_tx))
-            }
-        };
+    let metrics_server: Option<(
+        tokio::task::JoinHandle<()>,
+        tokio::sync::oneshot::Sender<()>,
+    )> = match config.metrics_bind.as_deref() {
+        Some("") | None => {
+            info!("metrics disabled (metrics_bind empty or none)");
+            None
+        }
+        Some(bind) => {
+            let addr: std::net::SocketAddr = bind
+                .parse()
+                .with_context(|| format!("invalid metrics_bind: {bind}"))?;
+            let (m_tx, m_rx) = tokio::sync::oneshot::channel::<()>();
+            let handle = telemetry::spawn(addr, api_state, m_rx)
+                .await
+                .context("spawn metrics server")?;
+            info!(%addr, "metrics server up");
+            Some((handle, m_tx))
+        }
+    };
 
     // ── Rhai worker ─────────────────────────────────────────────────────
     let script = config.script.load()?;
@@ -217,7 +222,10 @@ fn init_tracing(config: &Config) -> anyhow::Result<()> {
             tracing_subscriber::fmt().with_env_filter(filter).init();
         }
         LogFormat::Json => {
-            tracing_subscriber::fmt().json().with_env_filter(filter).init();
+            tracing_subscriber::fmt()
+                .json()
+                .with_env_filter(filter)
+                .init();
         }
     }
     Ok(())
@@ -227,10 +235,10 @@ async fn wait_for_shutdown_signal() -> anyhow::Result<()> {
     #[cfg(unix)]
     {
         use tokio::signal::unix::{signal, SignalKind};
-        let mut sigterm = signal(SignalKind::terminate())
-            .map_err(|e| anyhow::anyhow!("SIGTERM handler: {e}"))?;
-        let mut sigint = signal(SignalKind::interrupt())
-            .map_err(|e| anyhow::anyhow!("SIGINT handler: {e}"))?;
+        let mut sigterm =
+            signal(SignalKind::terminate()).map_err(|e| anyhow::anyhow!("SIGTERM handler: {e}"))?;
+        let mut sigint =
+            signal(SignalKind::interrupt()).map_err(|e| anyhow::anyhow!("SIGINT handler: {e}"))?;
         tokio::select! {
             _ = sigint.recv() => info!("received SIGINT"),
             _ = sigterm.recv() => info!("received SIGTERM"),

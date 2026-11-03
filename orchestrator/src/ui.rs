@@ -28,7 +28,9 @@ async fn stats_fragment(State(s): State<ApiState>) -> Html<String> {
     let uptime = fmt_uptime(s.started_at.elapsed().as_secs());
     let modules = s.registry.all().len();
     let total_exec: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM execution_logs")
-        .fetch_one(&s.ctx.db).await.unwrap_or(0);
+        .fetch_one(&s.ctx.db)
+        .await
+        .unwrap_or(0);
     let recent_err: i64 = sqlx::query_scalar(
         "SELECT COUNT(*) FROM execution_logs WHERE status='error' AND executed_at > datetime('now','-1 hour')"
     ).fetch_one(&s.ctx.db).await.unwrap_or(0);
@@ -49,9 +51,13 @@ fn fmt_uptime(secs: u64) -> String {
     let d = secs / 86400;
     let h = (secs % 86400) / 3600;
     let m = (secs % 3600) / 60;
-    if d > 0 { format!("{}d {}h", d, h) }
-    else if h > 0 { format!("{}h {}m", h, m) }
-    else { format!("{}m {}s", m, secs % 60) }
+    if d > 0 {
+        format!("{}d {}h", d, h)
+    } else if h > 0 {
+        format!("{}h {}m", h, m)
+    } else {
+        format!("{}m {}s", m, secs % 60)
+    }
 }
 
 async fn modules_fragment(State(s): State<ApiState>) -> Html<String> {
@@ -59,8 +65,10 @@ async fn modules_fragment(State(s): State<ApiState>) -> Html<String> {
     for (tenant, id, m) in s.registry.all() {
         let manifest = m.manifest();
         let q = &manifest.quota;
-        let quota_str = format!("mem:{} conc:{} rate:{}/s",
-            q.max_memory_mb, q.max_concurrent, q.rate_limit_per_sec);
+        let quota_str = format!(
+            "mem:{} conc:{} rate:{}/s",
+            q.max_memory_mb, q.max_concurrent, q.rate_limit_per_sec
+        );
         html.push_str(&format!(
             concat!(
                 "<tr>",
@@ -71,7 +79,10 @@ async fn modules_fragment(State(s): State<ApiState>) -> Html<String> {
                 "<td><button class=\"btn\" onclick=\"execModule('{id}')\">Execute</button></td>",
                 "</tr>"
             ),
-            tenant = tenant, id = id, ver = manifest.version, quota = quota_str,
+            tenant = tenant,
+            id = id,
+            ver = manifest.version,
+            quota = quota_str,
         ));
     }
     if html.is_empty() {
@@ -108,8 +119,13 @@ async fn logs_fragment(State(s): State<ApiState>) -> Html<String> {
                 "<td style=\"color:var(--muted);font-size:11px\">{when}</td>",
                 "</tr>"
             ),
-            id = r.id, tenant = r.tenant, module_id = r.module_id,
-            class = class, status = r.status, dur = r.duration_ms, when = r.executed_at,
+            id = r.id,
+            tenant = r.tenant,
+            module_id = r.module_id,
+            class = class,
+            status = r.status,
+            dur = r.duration_ms,
+            when = r.executed_at,
         ));
     }
     if html.is_empty() {

@@ -29,10 +29,7 @@ impl EventBus {
 
     /// Return jumlah subscriber yang menerima. 0 jika tidak ada.
     pub fn publish(&self, event: OrchestratorEvent) -> usize {
-        match self.tx.send(event) {
-            Ok(n) => n,
-            Err(_) => 0,
-        }
+        self.tx.send(event).unwrap_or_default()
     }
 
     pub fn subscribe(&self) -> broadcast::Receiver<OrchestratorEvent> {
