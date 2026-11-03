@@ -20,3 +20,5 @@ core.*
 wraithos/termux-package/orchestrator
 wraithos/termux-package/*.db*
 wraithos/termux-package/logs/
+modules/**/*.wasm.quota.json
+modules/**/*.wasm.sig

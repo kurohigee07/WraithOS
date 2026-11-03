@@ -8,10 +8,13 @@ cargo zigbuild --release --target x86_64-unknown-linux-musl
 echo "[install] installing systemd unit..."
 mkdir -p ~/.config/systemd/user
 cp deploy/orchestrator.service ~/.config/systemd/user/orchestrator.service
+cp deploy/orchestrator-backup.service ~/.config/systemd/user/orchestrator-backup.service
+cp deploy/orchestrator-backup.timer ~/.config/systemd/user/orchestrator-backup.timer
 
 echo "[install] daemon-reload + enable..."
 systemctl --user daemon-reload
 systemctl --user enable orchestrator.service
+systemctl --user enable orchestrator-backup.timer
 
 echo "[install] (re)starting service..."
 systemctl --user restart orchestrator.service

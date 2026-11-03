@@ -1,5 +1,6 @@
 #!/bin/bash
 set -euo pipefail
+cd "$(dirname "$0")/.."
 
 REMOTE="oci:wraith-bucket/daily"
 STAMP=$(date +%Y%m%d-%H%M%S)

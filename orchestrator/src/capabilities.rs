@@ -3,14 +3,16 @@ use crate::error::{OrchestratorError, Result};
 
 #[derive(Debug, Clone)]
 enum HostMatcher {
-    #[allow(dead_code)]
-    Wildcard,
+        Wildcard,
     Exact(String),
     Suffix(String),
 }
 
 impl HostMatcher {
     fn parse(spec: &str) -> Self {
+        if spec == "*" {
+            return Self::Wildcard;
+        }
         if let Some(sfx) = spec.strip_prefix("*.") {
             Self::Suffix(sfx.to_ascii_lowercase())
         } else {
@@ -107,5 +109,33 @@ impl CapabilitySet {
         } else {
             Err(OrchestratorError::CapabilityDenied(format!("emit kind '{kind}' not allowed")))
         }
+    }
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn wildcard_matches_all() {
+        let caps = CapabilitySet::from_capabilities(&[
+            shared_types::Capability::HttpGet {
+                allowed_hosts: vec!["*".to_string()],
+            },
+        ]);
+        assert!(caps.check_http(&reqwest::Url::parse("https://example.com/").unwrap()).is_ok());
+        assert!(caps.check_http(&reqwest::Url::parse("https://evil.internal/").unwrap()).is_ok());
+    }
+
+    #[test]
+    fn exact_match_only() {
+        let caps = CapabilitySet::from_capabilities(&[
+            shared_types::Capability::HttpGet {
+                allowed_hosts: vec!["example.com".to_string()],
+            },
+        ]);
+        assert!(caps.check_http(&reqwest::Url::parse("https://example.com/").unwrap()).is_ok());
+        assert!(caps.check_http(&reqwest::Url::parse("https://evil.com/").unwrap()).is_err());
     }
 }
