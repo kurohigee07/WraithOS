@@ -7,6 +7,7 @@ use shared_types::ModuleManifest;
 use wasmtime::component::{Component, HasSelf, Linker};
 use wasmtime::{Engine, Store};
 
+use crate::capabilities::CapabilitySet;
 use crate::context::AppContext;
 use crate::module::OrchestratorModule;
 use crate::quota::ModuleQuotaState;
@@ -19,6 +20,7 @@ pub struct WasmModule {
     component: Component,
     linker: Linker<WasmHostState>,
     quota: Arc<ModuleQuotaState>,
+    capabilities: Arc<CapabilitySet>,
 }
 
 /// Error type from quota-aware execution. Distinct variants for HTTP mapping.
@@ -66,6 +68,7 @@ impl WasmModule {
         manifest: ModuleManifest,
         wasm_bytes: &[u8],
         quota: Arc<ModuleQuotaState>,
+        capabilities: Arc<CapabilitySet>,
     ) -> anyhow::Result<Self> {
         let component = Component::from_binary(&engine, wasm_bytes)
             .map_err(|e| anyhow::anyhow!("failed to parse wasm component: {e}"))?;
@@ -82,10 +85,15 @@ impl WasmModule {
             component,
             linker,
             quota,
+            capabilities,
         })
     }
 
     /// Quota-aware execution. Use from HTTP layer for proper error mapping.
+    pub fn capabilities(&self) -> Arc<CapabilitySet> {
+        self.capabilities.clone()
+    }
+
     #[tracing::instrument(
         skip_all,
         fields(module = %self.manifest.id, outcome = tracing::field::Empty),
@@ -225,7 +233,12 @@ impl WasmModule {
 
         let mut store = Store::new(
             &self.engine,
-            WasmHostState::new(ctx, memory_mb, self.manifest.id.clone()),
+            WasmHostState::new(
+                ctx,
+                self.capabilities.clone(),
+                memory_mb,
+                self.manifest.id.clone(),
+            ),
         );
         store.set_epoch_deadline(EPOCH_DEADLINE_TICKS);
         store.limiter(|state| &mut state.limits);

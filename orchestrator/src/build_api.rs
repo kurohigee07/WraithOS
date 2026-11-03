@@ -202,8 +202,14 @@ async fn build_shared(
         tenant: tenant.to_string(),
         quota: quota.clone(),
     };
-    let module = WasmModule::load(s.registry.engine(), manifest, &wasm_bytes, quota_state)
-        .map_err(|e| ApiError::BadRequest(format!("wasm load: {e}")))?;
+    let module = WasmModule::load(
+        s.registry.engine(),
+        manifest,
+        &wasm_bytes,
+        quota_state,
+        s.ctx.capabilities.clone(),
+    )
+    .map_err(|e| ApiError::BadRequest(format!("wasm load: {e}")))?;
 
     // Persist
     let tenant_dir = s.modules_dir.join(tenant);

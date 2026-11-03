@@ -2,10 +2,12 @@ use std::sync::Arc;
 use wasmtime::{StoreLimits, StoreLimitsBuilder};
 use wasmtime_wasi::{ResourceTable, WasiCtx, WasiCtxBuilder, WasiCtxView, WasiView};
 
+use crate::capabilities::CapabilitySet;
 use crate::context::AppContext;
 
 pub struct WasmHostState {
     pub ctx: Arc<AppContext>,
+    pub capabilities: Arc<CapabilitySet>,
     pub wasi: WasiCtx,
     pub table: ResourceTable,
     pub limits: StoreLimits,
@@ -13,7 +15,12 @@ pub struct WasmHostState {
 }
 
 impl WasmHostState {
-    pub fn new(ctx: Arc<AppContext>, memory_limit_mb: u64, module_id: String) -> Self {
+    pub fn new(
+        ctx: Arc<AppContext>,
+        capabilities: Arc<CapabilitySet>,
+        memory_limit_mb: u64,
+        module_id: String,
+    ) -> Self {
         let memory_bytes = (memory_limit_mb as usize).saturating_mul(1024 * 1024);
         let limits = StoreLimitsBuilder::new()
             .memory_size(memory_bytes)
@@ -22,6 +29,7 @@ impl WasmHostState {
         let wasi = WasiCtxBuilder::new().inherit_stdio().build();
         Self {
             ctx,
+            capabilities,
             wasi,
             table: ResourceTable::new(),
             limits,
