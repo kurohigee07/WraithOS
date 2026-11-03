@@ -403,3 +403,27 @@ ring), sqlx 0.8 (sqlite bundled), axum 0.8, rhai 1.22, ed25519-dalek 2, argon2 0
 ## License
 
 MIT OR Apache-2.0
+
+## Recent Updates
+
+### v0.23.5 — ARM cross-architecture parity
+
+- **ARM64 WraithOS**: full stack verified (458MB image, A/B + GRUB EFI + persistent `/data`)
+- **Cross-arch parity**: x86_64 577MB BIOS GRUB == ARM64 458MB EFI GRUB
+- **Rootfs optimized**: 34MB -> 17MB squashfs
+- **Orchestrator binaries**: x86_64 23MB, ARM64 19MB, both static musl
+
+### v0.22.x — Production boundaries
+
+- **Auth middleware**: all endpoints except `/healthz` + `/readyz` require `Authorization: Bearer` when `require_auth=true`
+- **Build gate**: `POST /modules/build` disabled by default (arbitrary code execution risk), explicit `enable_build=true` opt-in
+- **Per-module capabilities**: modules declare own allowlists via `X-Module-Capabilities` header (JSON array), persisted via `{id}.wasm.capabilities.json` sidecar
+- **CI + integration test**: GitHub Actions on push/PR (fmt, clippy -D warnings, 10 integration tests covering auth, upload/execute/audit, capability isolation, TCP read/write)
+- **TCP full I/O**: WIT interface now has `read(handle, max_bytes)` + `write(handle, data)` (previously only connect/close handshake)
+
+### Security posture (v0.23.5)
+
+- **Per-module capabilities**: module A cannot access `example.com` unless it explicitly declared it in own manifest
+- **Auth boundary**: startup fails if `require_auth=true` but default tenant has no token configured
+- **Socket ownership**: cross-module `close()` returns `SocketNotFound` (no existence leak)
+- **Build disabled by default**: RCE surface opt-in only
