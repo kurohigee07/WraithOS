@@ -35,16 +35,8 @@ pub fn install() -> anyhow::Result<PrometheusHandle> {
         .map_err(|e| anyhow::anyhow!("install metrics recorder: {e}"))
 }
 
-pub async fn spawn(
-    bind: SocketAddr,
-    state: ApiState,
-    shutdown: oneshot::Receiver<()>,
-) -> anyhow::Result<tokio::task::JoinHandle<()>> {
-    let listener = tokio::net::TcpListener::bind(bind)
-        .await
-        .map_err(|e| anyhow::anyhow!("metrics bind {bind}: {e}"))?;
-
-    let app = Router::new()
+pub fn build_router(state: ApiState) -> Router {
+    Router::new()
         .route("/metrics", get(metrics_handler))
         .route("/healthz", get(health_handler))
         .route("/readyz", get(readiness_handler))
@@ -57,7 +49,19 @@ pub async fn spawn(
             axum::http::StatusCode::REQUEST_TIMEOUT,
             Duration::from_secs(60),
         ))
-        .with_state(state);
+        .with_state(state)
+}
+
+pub async fn spawn(
+    bind: SocketAddr,
+    state: ApiState,
+    shutdown: oneshot::Receiver<()>,
+) -> anyhow::Result<tokio::task::JoinHandle<()>> {
+    let listener = tokio::net::TcpListener::bind(bind)
+        .await
+        .map_err(|e| anyhow::anyhow!("metrics bind {bind}: {e}"))?;
+
+    let app = build_router(state);
 
     let handle = tokio::spawn(async move {
         let server = axum::serve(listener, app).with_graceful_shutdown(async move {

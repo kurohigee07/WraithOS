@@ -345,17 +345,19 @@ async fn build_sqlite_pool(path: &std::path::Path, max_conn: u32) -> anyhow::Res
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::net::{TcpListener, TcpStream as StdTcpStream};
+    use std::net::TcpListener;
 
-    fn loopback_pair() -> (TcpListener, StdTcpStream) {
-        let listener = TcpListener::bind("127.0.0.1:0").expect("bind loopback");
+    fn loopback_pair() -> (std::net::TcpListener, TcpStream) {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind loopback");
         let addr = listener.local_addr().expect("local_addr");
-        let client = StdTcpStream::connect(addr).expect("connect loopback");
-        (listener, client)
+        let client = std::net::TcpStream::connect(addr).expect("connect loopback");
+        client.set_nonblocking(true).expect("nonblocking");
+        let tokio_client = TcpStream::from_std(client).expect("to tokio");
+        (listener, tokio_client)
     }
 
-    #[test]
-    fn socket_cap_fail_closed() {
+    #[tokio::test]
+    async fn socket_cap_fail_closed() {
         let (_l1, c1) = loopback_pair();
         let (_l2, c2) = loopback_pair();
         let (_l3, c3) = loopback_pair();
@@ -379,8 +381,8 @@ mod tests {
         assert_eq!(reg.available(), 2);
     }
 
-    #[test]
-    fn socket_ownership_isolation() {
+    #[tokio::test]
+    async fn socket_ownership_isolation() {
         let (_l1, c1) = loopback_pair();
         let reg = SocketRegistry::new(4);
 
