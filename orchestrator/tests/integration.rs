@@ -28,7 +28,9 @@ async fn state() -> (ApiState, tempfile::TempDir) {
     };
     let caps = CapabilitySet::from_capabilities(&[
         Capability::Log,
-        Capability::HttpGet { allowed_hosts: vec!["example.com".into()] },
+        Capability::HttpGet {
+            allowed_hosts: vec!["example.com".into()],
+        },
     ]);
     let bus = EventBus::new(16);
     let ctx = Arc::new(AppContext::build(cfg, caps, bus).await.unwrap());
@@ -67,22 +69,27 @@ fn sample_wasm() -> Vec<u8> {
     .unwrap()
 }
 
-
 #[tokio::test]
 async fn healthz_returns_ok() {
     let (s, _tmp) = state().await;
     let app = telemetry::build_router(s);
 
     let resp = app
-        .oneshot(Request::builder().uri("/healthz").body(Body::empty()).unwrap())
+        .oneshot(
+            Request::builder()
+                .uri("/healthz")
+                .body(Body::empty())
+                .unwrap(),
+        )
         .await
         .unwrap();
 
     assert_eq!(resp.status(), StatusCode::OK);
-    let body = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+    let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+        .await
+        .unwrap();
     assert_eq!(&body[..], b"ok");
 }
-
 
 #[tokio::test]
 async fn upload_execute_audit_roundtrip() {
@@ -103,7 +110,11 @@ async fn upload_execute_audit_roundtrip() {
         )
         .await
         .unwrap();
-    assert_eq!(resp.status(), StatusCode::CREATED, "upload should return 201");
+    assert_eq!(
+        resp.status(),
+        StatusCode::CREATED,
+        "upload should return 201"
+    );
 
     // 2. Execute it
     let resp = app
@@ -131,14 +142,15 @@ async fn upload_execute_audit_roundtrip() {
         .await
         .unwrap();
     assert_eq!(resp.status(), StatusCode::OK);
-    let body = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+    let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+        .await
+        .unwrap();
     let body_str = std::str::from_utf8(&body).unwrap();
     assert!(
         body_str.contains("test-mod"),
         "audit log should contain module id. Got: {body_str}"
     );
 }
-
 
 #[tokio::test]
 async fn unknown_module_returns_404() {
