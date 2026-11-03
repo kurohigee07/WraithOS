@@ -194,13 +194,15 @@ impl WasmModule {
             }
         }
 
-        let db = db_pool;
-        let t_id = tenant_id.clone();
-        let m_id = module_id.clone();
-        let dur = (elapsed * 1000.0) as u64;
-        tokio::spawn(async move {
-            Self::log_execution(&db, t_id, m_id, status, dur, err_msg).await;
-        });
+        Self::log_execution(
+            &db_pool,
+            tenant_id.clone(),
+            module_id.clone(),
+            status,
+            (elapsed * 1000.0) as u64,
+            err_msg,
+        )
+        .await;
         metrics::histogram!(
             "wasm_execution_duration_seconds",
             "module" => module_id,

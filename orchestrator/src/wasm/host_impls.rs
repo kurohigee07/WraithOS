@@ -46,14 +46,14 @@ impl tcp::Host for WasmHostState {
 
         self.ctx
             .sockets
-            .insert(std_stream)
+            .insert(std_stream, self.module_id.clone())
             .map_err(|e| e.to_string())
     }
 
     async fn close(&mut self, handle: u32) -> Result<(), String> {
         self.ctx
             .sockets
-            .remove(handle)
+            .remove(handle, &self.module_id)
             .ok_or_else(|| format!("socket handle {handle} not found"))?;
         Ok(())
     }
