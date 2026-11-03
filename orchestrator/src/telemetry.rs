@@ -6,11 +6,11 @@ use std::time::Instant;
 
 use axum::extract::State;
 use axum::routing::get;
-use tower_http::timeout::TimeoutLayer;
-use std::time::Duration;
 use axum::{Json, Router};
 use metrics_exporter_prometheus::{PrometheusBuilder, PrometheusHandle};
+use std::time::Duration;
 use tokio::sync::oneshot;
+use tower_http::timeout::TimeoutLayer;
 use tracing::error;
 
 use crate::context::AppContext;
@@ -53,7 +53,10 @@ pub async fn spawn(
         .merge(crate::build_api::router())
         .merge(crate::ui::router())
         .merge(crate::ws::router())
-        .layer(TimeoutLayer::with_status_code(axum::http::StatusCode::REQUEST_TIMEOUT, Duration::from_secs(60)))
+        .layer(TimeoutLayer::with_status_code(
+            axum::http::StatusCode::REQUEST_TIMEOUT,
+            Duration::from_secs(60),
+        ))
         .with_state(state);
 
     let handle = tokio::spawn(async move {
@@ -81,7 +84,8 @@ async fn readiness_handler(State(s): State<ApiState>) -> axum::response::Respons
                 "reason": "db",
                 "error": e.to_string(),
             })),
-        ).into_response();
+        )
+            .into_response();
     }
 
     // Check 2: Wasm pool has slots
@@ -93,7 +97,8 @@ async fn readiness_handler(State(s): State<ApiState>) -> axum::response::Respons
                 "reason": "wasm_pool_saturated",
                 "available": 0,
             })),
-        ).into_response();
+        )
+            .into_response();
     }
 
     // Check 3: registry loaded (at least 0 is OK, but no panic)
@@ -107,7 +112,8 @@ async fn readiness_handler(State(s): State<ApiState>) -> axum::response::Respons
             "wasm_pool_available": s.ctx.wasm_pool.available(),
             "uptime_secs": s.started_at.elapsed().as_secs(),
         })),
-    ).into_response()
+    )
+        .into_response()
 }
 
 async fn metrics_handler(State(s): State<ApiState>) -> String {

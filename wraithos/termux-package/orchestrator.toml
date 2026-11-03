@@ -26,6 +26,8 @@ allowed_kinds = ["*"]
 
 [[capabilities]]
 type = "http-get"
+# WARNING: ["*"] = wildcard, allows HTTP GET to ANY host.
+# Intended for dev/demo. For production, list explicit hosts.
 allowed_hosts = ["*"]
 
 [[capabilities]]

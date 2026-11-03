@@ -1,9 +1,9 @@
-use shared_types::Capability;
 use crate::error::{OrchestratorError, Result};
+use shared_types::Capability;
 
 #[derive(Debug, Clone)]
 enum HostMatcher {
-        Wildcard,
+    Wildcard,
     Exact(String),
     Suffix(String),
 }
@@ -49,7 +49,8 @@ impl CapabilitySet {
         for cap in caps {
             match cap {
                 Capability::HttpGet { allowed_hosts } => {
-                    set.http_hosts.extend(allowed_hosts.iter().map(|h| HostMatcher::parse(h)));
+                    set.http_hosts
+                        .extend(allowed_hosts.iter().map(|h| HostMatcher::parse(h)));
                 }
                 Capability::TcpConnect { allowed_ports } => {
                     set.tcp_ports.extend(allowed_ports.iter().copied());
@@ -67,20 +68,28 @@ impl CapabilitySet {
     }
 
     pub fn check_http(&self, url: &reqwest::Url) -> Result<()> {
-        let host = url.host_str().ok_or_else(|| OrchestratorError::InvalidUrl(url.to_string()))?;
+        let host = url
+            .host_str()
+            .ok_or_else(|| OrchestratorError::InvalidUrl(url.to_string()))?;
         if self.http_hosts.iter().any(|m| m.matches(host)) {
             Ok(())
         } else {
-            Err(OrchestratorError::CapabilityDenied(format!("http host '{host}' not allowed")))
+            Err(OrchestratorError::CapabilityDenied(format!(
+                "http host '{host}' not allowed"
+            )))
         }
     }
 
     pub fn check_tcp(&self, host: &str, port: u16) -> Result<()> {
         if !self.tcp_ports.contains(&port) {
-            return Err(OrchestratorError::CapabilityDenied(format!("tcp port {port} not allowed")));
+            return Err(OrchestratorError::CapabilityDenied(format!(
+                "tcp port {port} not allowed"
+            )));
         }
         if !self.tcp_hosts.is_empty() && !self.tcp_hosts.iter().any(|m| m.matches(host)) {
-            return Err(OrchestratorError::CapabilityDenied(format!("tcp host '{host}' not allowed")));
+            return Err(OrchestratorError::CapabilityDenied(format!(
+                "tcp host '{host}' not allowed"
+            )));
         }
         Ok(())
     }
@@ -92,26 +101,37 @@ impl CapabilitySet {
         if self.db_tables.iter().any(|t| t == table) {
             Ok(())
         } else {
-            Err(OrchestratorError::CapabilityDenied(format!("db table '{table}' not allowed")))
+            Err(OrchestratorError::CapabilityDenied(format!(
+                "db table '{table}' not allowed"
+            )))
         }
     }
 
     pub fn check_log(&self) -> Result<()> {
-        if self.allow_log { Ok(()) } else { Err(OrchestratorError::CapabilityDenied("log not allowed".into())) }
+        if self.allow_log {
+            Ok(())
+        } else {
+            Err(OrchestratorError::CapabilityDenied(
+                "log not allowed".into(),
+            ))
+        }
     }
 
     pub fn check_emit_event(&self, kind: &str) -> Result<()> {
         if self.emit_kinds.is_empty() {
-            return Err(OrchestratorError::CapabilityDenied("emit-event not allowed".into()));
+            return Err(OrchestratorError::CapabilityDenied(
+                "emit-event not allowed".into(),
+            ));
         }
         if self.emit_kinds.iter().any(|k| k == "*" || k == kind) {
             Ok(())
         } else {
-            Err(OrchestratorError::CapabilityDenied(format!("emit kind '{kind}' not allowed")))
+            Err(OrchestratorError::CapabilityDenied(format!(
+                "emit kind '{kind}' not allowed"
+            )))
         }
     }
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -119,23 +139,27 @@ mod tests {
 
     #[test]
     fn wildcard_matches_all() {
-        let caps = CapabilitySet::from_capabilities(&[
-            shared_types::Capability::HttpGet {
-                allowed_hosts: vec!["*".to_string()],
-            },
-        ]);
-        assert!(caps.check_http(&reqwest::Url::parse("https://example.com/").unwrap()).is_ok());
-        assert!(caps.check_http(&reqwest::Url::parse("https://evil.internal/").unwrap()).is_ok());
+        let caps = CapabilitySet::from_capabilities(&[shared_types::Capability::HttpGet {
+            allowed_hosts: vec!["*".to_string()],
+        }]);
+        assert!(caps
+            .check_http(&reqwest::Url::parse("https://example.com/").unwrap())
+            .is_ok());
+        assert!(caps
+            .check_http(&reqwest::Url::parse("https://evil.internal/").unwrap())
+            .is_ok());
     }
 
     #[test]
     fn exact_match_only() {
-        let caps = CapabilitySet::from_capabilities(&[
-            shared_types::Capability::HttpGet {
-                allowed_hosts: vec!["example.com".to_string()],
-            },
-        ]);
-        assert!(caps.check_http(&reqwest::Url::parse("https://example.com/").unwrap()).is_ok());
-        assert!(caps.check_http(&reqwest::Url::parse("https://evil.com/").unwrap()).is_err());
+        let caps = CapabilitySet::from_capabilities(&[shared_types::Capability::HttpGet {
+            allowed_hosts: vec!["example.com".to_string()],
+        }]);
+        assert!(caps
+            .check_http(&reqwest::Url::parse("https://example.com/").unwrap())
+            .is_ok());
+        assert!(caps
+            .check_http(&reqwest::Url::parse("https://evil.com/").unwrap())
+            .is_err());
     }
 }

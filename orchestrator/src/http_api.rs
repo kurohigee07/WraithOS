@@ -24,10 +24,7 @@ pub fn router() -> Router<ApiState> {
     Router::new()
         // tenant routes
         .route("/t/{tenant}/modules", get(list_t).post(upload_t))
-        .route(
-            "/t/{tenant}/modules/{id}",
-            put(replace_t).delete(delete_t),
-        )
+        .route("/t/{tenant}/modules/{id}", put(replace_t).delete(delete_t))
         .route("/t/{tenant}/modules/{id}/execute", post(execute_t))
         .route(
             "/t/{tenant}/modules/{id}/quota",
@@ -158,7 +155,8 @@ async fn upload_shared(
             "tenant_quota_rejected_total",
             "tenant" => tenant.to_string(),
             "reason" => "module_limit",
-        ).increment(1);
+        )
+        .increment(1);
         return Err(ApiError::TenantModuleLimit { current: cur, max });
     }
 
@@ -177,8 +175,7 @@ async fn upload_shared(
     write_quota_sidecar(&tenant_dir, &id, &quota)
         .map_err(|e| ApiError::Internal(format!("sidecar: {e}")))?;
 
-    if s
-        .registry
+    if s.registry
         .insert_if_absent(tenant, &id, Arc::new(module))
         .is_err()
     {
@@ -230,7 +227,11 @@ async fn replace_shared(
         .map_err(|e| ApiError::Internal(format!("sidecar: {e}")))?;
 
     let previous = s.registry.insert_replace(tenant, id, Arc::new(module));
-    let status = if previous.is_some() { "replaced" } else { "created" };
+    let status = if previous.is_some() {
+        "replaced"
+    } else {
+        "created"
+    };
     info!(tenant = %tenant, id = %id, bytes = body.len(), status, "module put");
     Ok((
         StatusCode::OK,
@@ -241,16 +242,11 @@ async fn replace_shared(
         .into_response())
 }
 
-async fn delete_shared(
-    s: &ApiState,
-    tenant: &str,
-    id: &str,
-) -> Result<Response, ApiError> {
+async fn delete_shared(s: &ApiState, tenant: &str, id: &str) -> Result<Response, ApiError> {
     validate_id(id)?;
-    let removed = s
-        .registry
-        .remove(tenant, id)
-        .ok_or_else(|| ApiError::NotFound(format!("module '{id}' not found in tenant '{tenant}'")))?;
+    let removed = s.registry.remove(tenant, id).ok_or_else(|| {
+        ApiError::NotFound(format!("module '{id}' not found in tenant '{tenant}'"))
+    })?;
     drop(removed);
 
     let tenant_dir = s.modules_dir.join(tenant);
@@ -292,22 +288,24 @@ async fn execute_shared(
             "tenant_quota_rejected_total",
             "tenant" => tenant.to_string(),
             "reason" => "rate",
-        ).increment(1);
+        )
+        .increment(1);
         return Err(ApiError::RateLimited { retry_after_ms });
     }
 
     // M18: tenant-level concurrency (permit held via RAII until handler returns)
     let _tenant_permit = match s.tenants.acquire_concurrency(tenant).await {
         Ok(p) => p,
-        Err(()) => {
+        Err(_) => {
             metrics::counter!(
                 "tenant_quota_rejected_total",
                 "tenant" => tenant.to_string(),
                 "reason" => "concurrency",
-            ).increment(1);
-            return Err(ApiError::Unavailable(
-                format!("tenant '{tenant}' concurrency timeout")
-            ));
+            )
+            .increment(1);
+            return Err(ApiError::Unavailable(format!(
+                "tenant '{tenant}' concurrency timeout"
+            )));
         }
     };
 
@@ -374,19 +372,25 @@ async fn put_quota_shared(
 
     s.registry.insert_replace(tenant, id, Arc::new(new_module));
     info!(tenant = %tenant, id = %id, ?new_quota, "quota updated");
-    Ok(Json(serde_json::json!({ "tenant": tenant, "id": id, "quota": new_quota })))
+    Ok(Json(
+        serde_json::json!({ "tenant": tenant, "id": id, "quota": new_quota }),
+    ))
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────
-pub(crate) fn verify_tenant(s: &ApiState, tenant: &str, headers: &HeaderMap) -> Result<(), ApiError> {
+pub(crate) fn verify_tenant(
+    s: &ApiState,
+    tenant: &str,
+    headers: &HeaderMap,
+) -> Result<(), ApiError> {
     match s.tenants.verify(tenant, headers.get("authorization")) {
         Ok(()) => Ok(()),
         Err(AuthError::UnknownTenant) => {
             Err(ApiError::NotFound(format!("tenant '{tenant}' not found")))
         }
-        Err(AuthError::MissingToken) => {
-            Err(ApiError::Unauthorized("missing Authorization: Bearer".into()))
-        }
+        Err(AuthError::MissingToken) => Err(ApiError::Unauthorized(
+            "missing Authorization: Bearer".into(),
+        )),
         Err(AuthError::BadToken) => Err(ApiError::Unauthorized("invalid token".into())),
         Err(AuthError::Internal) => Err(ApiError::Internal("auth internal".into())),
     }
@@ -415,7 +419,9 @@ pub(crate) fn parse_quota_header(headers: &HeaderMap) -> Result<Option<ModuleQuo
 
 pub(crate) fn validate_id(id: &str) -> Result<(), ApiError> {
     if id.is_empty() || id.len() > 64 {
-        return Err(ApiError::BadRequest("module id must be 1..=64 chars".into()));
+        return Err(ApiError::BadRequest(
+            "module id must be 1..=64 chars".into(),
+        ));
     }
     if !id
         .chars()
@@ -604,7 +610,6 @@ async fn put_quota_d(
     put_quota_shared(&s, &tenant, &id, new_quota).await
 }
 
-
 #[derive(serde::Serialize, sqlx::FromRow)]
 struct ExecutionLog {
     id: i64,
@@ -616,12 +621,14 @@ struct ExecutionLog {
     executed_at: String,
 }
 
-async fn audit_logs_handler(State(s): State<ApiState>) -> Result<Json<Vec<ExecutionLog>>, ApiError> {
+async fn audit_logs_handler(
+    State(s): State<ApiState>,
+) -> Result<Json<Vec<ExecutionLog>>, ApiError> {
     let logs = sqlx::query_as::<_, ExecutionLog>(
         "SELECT id, tenant, module_id, status, duration_ms, error_message, executed_at 
          FROM execution_logs 
          ORDER BY id DESC 
-         LIMIT 50"
+         LIMIT 50",
     )
     .fetch_all(&s.ctx.db)
     .await

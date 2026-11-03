@@ -91,7 +91,8 @@ async fn build_shared(
                 "build_rejected_total",
                 "tenant" => tenant.to_string(),
                 "reason" => "busy",
-            ).increment(1);
+            )
+            .increment(1);
             return Err(ApiError::Unavailable(
                 "another build is in progress; retry later".into(),
             ));
@@ -104,7 +105,7 @@ async fn build_shared(
     }
     let _tenant_permit = match s.tenants.acquire_concurrency(tenant).await {
         Ok(p) => p,
-        Err(()) => {
+        Err(_) => {
             return Err(ApiError::Unavailable(format!(
                 "tenant '{tenant}' concurrency timeout"
             )));
@@ -122,11 +123,8 @@ async fn build_shared(
 
     // Parse Cargo.toml
     let manifest_path = tmpdir.path().join("Cargo.toml");
-    let manifest_str = std::fs::read_to_string(&manifest_path).map_err(|e| {
-        ApiError::BadRequest(format!(
-            "Cargo.toml missing at archive root: {e}"
-        ))
-    })?;
+    let manifest_str = std::fs::read_to_string(&manifest_path)
+        .map_err(|e| ApiError::BadRequest(format!("Cargo.toml missing at archive root: {e}")))?;
     let toml_val: toml::Value = toml::from_str(&manifest_str)
         .map_err(|e| ApiError::BadRequest(format!("Cargo.toml parse: {e}")))?;
     let crate_name = toml_val
@@ -230,11 +228,13 @@ async fn build_shared(
         "build_total",
         "tenant" => tenant.to_string(),
         "result" => "ok",
-    ).increment(1);
+    )
+    .increment(1);
     metrics::histogram!(
         "build_duration_seconds",
         "tenant" => tenant.to_string(),
-    ).record(build_start.elapsed().as_secs_f64());
+    )
+    .record(build_start.elapsed().as_secs_f64());
 
     info!(
         tenant = %tenant,
@@ -265,7 +265,11 @@ async fn extract_tar(dir: &FsPath, body: &[u8]) -> Result<(), ApiError> {
     // GNU tar does NOT auto-detect compression on stdin (no filename suffix).
     // Sniff gzip magic (0x1F 0x8B) and choose flags accordingly.
     let is_gzip = body.len() >= 2 && body[0] == 0x1f && body[1] == 0x8b;
-    let mode: &[&str] = if is_gzip { &["-xzf", "-", "-C"] } else { &["-xf", "-", "-C"] };
+    let mode: &[&str] = if is_gzip {
+        &["-xzf", "-", "-C"]
+    } else {
+        &["-xf", "-", "-C"]
+    };
 
     let mut child = Command::new("tar")
         .args(mode)
@@ -331,9 +335,7 @@ async fn run_cargo_build(
         .stderr(Stdio::piped())
         .kill_on_drop(true)
         .spawn()
-        .map_err(|e| {
-            ApiError::Internal(format!("cargo spawn ({}): {e}", cargo_bin.display()))
-        })?;
+        .map_err(|e| ApiError::Internal(format!("cargo spawn ({}): {e}", cargo_bin.display())))?;
 
     match tokio::time::timeout(
         Duration::from_secs(BUILD_TIMEOUT_SECS),

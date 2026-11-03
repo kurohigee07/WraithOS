@@ -6,9 +6,9 @@ use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 pub(crate) fn atomic_write(path: &Path, data: &[u8]) -> std::io::Result<()> {
-    let parent = path.parent().ok_or_else(|| {
-        std::io::Error::new(std::io::ErrorKind::InvalidInput, "no parent dir")
-    })?;
+    let parent = path
+        .parent()
+        .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::InvalidInput, "no parent dir"))?;
     std::fs::create_dir_all(parent)?;
 
     static COUNTER: AtomicU64 = AtomicU64::new(0);
