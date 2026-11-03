@@ -153,6 +153,10 @@ impl TenantRegistry {
         Ok(Self { entries: built, default })
     }
 
+    pub fn len(&self) -> usize {
+        self.entries.len()
+    }
+
     pub fn default_name(&self) -> &str {
         &self.default
     }

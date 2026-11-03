@@ -7,7 +7,7 @@ Cargo.lock.bak
 *.db
 *.db-wal
 *.db-shm
-modules/*.wasm
+modules/**/*.wasm
 !modules/.gitkeep
 
 # Editor / OS

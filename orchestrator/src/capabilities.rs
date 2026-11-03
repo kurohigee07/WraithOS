@@ -3,6 +3,8 @@ use crate::error::{OrchestratorError, Result};
 
 #[derive(Debug, Clone)]
 enum HostMatcher {
+    #[allow(dead_code)]
+    Wildcard,
     Exact(String),
     Suffix(String),
 }
@@ -18,6 +20,7 @@ impl HostMatcher {
     fn matches(&self, host: &str) -> bool {
         let host = host.to_ascii_lowercase();
         match self {
+            Self::Wildcard => true,
             Self::Exact(e) => e == &host,
             Self::Suffix(sfx) => {
                 host.len() > sfx.len() + 1
