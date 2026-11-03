@@ -2,15 +2,13 @@
 case "$1" in
     start)
         echo -n "Starting Wraith orchestrator: "
-        # Safety net: ensure log dir exists
-        mkdir -p /var/lib/orchestrator 2>/dev/null
-
+        mkdir -p /var/lib/orchestrator
         if [ -f /etc/wraith/orchestrator.toml ]; then
             /sbin/wraith-init --config /etc/wraith/orchestrator.toml \
                 > /var/lib/orchestrator/wraith.log 2>&1 &
             echo "OK"
         else
-            echo "SKIPPED (no config)"
+            echo "SKIPPED (no config at /etc/wraith/orchestrator.toml)"
         fi
         ;;
     stop) killall wraith-init 2>/dev/null ;;
