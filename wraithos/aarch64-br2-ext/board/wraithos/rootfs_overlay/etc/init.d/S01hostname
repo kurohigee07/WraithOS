@@ -1,0 +1,8 @@
+#!/bin/sh
+case "$1" in
+    start)
+        if [ -f /etc/hostname ]; then
+            hostname $(cat /etc/hostname) 2>/dev/null || true
+        fi
+        ;;
+esac
