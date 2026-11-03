@@ -9,7 +9,7 @@ use orchestrator::tenant::{migrate_flat_to_default, TenantRegistry};
 use orchestrator::wasm::{build_engine, EpochTicker, EPOCH_TICK};
 use orchestrator::{
     AppContext, CapabilitySet, Cli, Config, EventBus, LogFormat, ModuleRegistry,
-    OrchestratorEvent, OrchestratorModule, RhaiWorker,
+    OrchestratorEvent, RhaiWorker,
 };
 
 #[tokio::main]
@@ -102,7 +102,7 @@ async fn main() -> anyhow::Result<()> {
     )
         .context("tenant registry")?;
     let tenants = Arc::new(tenants);
-    info!(count = tenants.default_name().len() as u32, "tenant registry ready");
+    info!(count = tenants.len() as u32, "tenant registry ready");
 
     let default_quota = shared_types::ModuleQuota::default();
     let registry = ModuleRegistry::new(
@@ -117,22 +117,9 @@ async fn main() -> anyhow::Result<()> {
         .context("load wasm modules")?;
     info!(wasm_loaded = loaded, dir = %config.modules_dir.display(), "module registry ready");
 
-    for (tenant, id, module) in registry.all() {
-        let payload = serde_json::json!({"probe": "m17", "id": id, "tenant": tenant});
-        match module.execute(ctx.clone(), payload).await {
-            Ok(result) => info!(tenant = %tenant, id = %id, result = %result, "wasm execute ok"),
-            Err(e) => warn!(tenant = %tenant, id = %id, err = %e, "wasm execute failed"),
-        }
-
-        let payload = serde_json::json!({"alloc_mb": 512});
-        match module.execute(ctx.clone(), payload).await {
-            Ok(result) => warn!(
-                tenant = %tenant, id = %id, result = %result,
-                "wasm alloc unexpectedly ok"
-            ),
-            Err(e) => info!(tenant = %tenant, id = %id, err = %e, "wasm alloc trapped as expected"),
-        }
-    }
+    // Startup probe removed (v0.21.2). Was executing every module 2x per boot
+    // (probe + memory-bomb test), polluting audit log and adding latency for
+    // modules with HTTP side effects. Verify runtime via POST /modules/{id}/execute.
 
 
     let registry = Arc::new(registry);

@@ -294,6 +294,7 @@ fn build_http_client(timeout: Duration) -> anyhow::Result<reqwest::Client> {
     reqwest::Client::builder()
         .use_preconfigured_tls(tls)
         .timeout(timeout)
+        .redirect(reqwest::redirect::Policy::none())
         .user_agent(concat!("orchestrator/", env!("CARGO_PKG_VERSION")))
         .build()
         .context("reqwest ClientBuilder::build failed")
