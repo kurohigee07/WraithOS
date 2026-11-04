@@ -115,7 +115,10 @@ async fn main() -> anyhow::Result<()> {
 
     // Startup: verify build sandbox (bwrap) if build enabled
     if config.enable_build {
-        match std::process::Command::new("bwrap").arg("--version").output() {
+        match std::process::Command::new("bwrap")
+            .arg("--version")
+            .output()
+        {
             Ok(out) if out.status.success() => {
                 let v = String::from_utf8_lossy(&out.stdout).trim().to_string();
                 info!(bwrap = %v, "build sandbox (bwrap) available");

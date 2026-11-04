@@ -345,7 +345,6 @@ async fn build_sqlite_pool(path: &std::path::Path, max_conn: u32) -> anyhow::Res
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::net::TcpListener;
 
     fn loopback_pair() -> (std::net::TcpListener, TcpStream) {
         let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind loopback");
