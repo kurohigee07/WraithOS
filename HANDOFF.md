@@ -455,3 +455,27 @@ User chose PaaS direction (sell to developers). Appliance track (ARM WraithOS) w
 4. CI fmt-clippy fix (1 hour)
 
 All code at v0.23.5. OCI artifacts current. Both arch boot verified.
+
+
+---
+
+M31 LUKS WIP (v0.27.0-wip-m31-config)
+
+Block 1 done (config): kernel DM_CRYPT + CRYPTO_XTS/AES/SHA256/HMAC.
+ARM defconfig: CRYPTSETUP + libgcrypt + libuuid + popt + json-c.
+
+Remaining:
+Block 2: wizard.rs finish() -> cryptsetup luksFormat /dev/vda4 + mkfs.ext4 /dev/mapper.
+Block 3: S30data init script - luksOpen before mount if isLuks.
+Block 4: post-image-arm.sh - empty data partition (no ext4 pre-format).
+Block 5: QEMU ARM boot + LUKS unlock test.
+
+Safe state: config ready, no runtime behavior change yet.
+Current ARM build still works (ext4 /dev/vda4 unchanged).
+
+Resume prompt:
+Repo github.com/kurohigee07/Orchestrator-
+Last tag v0.27.0-wip-m31-config (main)
+Baca HANDOFF.md section M31 LUKS WIP
+Continue Block 2: wizard.rs finish LUKS
+Backup verified HP + OCI safe-backup/v0.24.1/
