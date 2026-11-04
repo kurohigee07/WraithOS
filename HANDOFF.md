@@ -454,7 +454,11 @@ User chose PaaS direction (sell to developers). Appliance track (ARM WraithOS) w
 3. M29 wizard (2-3 hours)
 4. CI fmt-clippy fix (1 hour)
 
-All code at v0.23.5. OCI artifacts current. Both arch boot verified.
+STATUS UPDATE (2026-11-04): All from Fase 1/2/3 above is DONE except:
+- M31 LUKS (WIP, Block 1/5 done, see next section)
+- Boot counter A/B auto-revert (deferred)
+- Docs sync (deferred)
+Current tag: v0.27.0-wip-m31-config. All other phases complete at v0.26.0.
 
 
 ---
@@ -479,3 +483,79 @@ Last tag v0.27.0-wip-m31-config (main)
 Baca HANDOFF.md section M31 LUKS WIP
 Continue Block 2: wizard.rs finish LUKS
 Backup verified HP + OCI safe-backup/v0.24.1/
+
+
+### M31 Block 2 DETAILED SPEC (wizard.rs finish_handler LUKS)
+
+File: orchestrator/src/wizard.rs
+Current: finish_handler(State(s): State<ApiState>) -> Response
+(no payload param today - wire Step1Payload extension OR new step endpoint)
+
+Step1Payload extension:
+    #[derive(Deserialize)]
+    struct Step1Payload {
+        hostname: String,
+        password: String,
+        #[serde(default)]
+        encryption_password: Option<String>,   // NEW
+    }
+
+WizardData extension:
+    encryption_password: Option<String>,       // NEW (in-memory only, not persisted raw)
+    luks_enabled: bool,                        // NEW
+
+step1_handler: store p.encryption_password in WizardData (validate len >= 8 if Some)
+
+finish_handler NEW LOGIC:
+    After writing hostname.txt + admin.password.argon2 + network.toml:
+
+    if let Some(luks_pwd) = w.encryption_password.as_ref() {
+        // Check /dev/vda4 exists
+        if !std::path::Path::new("/dev/vda4").exists() {
+            return 400 "data partition /dev/vda4 not found"
+        }
+        // Check not already LUKS
+        let isluks = Command::new("cryptsetup").args(["isLuks", "/dev/vda4"]).status();
+        if isluks.map(|s| s.success()).unwrap_or(false) {
+            return 409 "data partition already encrypted"
+        }
+        // luksFormat with stdin password
+        // cryptsetup luksFormat --type luks2 --cipher aes-xts-plain64
+        //   --key-size 512 --hash sha256 --batch-mode --key-file - /dev/vda4
+        // stdin: pwd + newline
+        // luksOpen with stdin password
+        // cryptsetup luksOpen --key-file - /dev/vda4 wraith-data
+        // mkfs.ext4 /dev/mapper/wraith-data
+        // luksClose wraith-data
+        // Write marker: data_dir/wizard.luks-active
+        // Hash pwd argon2id, write data_dir/wraith/unlock.argon2
+    }
+
+    Error handling: cryptsetup exit != 0 -> 500 with stderr tail (last 200 chars).
+
+Block 3 SPEC (S30data):
+Path: wraithos/aarch64-br2-ext/board/wraithos/rootfs_overlay/etc/init.d/S30data
+Replace mount logic:
+    if cryptsetup isLuks /dev/vda4 2>/dev/null; then
+        echo -n "Unlocking /dev/vda4 (LUKS): "
+        # read password from serial, or use unlock.argon2 verification
+        cryptsetup luksOpen /dev/vda4 wraith-data
+        mount -t ext4 /dev/mapper/wraith-data /data
+    else
+        mount -t ext4 /dev/vda4 /data 2>/dev/null
+    fi
+
+Block 4 SPEC (genimage-arm.cfg):
+Remove: image data.ext4 { ext4 { label = "DATA" } size = 128M }
+Change partition data:
+    image = null  (or use empty raw)
+post-image-arm.sh: remove cp data.ext4 logic; wizard creates LUKS.
+
+Block 5 SPEC (QEMU test):
+Boot ARM image -> curl /wizard (set encryption pwd) -> /wizard/finish
+-> verify /dev/vda4 is LUKS (cryptsetup isLuks) -> reboot
+-> serial prompt for passphrase -> login -> orchestrator up -> /dev/mapper/wraith-data mounted
+
+IMPORTANT: kryp to test - tarball was built with `ext4 /dev/vda4` behavior.
+Rebuild ARM image after Block 2+3+4 done before Block 5 QEMU test.
+Buildroot rebuild time: cryptsetup package compile ~5-8 min, kernel rebuild ~15 min.
