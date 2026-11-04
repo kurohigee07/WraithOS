@@ -44,7 +44,10 @@ impl WizardState {
             info!(data_dir = %data_dir.display(), "wizard: first-boot setup required");
         }
         Arc::new(Self {
-            data: Mutex::new(WizardData { completed, ..Default::default() }),
+            data: Mutex::new(WizardData {
+                completed,
+                ..Default::default()
+            }),
         })
     }
 
@@ -98,14 +101,21 @@ async fn status_handler(State(s): State<ApiState>) -> Json<StatusPayload> {
     } else {
         1
     };
-    Json(StatusPayload { completed: w.completed, step })
+    Json(StatusPayload {
+        completed: w.completed,
+        step,
+    })
 }
 
 async fn step1_handler(State(s): State<ApiState>, Json(p): Json<Step1Payload>) -> Response {
     if p.hostname.is_empty() || p.hostname.len() > 63 {
         return err_response(StatusCode::BAD_REQUEST, "hostname 1-63 chars");
     }
-    if !p.hostname.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-') {
+    if !p
+        .hostname
+        .chars()
+        .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+    {
         return err_response(StatusCode::BAD_REQUEST, "hostname must be [a-z0-9-]");
     }
     if p.password.len() < 8 {
@@ -128,7 +138,11 @@ async fn step1_handler(State(s): State<ApiState>, Json(p): Json<Step1Payload>) -
     w.hostname = Some(p.hostname);
     w.password_hash = Some(hash);
     info!("wizard: step1 saved (hostname)");
-    (StatusCode::OK, Json(serde_json::json!({"status":"ok","step":1}))).into_response()
+    (
+        StatusCode::OK,
+        Json(serde_json::json!({"status":"ok","step":1})),
+    )
+        .into_response()
 }
 
 async fn step2_handler(State(s): State<ApiState>, Json(p): Json<Step2Payload>) -> Response {
@@ -153,7 +167,11 @@ async fn step2_handler(State(s): State<ApiState>, Json(p): Json<Step2Payload>) -
     w.gateway = p.gateway;
     w.dns = p.dns;
     info!("wizard: step2 saved (network)");
-    (StatusCode::OK, Json(serde_json::json!({"status":"ok","step":2}))).into_response()
+    (
+        StatusCode::OK,
+        Json(serde_json::json!({"status":"ok","step":2})),
+    )
+        .into_response()
 }
 
 async fn finish_handler(State(s): State<ApiState>) -> Response {
@@ -181,7 +199,10 @@ async fn finish_handler(State(s): State<ApiState>) -> Response {
     }
 
     let _ = std::fs::write(wraith_dir.join("hostname.txt"), format!("{hostname}\n"));
-    let _ = std::fs::write(wraith_dir.join("admin.password.argon2"), format!("{password_hash}\n"));
+    let _ = std::fs::write(
+        wraith_dir.join("admin.password.argon2"),
+        format!("{password_hash}\n"),
+    );
 
     let net = format!(
         "mode = \"{}\"\n{}",
@@ -206,7 +227,11 @@ async fn finish_handler(State(s): State<ApiState>) -> Response {
 
     w.completed = true;
     info!("wizard: setup complete (hostname={})", hostname);
-    (StatusCode::OK, Json(serde_json::json!({"status":"complete","reboot_required":true}))).into_response()
+    (
+        StatusCode::OK,
+        Json(serde_json::json!({"status":"complete","reboot_required":true})),
+    )
+        .into_response()
 }
 
 pub fn router() -> Router<ApiState> {
