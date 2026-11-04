@@ -427,3 +427,23 @@ MIT OR Apache-2.0
 - **Auth boundary**: startup fails if `require_auth=true` but default tenant has no token configured
 - **Socket ownership**: cross-module `close()` returns `SocketNotFound` (no existence leak)
 - **Build disabled by default**: RCE surface opt-in only
+
+
+## Release Signing (M32)
+
+Release tarballs GPG-signed with Ed25519 key
+21FC5ED189E9C5E7D765129718274FF4C5A2F444 ("Wraith Release Signing
+<release@wraith.local>", expires 2028-11-03).
+
+### Verify
+
+    gpg --import wraith-release.pub
+    gpg --verify SHA256SUMS.asc SHA256SUMS
+    sha256sum -c SHA256SUMS
+
+Expect: "Good signature from Wraith Release Signing" + "OK" per file.
+Or: bash deploy/verify-signature.sh
+
+### Sign (maintainer)
+
+    bash deploy/sign.sh
