@@ -10,14 +10,27 @@ use crate::module::OrchestratorModule;
 use crate::telemetry::ApiState;
 
 const DASHBOARD: &str = include_str!("dashboard.html");
+const HTMX_JS: &str = include_str!("static/htmx.min.js");
 
 pub fn router() -> Router<ApiState> {
     Router::new()
         .route("/ui", get(dashboard))
+        .route("/static/htmx.js", get(htmx_js))
         .route("/ui/fragments/stats", get(stats_fragment))
         .route("/ui/fragments/modules", get(modules_fragment))
         .route("/ui/fragments/logs", get(logs_fragment))
         .route("/ui/fragments/metrics", get(metrics_fragment))
+}
+
+async fn htmx_js() -> impl axum::response::IntoResponse {
+    use axum::http::header;
+    (
+        [(
+            header::CONTENT_TYPE,
+            "application/javascript; charset=utf-8",
+        )],
+        HTMX_JS,
+    )
 }
 
 async fn dashboard() -> Html<&'static str> {
@@ -76,13 +89,13 @@ async fn modules_fragment(State(s): State<ApiState>) -> Html<String> {
                 "<td><strong>{id}</strong></td>",
                 "<td>{ver}</td>",
                 "<td style=\"color:var(--muted);font-size:11px\">{quota}</td>",
-                "<td><button class=\"btn\" onclick=\"execModule('{id}')\">Execute</button></td>",
+                "<td><button class=\"btn\" data-module-id=\"{id}\" onclick=\"execModule(this.dataset.moduleId)\">Execute</button></td>",
                 "</tr>"
             ),
-            tenant = tenant,
-            id = id,
-            ver = manifest.version,
-            quota = quota_str,
+            tenant = html_escape(&tenant),
+            id = html_escape(&id),
+            ver = html_escape(&manifest.version),
+            quota = html_escape(&quota_str),
         ));
     }
     if html.is_empty() {
@@ -120,12 +133,12 @@ async fn logs_fragment(State(s): State<ApiState>) -> Html<String> {
                 "</tr>"
             ),
             id = r.id,
-            tenant = r.tenant,
-            module_id = r.module_id,
-            class = class,
-            status = r.status,
+            tenant = html_escape(&r.tenant),
+            module_id = html_escape(&r.module_id),
+            class = html_escape(class),
+            status = html_escape(&r.status),
             dur = r.duration_ms,
-            when = r.executed_at,
+            when = html_escape(&r.executed_at),
         ));
     }
     if html.is_empty() {
@@ -174,4 +187,44 @@ fn sum_metric_label(text: &str, name: &str, label_substr: &str) -> f64 {
         .filter(|l| l.contains(label_substr))
         .filter_map(|l| l.rsplit_once(' ').and_then(|(_, v)| v.parse::<f64>().ok()))
         .sum()
+}
+
+/// Escape text for safe insertion into HTML (content + attribute values).
+/// Handles `& < > " '` per OWASP recommendation.
+fn html_escape(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for c in s.chars() {
+        match c {
+            '&' => out.push_str("&amp;"),
+            '<' => out.push_str("&lt;"),
+            '>' => out.push_str("&gt;"),
+            '"' => out.push_str("&quot;"),
+            '\'' => out.push_str("&#x27;"),
+            c => out.push(c),
+        }
+    }
+    out
+}
+
+#[cfg(test)]
+mod escape_tests {
+    use super::html_escape;
+
+    #[test]
+    fn escape_all_special_chars() {
+        assert_eq!(
+            html_escape("<script>alert('x&y')</script>"),
+            "&lt;script&gt;alert(&#x27;x&amp;y&#x27;)&lt;/script&gt;"
+        );
+    }
+
+    #[test]
+    fn escape_plain_untouched() {
+        assert_eq!(html_escape("plain-module-id"), "plain-module-id");
+    }
+
+    #[test]
+    fn escape_double_quote() {
+        assert_eq!(html_escape("a\"b"), "a&quot;b");
+    }
 }
