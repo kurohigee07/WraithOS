@@ -59,6 +59,7 @@ async fn state() -> (ApiState, tempfile::TempDir) {
         cargo_home: std::path::PathBuf::from("/nonexistent"),
         require_auth: false,
         enable_build: false,
+        enable_build_network: false,
     };
     (s, tmp)
 }
@@ -112,6 +113,7 @@ async fn state_with_auth() -> (ApiState, tempfile::TempDir) {
         cargo_home: std::path::PathBuf::from("/nonexistent"),
         require_auth: true,
         enable_build: false,
+        enable_build_network: false,
     };
     (s, tmp)
 }

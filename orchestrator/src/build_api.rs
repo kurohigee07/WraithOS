@@ -328,15 +328,10 @@ async fn run_cargo_build(
         .filter(|p| p.exists())
         .or_else(|| std::env::var_os("RUSTUP_HOME").map(std::path::PathBuf::from))
         .ok_or_else(|| {
-            ApiError::Internal(
-                "cannot determine RUSTUP_HOME (no ~/.rustup and no env var)".into(),
-            )
+            ApiError::Internal("cannot determine RUSTUP_HOME (no ~/.rustup and no env var)".into())
         })?;
 
-    let mut args: Vec<String> = vec![
-        "--die-with-parent".to_string(),
-        "--unshare-all".to_string(),
-    ];
+    let mut args: Vec<String> = vec!["--die-with-parent".to_string(), "--unshare-all".to_string()];
     if enable_network {
         args.push("--share-net".to_string());
     }
