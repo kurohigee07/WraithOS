@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WraithOS Setup</title>
+<style>
+:root { --bg:#0a0e1a; --surface:#131824; --border:#1e2433; --text:#e5e7eb; --muted:#6b7280; --accent:#8b5cf6; --ok:#10b981; --err:#ef4444; }
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: -apple-system, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; padding: 24px; }
+.container { max-width: 640px; margin: 0 auto; }
+h1 { font-size: 20px; margin-bottom: 8px; }
+.subtitle { color: var(--muted); margin-bottom: 32px; font-size: 13px; }
+.progress { display: flex; gap: 4px; margin-bottom: 32px; }
+.progress .step { flex: 1; height: 4px; background: var(--border); border-radius: 2px; }
+.progress .step.active { background: var(--accent); }
+.progress .step.done { background: var(--ok); }
+.panel { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 24px; margin-bottom: 16px; }
+.panel h2 { font-size: 16px; margin-bottom: 16px; }
+.field { margin-bottom: 16px; }
+.field label { display: block; color: var(--muted); font-size: 12px; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.5px; }
+.field input, .field select { width: 100%; padding: 10px 12px; background: var(--bg); border: 1px solid var(--border); border-radius: 4px; color: var(--text); font-size: 14px; font-family: inherit; }
+.field input:focus { outline: none; border-color: var(--accent); }
+.field .hint { font-size: 11px; color: var(--muted); margin-top: 4px; }
+.field .err { font-size: 11px; color: var(--err); margin-top: 4px; display: none; }
+.field .err.show { display: block; }
+.btn { background: var(--accent); color: white; border: none; padding: 10px 20px; border-radius: 4px; cursor: pointer; font-size: 13px; font-family: inherit; font-weight: 500; }
+.btn:hover { opacity: 0.9; }
+.btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.btn.secondary { background: var(--surface); border: 1px solid var(--border); color: var(--text); }
+.actions { display: flex; gap: 8px; justify-content: space-between; margin-top: 24px; }
+.step-view { display: none; }
+.step-view.active { display: block; }
+.review-row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
+.review-row:last-child { border-bottom: none; }
+.review-row .label { color: var(--muted); }
+.review-row .value { font-family: monospace; }
+#toast { position: fixed; bottom: 24px; right: 24px; background: var(--surface); border: 1px solid var(--border); padding: 12px 16px; border-radius: 8px; max-width: 400px; display: none; font-size: 12px; }
+#toast.show { display: block; }
+#toast.err { border-color: var(--err); }
+#toast.ok { border-color: var(--ok); }
+.radio-group { display: flex; gap: 16px; margin-top: 8px; }
+.radio-group label { display: flex; align-items: center; gap: 6px; text-transform: none; font-size: 13px; color: var(--text); cursor: pointer; }
+.radio-group input { width: auto; }
+</style>
+</head>
+<body>
+<div class="container">
+    <h1>👻 WraithOS Setup</h1>
+    <p class="subtitle">First-boot configuration. Takes ~30 seconds.</p>
+
+    <div class="progress">
+        <div class="step active" id="p1"></div>
+        <div class="step" id="p2"></div>
+        <div class="step" id="p3"></div>
+    </div>
+
+    <div class="step-view active" id="step-1">
+        <div class="panel">
+            <h2>Step 1: Identity</h2>
+            <div class="field">
+                <label>Hostname</label>
+                <input type="text" id="hostname" value="wraithos" placeholder="wraithos" pattern="[a-z0-9-]{1,63}">
+                <div class="hint">Lowercase letters, digits, hyphens. Max 63 chars.</div>
+                <div class="err" id="err-hostname"></div>
+            </div>
+            <div class="field">
+                <label>Admin Password</label>
+                <input type="password" id="password" placeholder="min 8 chars">
+                <div class="hint">Used for admin login. Hashed with argon2.</div>
+                <div class="err" id="err-password"></div>
+            </div>
+            <div class="field">
+                <label>Confirm Password</label>
+                <input type="password" id="password_confirm" placeholder="repeat">
+                <div class="err" id="err-password_confirm"></div>
+            </div>
+            <div class="actions">
+                <span></span>
+                <button class="btn" onclick="nextStep(1)">Continue →</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="step-view" id="step-2">
+        <div class="panel">
+            <h2>Step 2: Network</h2>
+            <div class="field">
+                <label>Mode</label>
+                <div class="radio-group">
+                    <label><input type="radio" name="net_mode" value="dhcp" checked onchange="toggleStatic()"> DHCP (auto)</label>
+                    <label><input type="radio" name="net_mode" value="static" onchange="toggleStatic()"> Static IP</label>
+                </div>
+            </div>
+            <div id="static-fields" style="display:none">
+                <div class="field">
+                    <label>IP Address / CIDR</label>
+                    <input type="text" id="static_ip" placeholder="192.168.1.100/24">
+                </div>
+                <div class="field">
+                    <label>Gateway</label>
+                    <input type="text" id="gateway" placeholder="192.168.1.1">
+                </div>
+                <div class="field">
+                    <label>DNS</label>
+                    <input type="text" id="dns" placeholder="1.1.1.1, 8.8.8.8">
+                </div>
+            </div>
+            <div class="actions">
+                <button class="btn secondary" onclick="prevStep(2)">← Back</button>
+                <button class="btn" onclick="nextStep(2)">Continue →</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="step-view" id="step-3">
+        <div class="panel">
+            <h2>Step 3: Review</h2>
+            <div class="review-row"><span class="label">Hostname</span><span class="value" id="r-hostname">-</span></div>
+            <div class="review-row"><span class="label">Admin Password</span><span class="value">••••••••</span></div>
+            <div class="review-row"><span class="label">Network</span><span class="value" id="r-network">-</span></div>
+            <div class="actions">
+                <button class="btn secondary" onclick="prevStep(3)">← Back</button>
+                <button class="btn" id="finish-btn" onclick="finish()">Finish & Reboot</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+let currentStep = 1;
+
+function showStep(n) {
+    document.querySelectorAll('.step-view').forEach(el => el.classList.remove('active'));
+    document.getElementById('step-' + n).classList.add('active');
+    for (let i = 1; i <= 3; i++) {
+        const el = document.getElementById('p' + i);
+        el.classList.remove('active', 'done');
+        if (i < n) el.classList.add('done');
+        else if (i === n) el.classList.add('active');
+    }
+    currentStep = n;
+    if (n === 3) updateReview();
+}
+
+function toggleStatic() {
+    const mode = document.querySelector('input[name="net_mode"]:checked').value;
+    document.getElementById('static-fields').style.display = mode === 'static' ? 'block' : 'none';
+}
+
+function showErr(id, msg) {
+    const el = document.getElementById('err-' + id);
+    if (el) { el.textContent = msg; el.classList.add('show'); }
+}
+
+function clearErr(id) {
+    const el = document.getElementById('err-' + id);
+    if (el) { el.textContent = ''; el.classList.remove('show'); }
+}
+
+function toast(msg, kind) {
+    const el = document.getElementById('toast');
+    el.textContent = msg;
+    el.className = 'show ' + kind;
+    clearTimeout(window._tt);
+    window._tt = setTimeout(() => el.className = '', 4000);
+}
+
+async function nextStep(n) {
+    if (n === 1) {
+        clearErr('hostname'); clearErr('password'); clearErr('password_confirm');
+        const hostname = document.getElementById('hostname').value.trim();
+        const password = document.getElementById('password').value;
+        const confirm = document.getElementById('password_confirm').value;
+
+        if (!/^[a-z0-9-]{1,63}$/.test(hostname)) {
+            showErr('hostname', 'Must be lowercase alphanumeric or hyphen, 1-63 chars');
+            return;
+        }
+        if (password.length < 8) {
+            showErr('password', 'Min 8 characters');
+            return;
+        }
+        if (password !== confirm) {
+            showErr('password_confirm', 'Passwords do not match');
+            return;
+        }
+
+        const r = await fetch('/wizard/step1', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ hostname, password })
+        });
+        const body = await r.json();
+        if (!r.ok) { toast('Step 1 failed: ' + (body.error || r.status), 'err'); return; }
+        showStep(2);
+    } else if (n === 2) {
+        const mode = document.querySelector('input[name="net_mode"]:checked').value;
+        const payload = { network_mode: mode };
+        if (mode === 'static') {
+            payload.static_ip = document.getElementById('static_ip').value.trim();
+            payload.gateway = document.getElementById('gateway').value.trim();
+            payload.dns = document.getElementById('dns').value.trim();
+            if (!payload.static_ip || !payload.gateway) {
+                toast('Static mode requires IP and gateway', 'err');
+                return;
+            }
+        }
+        const r = await fetch('/wizard/step2', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(payload)
+        });
+        const body = await r.json();
+        if (!r.ok) { toast('Step 2 failed: ' + (body.error || r.status), 'err'); return; }
+        showStep(3);
+    }
+}
+
+function prevStep(n) {
+    showStep(n - 1);
+}
+
+function updateReview() {
+    document.getElementById('r-hostname').textContent =
+        document.getElementById('hostname').value.trim() || '-';
+    const mode = document.querySelector('input[name="net_mode"]:checked').value;
+    if (mode === 'dhcp') {
+        document.getElementById('r-network').textContent = 'DHCP';
+    } else {
+        const ip = document.getElementById('static_ip').value.trim() || '?';
+        const gw = document.getElementById('gateway').value.trim() || '?';
+        document.getElementById('r-network').textContent = `Static ${ip} via ${gw}`;
+    }
+}
+
+async function finish() {
+    const btn = document.getElementById('finish-btn');
+    btn.disabled = true;
+    btn.textContent = 'Applying...';
+
+    try {
+        const r = await fetch('/wizard/finish', { method: 'POST' });
+        const body = await r.json();
+        if (!r.ok) {
+            toast('Finish failed: ' + (body.error || r.status), 'err');
+            btn.disabled = false;
+            btn.textContent = 'Finish & Reboot';
+            return;
+        }
+        toast('Setup complete. Rebooting in 3s...', 'ok');
+        setTimeout(() => {
+            document.body.innerHTML = '<div style="text-align:center;padding:100px;color:var(--muted)"><h1>Rebooting...</h1><p>If nothing happens, run: sudo reboot</p></div>';
+        }, 1000);
+    } catch (e) {
+        toast('Network error: ' + e.message, 'err');
+        btn.disabled = false;
+        btn.textContent = 'Finish & Reboot';
+    }
+}
+
+fetch('/wizard/status').then(r => r.json()).then(s => {
+    if (s.completed) {
+        document.body.innerHTML = '<div style="text-align:center;padding:100px;color:var(--muted)"><h1>Setup already complete</h1><p><a href="/ui" style="color:var(--accent)">Go to dashboard</a></p></div>';
+    }
+}).catch(() => {});
+</script>
+</body>
+</html>

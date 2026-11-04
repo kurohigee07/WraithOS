@@ -33,6 +33,8 @@ pub struct ApiState {
     pub require_auth: bool,
     pub enable_build: bool,
     pub enable_build_network: bool,
+    pub data_dir: std::path::PathBuf,
+    pub wizard: std::sync::Arc<crate::wizard::WizardState>,
 }
 
 pub fn install() -> anyhow::Result<PrometheusHandle> {
@@ -90,7 +92,8 @@ pub fn build_router(state: ApiState) -> Router {
         .route("/debug/state", get(debug_state_handler))
         .merge(crate::http_api::router())
         .merge(crate::ui::router())
-        .merge(crate::ws::router());
+        .merge(crate::ws::router())
+        .merge(crate::wizard::router());
 
     // Build pipeline off by default (arbitrary code execution risk)
     if enable_build {
