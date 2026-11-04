@@ -25,3 +25,4 @@ modules/**/*.wasm.sig
 orchestrator.toml.bak
 modules/**/*.wasm.capabilities.json
 dist/
+data/
