@@ -32,6 +32,7 @@ pub struct ApiState {
     pub cargo_home: std::path::PathBuf,
     pub require_auth: bool,
     pub enable_build: bool,
+    pub enable_build_network: bool,
 }
 
 pub fn install() -> anyhow::Result<PrometheusHandle> {

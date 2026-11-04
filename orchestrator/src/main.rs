@@ -113,6 +113,23 @@ async fn main() -> anyhow::Result<()> {
         info!(cargo_home = %cargo_home.display(), "build pipeline ready");
     }
 
+    // Startup: verify build sandbox (bwrap) if build enabled
+    if config.enable_build {
+        match std::process::Command::new("bwrap").arg("--version").output() {
+            Ok(out) if out.status.success() => {
+                let v = String::from_utf8_lossy(&out.stdout).trim().to_string();
+                info!(bwrap = %v, "build sandbox (bwrap) available");
+            }
+            _ => {
+                anyhow::bail!(
+                    "config.enable_build=true but bwrap missing. \
+                     Install: sudo dnf install -y bubblewrap (EPEL 9). \
+                     Or set enable_build=false."
+                );
+            }
+        }
+    }
+
     let tenants = TenantRegistry::from_config(
         config.tenants.clone(),
         config.default_tenant.clone(),
@@ -151,6 +168,7 @@ async fn main() -> anyhow::Result<()> {
         cargo_home: cargo_home.clone(),
         require_auth: config.require_auth,
         enable_build: config.enable_build,
+        enable_build_network: config.enable_build_network,
     };
     let metrics_server: Option<(
         tokio::task::JoinHandle<()>,
