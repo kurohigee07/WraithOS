@@ -1,7 +1,9 @@
 //! First-boot wizard: hostname, admin password, network config.
 //! State in-memory during steps 1-2, persisted to data_dir on finish.
 
+use std::io::Write;
 use std::path::PathBuf;
+use std::process::{Command, Stdio};
 use std::sync::Arc;
 
 use argon2::password_hash::{rand_core::OsRng, PasswordHasher, SaltString};
@@ -19,6 +21,9 @@ use crate::telemetry::ApiState;
 
 const WIZARD_HTML: &str = include_str!("wizard.html");
 const COMPLETE_MARKER: &str = "wizard.complete";
+const LUKS_MARKER: &str = "wizard.luks-active";
+const DATA_DEVICE: &str = "/dev/vda4";
+const MAPPER_NAME: &str = "wraith-data";
 
 #[derive(Debug, Default, Clone)]
 struct WizardData {
@@ -29,6 +34,8 @@ struct WizardData {
     gateway: Option<String>,
     dns: Option<String>,
     completed: bool,
+    encryption_password: Option<String>,
+    luks_enabled: bool,
 }
 
 pub struct WizardState {
@@ -60,6 +67,8 @@ impl WizardState {
 struct Step1Payload {
     hostname: String,
     password: String,
+    #[serde(default)]
+    encryption_password: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -77,6 +86,7 @@ struct Step2Payload {
 struct StatusPayload {
     completed: bool,
     step: u8,
+    luks_enabled: bool,
 }
 
 #[derive(Serialize)]
@@ -104,6 +114,7 @@ async fn status_handler(State(s): State<ApiState>) -> Json<StatusPayload> {
     Json(StatusPayload {
         completed: w.completed,
         step,
+        luks_enabled: w.luks_enabled,
     })
 }
 
@@ -121,6 +132,12 @@ async fn step1_handler(State(s): State<ApiState>, Json(p): Json<Step1Payload>) -
     if p.password.len() < 8 {
         return err_response(StatusCode::BAD_REQUEST, "password min 8 chars");
     }
+    if p.encryption_password
+        .as_deref()
+        .is_some_and(|enc| enc.len() < 8)
+    {
+        return err_response(StatusCode::BAD_REQUEST, "encryption_password min 8 chars");
+    }
 
     let salt = SaltString::generate(&mut OsRng);
     let hash = match Argon2::default().hash_password(p.password.as_bytes(), &salt) {
@@ -137,6 +154,7 @@ async fn step1_handler(State(s): State<ApiState>, Json(p): Json<Step1Payload>) -
     }
     w.hostname = Some(p.hostname);
     w.password_hash = Some(hash);
+    w.encryption_password = p.encryption_password;
     info!("wizard: step1 saved (hostname)");
     (
         StatusCode::OK,
@@ -172,6 +190,120 @@ async fn step2_handler(State(s): State<ApiState>, Json(p): Json<Step2Payload>) -
         Json(serde_json::json!({"status":"ok","step":2})),
     )
         .into_response()
+}
+
+type LuksResult<T> = Result<T, (StatusCode, String)>;
+
+fn internal(e: String) -> (StatusCode, String) {
+    (StatusCode::INTERNAL_SERVER_ERROR, e)
+}
+
+fn stderr_tail(out: &std::process::Output) -> String {
+    let text = String::from_utf8_lossy(&out.stderr);
+    let s: &str = &text;
+    let start = s.len().saturating_sub(200);
+    let tail = s.get(start..).unwrap_or(s).trim().to_string();
+    if tail.is_empty() {
+        let status = out.status;
+        format!("exit status {status}")
+    } else {
+        tail
+    }
+}
+
+fn luks_cmd(args: &[&str], pwd: Option<&str>) -> Result<std::process::Output, String> {
+    let mut cmd = Command::new("cryptsetup");
+    cmd.args(args).stdout(Stdio::piped()).stderr(Stdio::piped());
+    cmd.stdin(if pwd.is_some() {
+        Stdio::piped()
+    } else {
+        Stdio::null()
+    });
+    let mut child = cmd.spawn().map_err(|e| format!("cryptsetup spawn: {e}"))?;
+    if let Some(p) = pwd {
+        let mut si = child
+            .stdin
+            .take()
+            .ok_or_else(|| "cryptsetup stdin unavailable".to_string())?;
+        si.write_all(p.as_bytes())
+            .map_err(|e| format!("key write: {e}"))?;
+        si.write_all(b"\n").map_err(|e| format!("key write: {e}"))?;
+    }
+    child
+        .wait_with_output()
+        .map_err(|e| format!("cryptsetup wait: {e}"))
+}
+
+fn succeed(step: &str, out: &std::process::Output) -> LuksResult<()> {
+    if out.status.success() {
+        Ok(())
+    } else {
+        let detail = stderr_tail(out);
+        Err(internal(format!("{step} failed: {detail}")))
+    }
+}
+
+fn setup_luks(pwd: &str, data_dir: &std::path::Path) -> LuksResult<()> {
+    if !std::path::Path::new(DATA_DEVICE).exists() {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "data partition /dev/vda4 not found".to_string(),
+        ));
+    }
+    let probe = luks_cmd(&["isLuks", DATA_DEVICE], None).map_err(internal)?;
+    if probe.status.success() {
+        return Err((
+            StatusCode::CONFLICT,
+            "data partition already encrypted".to_string(),
+        ));
+    }
+
+    let format_args = [
+        "luksFormat",
+        "--type",
+        "luks2",
+        "--cipher",
+        "aes-xts-plain64",
+        "--key-size",
+        "512",
+        "--hash",
+        "sha256",
+        "--batch-mode",
+        "--key-file",
+        "-",
+        DATA_DEVICE,
+    ];
+    let out = luks_cmd(&format_args, Some(pwd)).map_err(internal)?;
+    succeed("luksFormat", &out)?;
+
+    let open_args = ["luksOpen", "--key-file", "-", DATA_DEVICE, MAPPER_NAME];
+    let out = luks_cmd(&open_args, Some(pwd)).map_err(internal)?;
+    succeed("luksOpen", &out)?;
+
+    let mapper = format!("/dev/mapper/{MAPPER_NAME}");
+    let mkfs = Command::new("mkfs.ext4")
+        .arg(&mapper)
+        .output()
+        .map_err(|e| internal(format!("mkfs.ext4 spawn: {e}")))?;
+    if let Err(e) = succeed("mkfs.ext4", &mkfs) {
+        let _ = luks_cmd(&["luksClose", MAPPER_NAME], None);
+        return Err(e);
+    }
+    let close = luks_cmd(&["luksClose", MAPPER_NAME], None).map_err(internal)?;
+    succeed("luksClose", &close)?;
+
+    let wraith_dir = data_dir.join("wraith");
+    std::fs::create_dir_all(&wraith_dir).map_err(|e| internal(format!("mkdir wraith dir: {e}")))?;
+    let salt = SaltString::generate(&mut OsRng);
+    let hash = Argon2::default()
+        .hash_password(pwd.as_bytes(), &salt)
+        .map_err(|e| internal(format!("argon2 unlock hash: {e}")))?
+        .to_string();
+    std::fs::write(wraith_dir.join("unlock.argon2"), format!("{hash}\n"))
+        .map_err(|e| internal(format!("write unlock.argon2: {e}")))?;
+    std::fs::write(data_dir.join(LUKS_MARKER), "luks2\n")
+        .map_err(|e| internal(format!("write luks marker: {e}")))?;
+    Ok(())
 }
 
 async fn finish_handler(State(s): State<ApiState>) -> Response {
@@ -218,6 +350,19 @@ async fn finish_handler(State(s): State<ApiState>) -> Response {
         }
     );
     let _ = std::fs::write(wraith_dir.join("network.toml"), net);
+    if let Some(luks_pwd) = w.encryption_password.clone() {
+        match setup_luks(&luks_pwd, &s.data_dir) {
+            Ok(()) => {
+                w.luks_enabled = true;
+                w.encryption_password = None;
+                info!("wizard: LUKS data partition ready");
+            }
+            Err((code, msg)) => {
+                warn!(err = %msg, "wizard: LUKS setup failed");
+                return err_response(code, msg);
+            }
+        }
+    }
 
     let marker = s.data_dir.join(COMPLETE_MARKER);
     if let Err(e) = std::fs::write(&marker, "completed\n") {
