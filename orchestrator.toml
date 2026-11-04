@@ -16,6 +16,9 @@ log_level = "info"
 log_format = "pretty"   # "pretty" | "json"
 metrics_bind = "127.0.0.1:9090"   # empty string = disable
 
+enable_build = false
+enable_build_network = false
+
 [script]
 # Pilih salah satu: inline atau path.
 inline = '''
@@ -39,7 +42,6 @@ emit_event("rhai.processed", "{\"source\":\"rhai\"}");
 # subdir modules/{default_tenant}/. Default: "default" (no auth).
 # default_tenant = "default"
 # require_auth = true  # all endpoints except /healthz /readyz need Bearer
-# enable_build = false  # POST /modules/build disabled by default (RCE risk)
 
 # Tenant tambahan. Route: /t/{tenant}/modules. Storage: modules/{tenant}/.
 # token_hash: argon2 PHC string (production). Generate:

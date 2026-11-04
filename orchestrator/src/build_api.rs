@@ -152,7 +152,7 @@ async fn build_shared(
 
     // Build
     let build_start = Instant::now();
-    let out = run_cargo_build(tmpdir.path(), &s.cargo_home).await?;
+    let out = run_cargo_build(tmpdir.path(), &s.cargo_home, s.enable_build_network).await?;
     let build_ms = build_start.elapsed().as_millis() as u64;
 
     if !out.status.success() {
@@ -312,36 +312,106 @@ async fn extract_tar(dir: &FsPath, body: &[u8]) -> Result<(), ApiError> {
 async fn run_cargo_build(
     dir: &FsPath,
     cargo_home: &FsPath,
+    enable_network: bool,
 ) -> Result<std::process::Output, ApiError> {
     let cargo_bin = cargo_home.join("bin").join("cargo");
     if !cargo_bin.exists() {
         return Err(ApiError::Internal(format!(
-            "cargo not found at {} (set cargo_home in config)",
+            "cargo binary not found at {}",
             cargo_bin.display()
         )));
     }
 
-    let path_env = format!(
-        "{}:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin",
-        cargo_home.join("bin").display()
-    );
-    let home_env = std::env::var("HOME").unwrap_or_else(|_| "/home/opc".to_string());
+    let rustup_home = cargo_home
+        .parent()
+        .map(|p| p.join(".rustup"))
+        .filter(|p| p.exists())
+        .or_else(|| std::env::var_os("RUSTUP_HOME").map(std::path::PathBuf::from))
+        .ok_or_else(|| {
+            ApiError::Internal(
+                "cannot determine RUSTUP_HOME (no ~/.rustup and no env var)".into(),
+            )
+        })?;
 
-    let child = Command::new(&cargo_bin)
-        .args(["build", "--target", "wasm32-wasip2", "--release"])
-        .current_dir(dir)
-        .env_clear()
-        .env("PATH", &path_env)
-        .env("HOME", &home_env)
-        .env("CARGO_HOME", cargo_home)
-        .env("CARGO_TERM_COLOR", "never")
-        .env("RUST_BACKTRACE", "1")
+    let mut args: Vec<String> = vec![
+        "--die-with-parent".to_string(),
+        "--unshare-all".to_string(),
+    ];
+    if enable_network {
+        args.push("--share-net".to_string());
+    }
+
+    for sys in ["/usr", "/lib", "/lib64", "/bin", "/sbin"] {
+        if std::path::Path::new(sys).exists() {
+            args.push("--ro-bind".into());
+            args.push(sys.into());
+            args.push(sys.into());
+        }
+    }
+    if enable_network && std::path::Path::new("/etc/resolv.conf").exists() {
+        args.push("--ro-bind".into());
+        args.push("/etc/resolv.conf".into());
+        args.push("/etc/resolv.conf".into());
+    }
+    args.push("--proc".into());
+    args.push("/proc".into());
+    args.push("--dev".into());
+    args.push("/dev".into());
+    args.push("--tmpfs".into());
+    args.push("/dev/shm".into());
+    args.push("--tmpfs".into());
+    args.push("/tmp".into());
+    args.push("--tmpfs".into());
+    args.push("/home".into());
+    args.push("--tmpfs".into());
+    args.push("/root".into());
+
+    args.push("--ro-bind".into());
+    args.push(cargo_home.display().to_string());
+    args.push(cargo_home.display().to_string());
+    args.push("--ro-bind".into());
+    args.push(rustup_home.display().to_string());
+    args.push(rustup_home.display().to_string());
+
+    args.push("--bind".into());
+    args.push(dir.display().to_string());
+    args.push(dir.display().to_string());
+    args.push("--chdir".into());
+    args.push(dir.display().to_string());
+
+    let path_env = format!("{}/bin:/usr/bin:/bin:/usr/sbin:/sbin", cargo_home.display());
+    args.push("--setenv".into());
+    args.push("CARGO_HOME".into());
+    args.push(cargo_home.display().to_string());
+    args.push("--setenv".into());
+    args.push("RUSTUP_HOME".into());
+    args.push(rustup_home.display().to_string());
+    args.push("--setenv".into());
+    args.push("PATH".into());
+    args.push(path_env);
+    args.push("--setenv".into());
+    args.push("HOME".into());
+    args.push("/tmp".into());
+    if !enable_network {
+        args.push("--setenv".into());
+        args.push("CARGO_NET_OFFLINE".into());
+        args.push("true".into());
+    }
+
+    args.push(cargo_bin.display().to_string());
+    args.push("build".into());
+    args.push("--target".into());
+    args.push("wasm32-wasip2".into());
+    args.push("--release".into());
+
+    let child = Command::new("bwrap")
+        .args(&args)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .kill_on_drop(true)
         .spawn()
-        .map_err(|e| ApiError::Internal(format!("cargo spawn ({}): {e}", cargo_bin.display())))?;
+        .map_err(|e| ApiError::Internal(format!("bwrap spawn failed: {e}")))?;
 
     match tokio::time::timeout(
         Duration::from_secs(BUILD_TIMEOUT_SECS),
@@ -350,9 +420,9 @@ async fn run_cargo_build(
     .await
     {
         Ok(Ok(out)) => Ok(out),
-        Ok(Err(e)) => Err(ApiError::Internal(format!("cargo wait: {e}"))),
+        Ok(Err(e)) => Err(ApiError::Internal(format!("bwrap wait: {e}"))),
         Err(_) => Err(ApiError::BadRequest(format!(
-            "build timeout ({}s) — source too complex or stuck",
+            "build timeout ({}s) in sandbox",
             BUILD_TIMEOUT_SECS
         ))),
     }

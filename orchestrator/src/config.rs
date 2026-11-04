@@ -87,6 +87,12 @@ pub struct Config {
     /// opt-in due to arbitrary code execution risk (build.rs runs as service user).
     #[serde(default)]
     pub enable_build: bool,
+    /// If true, build sandbox keeps network access (crates.io fetch works).
+    /// If false (default), network unshared — requires pre-fetched registry.
+    /// Trade-off: network=true allows build.rs exfil, but allows dynamic deps.
+    /// Use pre-fetched mode (false) for production.
+    #[serde(default)]
+    pub enable_build_network: bool,
     #[serde(default)]
     pub tenants: std::collections::HashMap<String, TenantConfig>,
     pub db_path: PathBuf,
@@ -133,6 +139,7 @@ impl Default for Config {
             default_tenant: default_tenant_name(),
             require_auth: false,
             enable_build: false,
+            enable_build_network: false,
             tenants: std::collections::HashMap::new(),
             cargo_home: None,
             trusted_signer_keys: vec![],
