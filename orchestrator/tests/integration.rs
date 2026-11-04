@@ -60,6 +60,8 @@ async fn state() -> (ApiState, tempfile::TempDir) {
         require_auth: false,
         enable_build: false,
         enable_build_network: false,
+        data_dir: tmp.path().to_path_buf(),
+        wizard: std::sync::Arc::new(orchestrator::wizard::WizardState::new(tmp.path().to_path_buf())),
     };
     (s, tmp)
 }
@@ -114,6 +116,8 @@ async fn state_with_auth() -> (ApiState, tempfile::TempDir) {
         require_auth: true,
         enable_build: false,
         enable_build_network: false,
+        data_dir: tmp.path().to_path_buf(),
+        wizard: std::sync::Arc::new(orchestrator::wizard::WizardState::new(tmp.path().to_path_buf())),
     };
     (s, tmp)
 }

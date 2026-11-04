@@ -17,6 +17,7 @@ pub mod telemetry;
 pub mod tenant;
 pub mod ui;
 pub mod wasm;
+pub mod wizard;
 pub mod ws;
 
 pub use capabilities::CapabilitySet;

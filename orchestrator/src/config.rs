@@ -96,6 +96,9 @@ pub struct Config {
     #[serde(default)]
     pub tenants: std::collections::HashMap<String, TenantConfig>,
     pub db_path: PathBuf,
+    /// Persistent data dir. WraithOS = /data, VPS host = ./data
+    #[serde(default = "default_data_dir")]
+    pub data_dir: PathBuf,
     pub modules_dir: PathBuf,
     pub http_timeout_secs: u64,
     pub max_sockets: usize,
@@ -120,11 +123,15 @@ pub struct Config {
 fn default_tenant_name() -> String {
     "default".to_string()
 }
+fn default_data_dir() -> PathBuf {
+    PathBuf::from("./data")
+}
 
 impl Default for Config {
     fn default() -> Self {
         Self {
             db_path: PathBuf::from("orchestrator.db"),
+            data_dir: default_data_dir(),
             modules_dir: PathBuf::from("./modules"),
             http_timeout_secs: 30,
             max_sockets: 256,

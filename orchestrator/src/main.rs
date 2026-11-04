@@ -160,6 +160,7 @@ async fn main() -> anyhow::Result<()> {
     // modules with HTTP side effects. Verify runtime via POST /modules/{id}/execute.
 
     let registry = Arc::new(registry);
+    let wizard = orchestrator::wizard::WizardState::new(config.data_dir.clone());
     let api_state = telemetry::ApiState {
         prom: prom_handle,
         ctx: ctx.clone(),
@@ -172,6 +173,8 @@ async fn main() -> anyhow::Result<()> {
         require_auth: config.require_auth,
         enable_build: config.enable_build,
         enable_build_network: config.enable_build_network,
+        data_dir: config.data_dir.clone(),
+        wizard: wizard.clone(),
     };
     let metrics_server: Option<(
         tokio::task::JoinHandle<()>,
