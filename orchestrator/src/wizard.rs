@@ -45,6 +45,7 @@ pub struct WizardState {
 impl WizardState {
     pub fn new(data_dir: PathBuf) -> Arc<Self> {
         let completed = data_dir.join(COMPLETE_MARKER).exists();
+        let luks_enabled = data_dir.join(LUKS_MARKER).exists();
         if completed {
             info!(data_dir = %data_dir.display(), "wizard: setup already complete");
         } else {
@@ -53,6 +54,7 @@ impl WizardState {
         Arc::new(Self {
             data: Mutex::new(WizardData {
                 completed,
+                luks_enabled,
                 ..Default::default()
             }),
         })
@@ -280,29 +282,114 @@ fn setup_luks(pwd: &str, data_dir: &std::path::Path) -> LuksResult<()> {
     succeed("luksOpen", &out)?;
 
     let mapper = format!("/dev/mapper/{MAPPER_NAME}");
-    let mkfs = Command::new("mkfs.ext4")
-        .arg(&mapper)
-        .output()
-        .map_err(|e| internal(format!("mkfs.ext4 spawn: {e}")))?;
-    if let Err(e) = succeed("mkfs.ext4", &mkfs) {
-        let _ = luks_cmd(&["luksClose", MAPPER_NAME], None);
-        return Err(e);
-    }
-    let close = luks_cmd(&["luksClose", MAPPER_NAME], None).map_err(internal)?;
-    succeed("luksClose", &close)?;
 
-    let wraith_dir = data_dir.join("wraith");
-    std::fs::create_dir_all(&wraith_dir).map_err(|e| internal(format!("mkdir wraith dir: {e}")))?;
+    // State yang finish_handler tulis ke data_dir hidup di tmpfs. Sesudah
+    // reboot S30data bind-mount <volume>/orchestrator -> /var/lib/orchestrator,
+    // jadi volume kosong bikin wizard minta setup ulang. Bangun tree identik
+    // di staging, lalu salin ke filesystem baru lewat mkfs.ext4 -d.
     let salt = SaltString::generate(&mut OsRng);
     let hash = Argon2::default()
         .hash_password(pwd.as_bytes(), &salt)
         .map_err(|e| internal(format!("argon2 unlock hash: {e}")))?
         .to_string();
+
+    let stage = std::path::Path::new("/tmp/wraith-luks-stage");
+    let _ = std::fs::remove_dir_all(stage);
+    std::fs::create_dir_all(stage).map_err(|e| internal(format!("luks stage mkdir: {e}")))?;
+    let orch = stage.join("orchestrator");
+    std::fs::create_dir_all(orch.join("wraith"))
+        .map_err(|e| internal(format!("luks stage mkdir: {e}")))?;
+    std::fs::create_dir_all(stage.join("modules"))
+        .map_err(|e| internal(format!("luks stage mkdir: {e}")))?;
+    std::fs::create_dir_all(stage.join("wraith"))
+        .map_err(|e| internal(format!("luks stage mkdir: {e}")))?;
+    for name in ["hostname.txt", "admin.password.argon2", "network.toml"] {
+        let src = data_dir.join("wraith").join(name);
+        if src.exists() {
+            std::fs::copy(&src, orch.join("wraith").join(name))
+                .map_err(|e| internal(format!("luks stage copy {name}: {e}")))?;
+        }
+    }
+    std::fs::write(
+        orch.join("wraith").join("unlock.argon2"),
+        format!("{hash}\n"),
+    )
+    .map_err(|e| internal(format!("luks stage unlock.argon2: {e}")))?;
+    std::fs::write(orch.join(LUKS_MARKER), "luks2\n")
+        .map_err(|e| internal(format!("luks stage marker: {e}")))?;
+    std::fs::write(orch.join(COMPLETE_MARKER), "completed\n")
+        .map_err(|e| internal(format!("luks stage complete: {e}")))?;
+
+    let mkfs = Command::new("mkfs.ext4")
+        .arg("-d")
+        .arg(stage)
+        .arg("-F")
+        .arg(&mapper)
+        .output()
+        .map_err(|e| internal(format!("mkfs.ext4 spawn: {e}")))?;
+    if !mkfs.status.success() {
+        // Fallback kalau e2fsprogs-nya nggak punya populate_fs: format polos,
+        // mount sementara, cp, umount. Tetap di volume, bukan tmpfs.
+        let plain = Command::new("mkfs.ext4")
+            .arg("-F")
+            .arg(&mapper)
+            .output()
+            .map_err(|e| internal(format!("mkfs.ext4 spawn: {e}")))?;
+        succeed("mkfs.ext4", &plain)?;
+        let mnt = std::path::Path::new("/tmp/wraith-luks-mnt");
+        let _ = std::fs::remove_dir_all(mnt);
+        std::fs::create_dir_all(mnt).map_err(|e| internal(format!("luks mnt mkdir: {e}")))?;
+        let m = Command::new("mount")
+            .args(["-t", "ext4", mapper.as_str(), "/tmp/wraith-luks-mnt"])
+            .output()
+            .map_err(|e| internal(format!("luks mnt mount spawn: {e}")))?;
+        succeed("luks mnt mount", &m)?;
+        let cp = Command::new("cp")
+            .args(["-a", "/tmp/wraith-luks-stage/.", "/tmp/wraith-luks-mnt/"])
+            .output()
+            .map_err(|e| internal(format!("luks mnt cp spawn: {e}")))?;
+        let u = Command::new("umount")
+            .arg("/tmp/wraith-luks-mnt")
+            .output()
+            .map_err(|e| internal(format!("luks mnt umount spawn: {e}")))?;
+        succeed("luks mnt cp", &cp)?;
+        succeed("luks mnt umount", &u)?;
+    }
+
+    let close = luks_cmd(&["luksClose", MAPPER_NAME], None).map_err(internal)?;
+    succeed("luksClose", &close)?;
+
+    // State identik untuk sesi berjalan ini (tmpfs).
+    let wraith_dir = data_dir.join("wraith");
+    std::fs::create_dir_all(&wraith_dir).map_err(|e| internal(format!("mkdir wraith dir: {e}")))?;
     std::fs::write(wraith_dir.join("unlock.argon2"), format!("{hash}\n"))
         .map_err(|e| internal(format!("write unlock.argon2: {e}")))?;
     std::fs::write(data_dir.join(LUKS_MARKER), "luks2\n")
         .map_err(|e| internal(format!("write luks marker: {e}")))?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn markers_survive_restart() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(tmp.path().join(COMPLETE_MARKER), "completed\n").unwrap();
+        std::fs::write(tmp.path().join(LUKS_MARKER), "luks2\n").unwrap();
+        let s = WizardState::new(tmp.path().to_path_buf());
+        assert!(s.is_completed().await);
+        assert!(s.data.lock().await.luks_enabled);
+    }
+
+    #[tokio::test]
+    async fn fresh_state_is_incomplete() {
+        let tmp = tempfile::tempdir().unwrap();
+        let s = WizardState::new(tmp.path().to_path_buf());
+        assert!(!s.is_completed().await);
+        assert!(!s.data.lock().await.luks_enabled);
+    }
 }
 
 async fn finish_handler(State(s): State<ApiState>) -> Response {
