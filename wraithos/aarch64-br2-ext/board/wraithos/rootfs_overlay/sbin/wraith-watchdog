@@ -1,0 +1,81 @@
+#!/bin/sh
+# Wraith Watchdog: guard + worker. Satu bukti gagal = mati.
+LOCK=/run/wraith/watchdog.lock
+BOOTENV=/usr/bin/wraith-bootenv
+BOOTCHECK=/usr/bin/wraith-bootcheck
+WD=/dev/watchdog
+GRACE_DEF=180
+PET=5
+mkdir -p /run/wraith
+[ -e "$WD" ] || echo "wraith-watchdog: /dev/watchdog missing" >&2
+
+pet() {
+    [ -e "$WD" ] || return 0
+    printf '1' > "$WD" 2>/dev/null || true
+}
+
+lock_alive() {
+    [ -f "$LOCK" ] || return 1
+    p=$(cat "$LOCK" 2>/dev/null)
+    [ -n "$p" ] || return 1
+    kill -0 "$p" 2>/dev/null
+}
+
+worker() {
+    start=$(date +%s)
+    pet
+    while :; do
+        grace=$(cat /run/wraith/grace 2>/dev/null || echo "$GRACE_DEF")
+        case "$grace" in
+            ''|*[!0-9]*) grace=$GRACE_DEF ;;
+        esac
+        now=$(date +%s)
+        age=$((now - start))
+
+        had_pid=1
+        if ! pidof wraith-init >/dev/null 2>&1; then
+            had_pid=0
+            /etc/init.d/S99wraith-init restart >/dev/null 2>&1
+        fi
+
+        "$BOOTCHECK"
+        ok=$?
+        [ "$had_pid" = 0 ] && ok=1
+
+        if [ "$ok" = 0 ]; then
+            if [ ! -f /run/wraith/committed ]; then
+                "$BOOTENV" commit && : > /run/wraith/committed
+            fi
+            pet
+        else
+            if [ "$age" -lt "$grace" ]; then
+                pet
+            else
+                echo "wraith-watchdog: proof failed, demoting" >&2
+                "$BOOTENV" demote
+                sync
+                sleep 20
+                reboot -f
+            fi
+        fi
+        sleep "$PET"
+    done
+}
+
+case "$1" in
+    worker)
+        worker
+        exit 0
+        ;;
+esac
+
+while :; do
+    if lock_alive; then
+        sleep 2
+        continue
+    fi
+    echo $$ > "$LOCK"
+    worker
+    rm -f "$LOCK"
+    sleep 1
+done

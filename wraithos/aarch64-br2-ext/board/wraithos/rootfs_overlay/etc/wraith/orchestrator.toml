@@ -1,64 +1,32 @@
-# Orchestrator runtime config. Semua field punya default jika dihilangkan.
+# Orchestrator runtime config. All fields have defaults if omitted.
 
 db_path = "/var/lib/orchestrator/orchestrator.db"
 modules_dir = "/modules"
+data_dir = "/var/lib/orchestrator"
 http_timeout_secs = 30
 max_sockets = 256
-# Batasi Wasm paralel. Rule of thumb: < CPU count, agar tokio worker
-# tetap tersedia untuk HTTP/metrics/signal handling.
+# Limit parallel Wasm execution. Keep below CPU count.
 max_concurrent_wasm = 2
-# Timeout menunggu slot Wasm pool. Jika habis, execute() return error.
+# Timeout waiting for a Wasm pool slot.
 wasm_acquire_timeout_secs = 10
-# Batas linear memory per Wasm instance. Guest yang melebihi akan trap.
+# Linear memory limit per Wasm instance.
 wasm_memory_limit_mb = 256
 max_db_connections = 8
 log_level = "info"
-log_format = "pretty"   # "pretty" | "json"
-metrics_bind = "127.0.0.1:9090"   # empty string = disable
-data_dir = "/var/lib/orchestrator"
+log_format = "pretty"
+# Empty string disables the metrics listener.
+metrics_bind = "127.0.0.1:9090"
 
 [script]
-# Pilih salah satu: inline atau path.
+# Choose one: inline or path.
 inline = '''
 log_info("rhai received: " + event_kind);
 emit_event("rhai.processed", "{\"source\":\"rhai\"}");
 '''
-# path = "./rules/scan.rhai"
 
-# Ed25519 pubkeys (hex, 64 chars). Jika tidak kosong, setiap .wasm
-# WAJIB punya .wasm.sig sibling (64-byte raw ed25519 signature).
-# Kosongkan untuk skip verifikasi (dev only).
-# Quota default untuk modul yang di-upload tanpa X-Module-Quota header.
-# Field 0 = inherit global / unlimited. Lihat docs di shared-types.
-# [default_quota]
-# max_memory_mb = 0
-# max_concurrent = 0
-# rate_limit_per_sec = 0
-
-# ── Multi-tenant (M17) ─────────────────────────────────────────────
-# default_tenant dipakai untuk route /modules (backward compat) dan
-# subdir modules/{default_tenant}/. Default: "default" (no auth).
-# default_tenant = "default"
-
-# Tenant tambahan. Route: /t/{tenant}/modules. Storage: modules/{tenant}/.
-# token_hash: argon2 PHC string (production). Generate:
-#   python3 -c "from argon2 import PasswordHasher; print(PasswordHasher().hash('mytoken'))"
-# token_plain: plaintext (dev only; logs warning)
-# [tenants.alice]
-# token_hash = "$argon2id$v=19$m=19456,t=2,p=1$..."
-# Per-tenant resource caps (M18) — omit any field for unlimited:
-# max_modules = 10            # max # of modules per tenant
-# max_concurrent_wasm = 4     # max concurrent wasm execs per tenant
-# rate_limit_per_sec = 100    # aggregate rate limit across tenant's modules
-#
-# [tenants.bob]
-# token_plain = "dev-token"
-
-# Build pipeline (M19). Cargo home used to invoke `cargo build`.
-# Default: $HOME/.cargo. Override if orchestrator runs under a user
-# whose cargo install lives elsewhere.
-# cargo_home = "/home/opc/.cargo"
-
+# Ed25519 public keys (hex, 64 chars). If non-empty, every .wasm
+# MUST have a .wasm.sig sibling (64-byte raw Ed25519 signature).
+# Leave empty to skip verification (dev only).
 trusted_signer_keys = []
 
 [[capabilities]]
@@ -75,4 +43,3 @@ allowed_hosts = ["example.com"]
 [[capabilities]]
 type = "tcp-connect"
 allowed_ports = [443]
-

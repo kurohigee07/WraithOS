@@ -1,11 +1,7 @@
-
-  Welcome to WraithOS
-  ───────────────────
+  WraithOS M33 — Death-Driven Boot
+  ───────────────────────────────
   Orchestrator: http://127.0.0.1:9090/healthz
-  Modules:      /modules  (persistent via /data)
-  Config:       /etc/wraith/orchestrator.toml
-  Logs:         /var/lib/orchestrator/wraith.log
-
+  Boot state:   wraith-bootenv show
+  Watchdog:     /dev/watchdog (nowayout=1)
   Update:       wraith-update /path/to/rootfs.squashfs
-  Rollback:     rm /boot/boot_b && reboot
-
+  Rollback:     otomatis via lkg, bukan boot_b

@@ -1,0 +1,10 @@
+[38;2;157;78;221m      WraithOS
+      ------------------------------
+      Wasm Appliance
+      Health:   http://127.0.0.1:9090/healthz
+      State:    wraith-bootenv show
+      Watchdog: /dev/watchdog (nowayout=1)
+      Update:   wraith-update /path/to/rootfs.squashfs
+      Revert:   automatic via last known good
+[38;2;58;134;255m          Identity: Spectre Violet / Electric Cobalt
+[0m

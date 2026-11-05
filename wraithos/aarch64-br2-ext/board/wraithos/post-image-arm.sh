@@ -15,11 +15,9 @@ fi
 GRUB_MKIMAGE="${HOST_D}/bin/grub-mkimage"
 GENIMAGE="${HOST_D}/bin/genimage"
 
-# Clean previous staging in BIN_DIR
 rm -rf "${BIN_DIR}/EFI" "${BIN_DIR}/grub" "${BIN_DIR}/Image-a" "${BIN_DIR}/Image-b"
 rm -f "${BIN_DIR}/boot.vfat" "${BIN_DIR}/wraithos-arm.img"
 
-# Stage into BIN_DIR (genimage resolves 'files = {...}' from inputpath, not rootpath)
 cp "${BIN_DIR}/Image" "${BIN_DIR}/Image-a"
 cp "${BIN_DIR}/Image" "${BIN_DIR}/Image-b"
 mkdir -p "${BIN_DIR}/EFI/BOOT" "${BIN_DIR}/grub/arm64-efi"
@@ -27,23 +25,33 @@ cp "${BOARD_DIR}/grub-arm.cfg" "${BIN_DIR}/grub/grub.cfg"
 cp "$GRUB_CORE_DIR"/*.mod "${BIN_DIR}/grub/arm64-efi/" 2>/dev/null || true
 cp "$GRUB_CORE_DIR"/*.lst "${BIN_DIR}/grub/arm64-efi/" 2>/dev/null || true
 
-# Build BOOTAA64.EFI
+ENVFILE="${BIN_DIR}/grub/grubenv"
+{
+    printf '# GRUB Environment Block\n'
+    printf 'slot=A\n'
+    printf 'tries=0\n'
+    printf 'good=1\n'
+    printf 'seq=0\n'
+    printf 'booted=A\n'
+    printf 'lkg=A\n'
+} > "$ENVFILE"
+N=$((1024 - $(wc -c < "$ENVFILE")))
+printf '%*s' "$N" '' | tr ' ' '#' >> "$ENVFILE"
+chmod 0644 "$ENVFILE"
+
 GRUB_EFI="${BIN_DIR}/EFI/BOOT/BOOTAA64.EFI"
 "$GRUB_MKIMAGE" \
     -d "$GRUB_CORE_DIR" \
     -O arm64-efi \
     -o "$GRUB_EFI" \
     -p "(hd0,gpt1)/grub" \
-    normal configfile linux test part_gpt fat search search_fs_uuid
+    normal configfile linux test part_gpt fat search search_fs_uuid loadenv extcmd
 
 echo "[2] BOOTAA64.EFI: $(stat -c%s "$GRUB_EFI") bytes"
 
-# Run genimage
 GEN_TMP="${BUILD_D}/genimage-arm.tmp"
 rm -rf "$GEN_TMP"
 
-# Empty staging dir for genimage rootpath (no data.ext4 image after
-# Block 4; the wizard formats /dev/vda4 as LUKS on first boot)
 DATA_STAGE="${BUILD_D}/wraithos-arm-data-stage"
 rm -rf "$DATA_STAGE"
 mkdir -p "$DATA_STAGE"

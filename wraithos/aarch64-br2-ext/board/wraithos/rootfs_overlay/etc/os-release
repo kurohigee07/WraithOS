@@ -1,6 +1,5 @@
 NAME="WraithOS"
-VERSION="0.20.0 (Wasm Appliance)"
+VERSION="Wasm Appliance"
 ID=wraithos
-VERSION_ID="0.20.0"
-PRETTY_NAME="WraithOS 0.20.0 (Wasm Appliance)"
+PRETTY_NAME="WraithOS"
 HOME_URL="https://github.com/kurohigee07/Orchestrator-"

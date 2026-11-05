@@ -1,8 +1,15 @@
-# WraithOS global profile (sourced by BusyBox login for ALL shells)
+# WraithOS shell lockdown for login shells.
+# Do not mark readonly here; .bashrc finalizes the lockdown once.
 BASH_ENV=
+ENV=
 PATH=/usr/sbin:/usr/bin:/sbin:/bin
 HISTFILE=/dev/null
 HISTSIZE=0
 HISTFILESIZE=0
-export PATH BASH_ENV HISTFILE HISTSIZE HISTFILESIZE
+INPUTRC=/etc/inputrc
+TMOUT=600
+COLORTERM=truecolor
+export PATH BASH_ENV ENV HISTFILE HISTSIZE HISTFILESIZE INPUTRC TMOUT COLORTERM
+unset PROMPT_COMMAND
 umask 0077
+ulimit -c 0

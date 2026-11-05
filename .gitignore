@@ -26,3 +26,4 @@ orchestrator.toml.bak
 modules/**/*.wasm.capabilities.json
 dist/
 data/
+wraithos/aarch64-br2-ext/board/wraithos/rootfs_overlay/etc/shadow

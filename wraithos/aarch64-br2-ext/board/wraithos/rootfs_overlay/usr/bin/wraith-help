@@ -1,32 +1,36 @@
 #!/bin/sh
-cat << 'HELP'
+cat << 'HELP_TEXT'
 
   WraithOS Quick Reference
-  ─────────────────────────
+  ------------------------
 
   System:
-    rauc status              → gak tersedia (custom A/B)
-    cat /proc/cmdline        → cek slot aktif (slot=A atau B)
-    mount | grep 'on / '     → cek rootfs
+    cat /proc/cmdline              -> active boot slot (slot=A or B)
+    mount | grep ' / '            -> active rootfs
+    wraith-bootenv show           -> boot contract state
+    wraith-bootcheck; echo $?    -> liveness proof (0 = healthy)
 
   Orchestrator:
     wget -qO- http://127.0.0.1:9090/healthz
     wget -qO- http://127.0.0.1:9090/metrics
-    wget -qO- http://127.0.0.1:9090/debug/state
-    cat /var/lib/orchestrator/wraith.log   → log
+    wget -qO- http://127.0.0.1:9090/wizard/status
 
   Modules:
-    ls /modules                              → daftar modul
-    wraith list                              → list via CLI (kalau ada binary)
+    ls /modules
 
   Update:
-    wraith-update /path/to/rootfs.squashfs   → update ke slot lain
-    rm /boot/boot_b && reboot                → rollback ke A
-    ls /boot/                                → cek marker
+    wraith-update /path/to/rootfs.squashfs
+    reboot
+
+  Boot contract:
+    wraith-bootenv show
+    wraith-bootenv trial B
+    wraith-bootenv commit
+    wraith-bootenv demote
 
   Persistent data:
-    /data/orchestrator   → DB, logs
-    /data/modules        → Wasm modul
-    /data/wraith         → config
+    /data/orchestrator   -> DB, logs, wizard state
+    /data/modules        -> Wasm modules
+    /data/wraith         -> config
 
-HELP
+HELP_TEXT
