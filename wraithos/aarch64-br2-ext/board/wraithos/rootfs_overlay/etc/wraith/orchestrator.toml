@@ -15,6 +15,7 @@ max_db_connections = 8
 log_level = "info"
 log_format = "pretty"   # "pretty" | "json"
 metrics_bind = "127.0.0.1:9090"   # empty string = disable
+data_dir = "/var/lib/orchestrator"
 
 [script]
 # Pilih salah satu: inline atau path.

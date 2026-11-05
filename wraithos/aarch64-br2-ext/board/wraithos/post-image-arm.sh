@@ -17,7 +17,7 @@ GENIMAGE="${HOST_D}/bin/genimage"
 
 # Clean previous staging in BIN_DIR
 rm -rf "${BIN_DIR}/EFI" "${BIN_DIR}/grub" "${BIN_DIR}/Image-a" "${BIN_DIR}/Image-b"
-rm -f "${BIN_DIR}/boot.vfat" "${BIN_DIR}/data.ext4" "${BIN_DIR}/wraithos-arm.img"
+rm -f "${BIN_DIR}/boot.vfat" "${BIN_DIR}/wraithos-arm.img"
 
 # Stage into BIN_DIR (genimage resolves 'files = {...}' from inputpath, not rootpath)
 cp "${BIN_DIR}/Image" "${BIN_DIR}/Image-a"
@@ -42,8 +42,8 @@ echo "[2] BOOTAA64.EFI: $(stat -c%s "$GRUB_EFI") bytes"
 GEN_TMP="${BUILD_D}/genimage-arm.tmp"
 rm -rf "$GEN_TMP"
 
-# Empty staging dir for data.ext4 (rootpath = files for ext4; if BIN_DIR,
-# it will copy 300M+ into 128M partition and fail "no free space")
+# Empty staging dir for genimage rootpath (no data.ext4 image after
+# Block 4; the wizard formats /dev/vda4 as LUKS on first boot)
 DATA_STAGE="${BUILD_D}/wraithos-arm-data-stage"
 rm -rf "$DATA_STAGE"
 mkdir -p "$DATA_STAGE"

@@ -227,7 +227,6 @@ fn luks_cmd(args: &[&str], pwd: Option<&str>) -> Result<std::process::Output, St
             .ok_or_else(|| "cryptsetup stdin unavailable".to_string())?;
         si.write_all(p.as_bytes())
             .map_err(|e| format!("key write: {e}"))?;
-        si.write_all(b"\n").map_err(|e| format!("key write: {e}"))?;
     }
     child
         .wait_with_output()

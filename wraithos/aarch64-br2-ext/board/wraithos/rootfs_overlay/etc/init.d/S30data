@@ -4,7 +4,16 @@ case "$1" in
         echo -n "Setting up /data: "
         mkdir -p /data
         if [ -b /dev/vda4 ]; then
-            mount -t ext4 /dev/vda4 /data 2>/dev/null
+            if cryptsetup isLuks /dev/vda4 2>/dev/null; then
+                echo -n "Unlocking /dev/vda4 (LUKS): "
+                if cryptsetup luksOpen /dev/vda4 wraith-data; then
+                    mount -t ext4 /dev/mapper/wraith-data /data 2>/dev/null
+                else
+                    echo "LUKS unlock failed - /data stays unmounted"
+                fi
+            else
+                mount -t ext4 /dev/vda4 /data 2>/dev/null
+            fi
         fi
         if grep -q ' /data ' /proc/mounts 2>/dev/null; then
             mkdir -p /data/orchestrator /data/modules /data/wraith

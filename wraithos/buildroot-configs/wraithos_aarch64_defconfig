@@ -50,6 +50,7 @@ BR2_PACKAGE_HOST_GENEXT2FS=y
 BR2_ROOTFS_POST_IMAGE_SCRIPT="/home/opc/wraithos-aarch64-br2-ext/board/wraithos/post-image-arm.sh"
 BR2_ROOTFS_POST_BUILD_SCRIPT="/home/opc/wraithos-aarch64-br2-ext/board/wraithos/post-build-arm.sh"
 BR2_PACKAGE_CRYPTSETUP=y
+BR2_PACKAGE_E2FSPROGS=y
 BR2_PACKAGE_LIBGCRYPT=y
 BR2_PACKAGE_LIBUUID=y
 BR2_PACKAGE_POPT=y

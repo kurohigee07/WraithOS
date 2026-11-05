@@ -26,8 +26,8 @@ rm -f  "${TARGET_DIR}/usr/lib/libgobject"* 2>/dev/null || true
 rm -f  "${TARGET_DIR}/usr/lib/libgmodule"* 2>/dev/null || true
 
 echo "[post-build] Drop OpenSSL libs (orchestrator static musl + rustls-ring)"
-rm -f  "${TARGET_DIR}/usr/lib/libcrypto"* 2>/dev/null || true
-rm -f  "${TARGET_DIR}/usr/lib/libssl"*    2>/dev/null || true
+# KEPT (cryptsetup needs libcrypto.so.3): rm -f  "${TARGET_DIR}/usr/lib/libcrypto"* 2>/dev/null || true
+# KEPT: rm -f  "${TARGET_DIR}/usr/lib/libssl"*    2>/dev/null || true
 rm -f  "${TARGET_DIR}/usr/bin/openssl"    2>/dev/null || true
 
 echo "[post-build] Drop SQLite shared (bundled in orchestrator)"
