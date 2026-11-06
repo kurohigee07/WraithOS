@@ -83,6 +83,18 @@ async fn build_shared(
         return Err(ApiError::BadRequest("empty source body".into()));
     }
 
+    // Build path hardcodes capabilities to vec![] and persists no
+    // .wasm.capabilities.json sidecar; built modules always fall back to
+    // the global CapabilitySet on load. Reject early if the caller
+    // expects per-module caps, so the mismatch is explicit instead of
+    // silently ignored. Use POST /modules to upload a pre-built wasm
+    // with a per-module caps sidecar.
+    if headers.contains_key("x-module-capabilities") {
+        return Err(ApiError::BadRequest(
+            "build path ignores X-Module-Capabilities; built modules always use the global capability set. Omit this header to accept global caps, or upload a pre-built wasm via POST /modules to set per-module capabilities.".into(),
+        ));
+    }
+
     // Global build slot (1 at a time — cargo lock contention).
     let _build_permit = match s.build_semaphore.clone().try_acquire_owned() {
         Ok(p) => p,
