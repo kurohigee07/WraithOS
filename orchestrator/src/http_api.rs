@@ -161,7 +161,7 @@ async fn upload_shared(
         return Err(ApiError::TenantModuleLimit { current: cur, max });
     }
 
-    verify_if_needed(s, headers, &body)?;
+    let sig_bytes = verify_if_needed(s, headers, &body)?;
     let quota = parse_quota_header(headers)?.unwrap_or_else(|| s.registry.default_quota());
     let quota_state = s
         .registry
@@ -173,6 +173,12 @@ async fn upload_shared(
     let path = tenant_dir.join(format!("{id}.wasm"));
     crate::fs_util::atomic_write(&path, &body)
         .map_err(|e| ApiError::Internal(format!("disk: {e}")))?;
+    if let Some(sig) = &sig_bytes {
+        if let Err(e) = crate::module_registry::write_sig_sidecar(&tenant_dir, &id, sig) {
+            let _ = std::fs::remove_file(&path);
+            return Err(ApiError::Internal(format!("sig sidecar: {e}")));
+        }
+    }
     write_quota_sidecar(&tenant_dir, &id, &quota)
         .map_err(|e| ApiError::Internal(format!("sidecar: {e}")))?;
     crate::module_registry::write_capabilities_sidecar(
@@ -187,6 +193,7 @@ async fn upload_shared(
         .is_err()
     {
         let _ = std::fs::remove_file(&path);
+        let _ = std::fs::remove_file(tenant_dir.join(format!("{id}.wasm.sig")));
         return Err(ApiError::Conflict(format!(
             "module '{id}' already exists (race)"
         )));
@@ -210,7 +217,7 @@ async fn replace_shared(
     body: Bytes,
 ) -> Result<Response, ApiError> {
     validate_id(id)?;
-    verify_if_needed(s, headers, &body)?;
+    let sig_bytes = verify_if_needed(s, headers, &body)?;
 
     let quota = match parse_quota_header(headers)? {
         Some(q) => q,
@@ -230,6 +237,12 @@ async fn replace_shared(
     let path = tenant_dir.join(format!("{id}.wasm"));
     crate::fs_util::atomic_write(&path, &body)
         .map_err(|e| ApiError::Internal(format!("disk: {e}")))?;
+    if let Some(sig) = &sig_bytes {
+        if let Err(e) = crate::module_registry::write_sig_sidecar(&tenant_dir, id, sig) {
+            let _ = std::fs::remove_file(&path);
+            return Err(ApiError::Internal(format!("sig sidecar: {e}")));
+        }
+    }
     write_quota_sidecar(&tenant_dir, id, &quota)
         .map_err(|e| ApiError::Internal(format!("sidecar: {e}")))?;
     crate::module_registry::write_capabilities_sidecar(
@@ -273,6 +286,18 @@ async fn delete_shared(s: &ApiState, tenant: &str, id: &str) -> Result<Response,
     if let Err(e) = std::fs::remove_file(&quota_path) {
         if e.kind() != std::io::ErrorKind::NotFound {
             warn!(id = %id, err = %e, "delete: quota file removal failed");
+        }
+    }
+    let sig_path = tenant_dir.join(format!("{id}.wasm.sig"));
+    if let Err(e) = std::fs::remove_file(&sig_path) {
+        if e.kind() != std::io::ErrorKind::NotFound {
+            warn!(id = %id, err = %e, "delete: sig file removal failed");
+        }
+    }
+    let caps_path = tenant_dir.join(format!("{id}.wasm.capabilities.json"));
+    if let Err(e) = std::fs::remove_file(&caps_path) {
+        if e.kind() != std::io::ErrorKind::NotFound {
+            warn!(id = %id, err = %e, "delete: caps file removal failed");
         }
     }
 
@@ -456,9 +481,13 @@ pub(crate) fn validate_id(id: &str) -> Result<(), ApiError> {
     Ok(())
 }
 
-fn verify_if_needed(s: &ApiState, headers: &HeaderMap, body: &[u8]) -> Result<(), ApiError> {
+fn verify_if_needed(
+    s: &ApiState,
+    headers: &HeaderMap,
+    body: &[u8],
+) -> Result<Option<Vec<u8>>, ApiError> {
     if !s.registry.has_trusted_keys() {
-        return Ok(());
+        return Ok(None);
     }
     let sig_hex = headers
         .get("x-module-signature")
@@ -472,7 +501,8 @@ fn verify_if_needed(s: &ApiState, headers: &HeaderMap, body: &[u8]) -> Result<()
         .map_err(|e| ApiError::BadRequest(format!("invalid signature hex: {e}")))?;
     s.registry
         .verify_signature(body, &sig_bytes)
-        .map_err(|e| ApiError::BadRequest(format!("signature: {e}")))
+        .map_err(|e| ApiError::BadRequest(format!("signature: {e}")))?;
+    Ok(Some(sig_bytes))
 }
 
 fn resolve_capabilities(
