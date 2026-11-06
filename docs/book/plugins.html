@@ -1,0 +1,130 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#0c0b12"><meta name="description" content="Plugin development guide A plugin is a WebAssembly component implementing the host s WIT world. You can start without understanding every Wasmtime internal: compile a small Rust li"><title>Plugin development — Wraith</title><link rel="icon" href="../assets/favicon.svg" type="image/svg+xml"><link rel="stylesheet" href="../assets/style.css"><script defer src="../assets/search-index.js"></script><script defer src="../assets/app.js"></script></head><body data-base="../"><a class="skip-link" href="#article">Skip to article</a><header class="site-header"><div class="header-inner"><a class="brand" href="../index.html"><img src="../assets/favicon.svg" alt="" width="32" height="32"><span>wraith<span class="brand-dot">.</span></span><span class="brand-tag">DOCUMENTATION</span></a><nav class="desktop-nav" aria-label="Main navigation"><a href="../index.html#runtime">Runtime</a><a href="../index.html#request-lab">Labs</a><a href="../index.html#benchmarks">Benchmarks</a><a href="quickstart.html">Guides</a><a href="source-map.html">Source map</a></nav><div class="header-actions"><button class="search-trigger" data-search-open aria-label="Search documentation"><span>Search docs</span><kbd>⌘ K</kbd></button><button class="menu-toggle" aria-label="Open navigation" aria-expanded="false">☰</button></div></div><nav class="mobile-nav" aria-label="Mobile guide navigation" hidden><a href="../index.html">Interactive overview</a><a href="quickstart.html" >Quick start</a><a href="architecture.html" >Architecture</a><a href="plugins.html" class="active" aria-current="page">Plugin development</a><a href="api.html" >HTTP API</a><a href="configuration.html" >Configuration</a><a href="sdk-cli.html" >SDK & CLI</a><a href="operations.html" >Operations</a><a href="wraithos.html" >WraithOS</a><a href="security.html" >Security boundaries</a><a href="benchmarks.html" >Benchmarks</a><a href="testing.html" >Testing & contributing</a><a href="source-map.html" >Source map</a></nav><div class="reading-progress" aria-hidden="true"></div></header><div class="book-layout"><aside class="book-sidebar" aria-label="Documentation guides"><a class="back-home" href="../index.html">← Interactive overview</a><span class="eyebrow">THE DOCUMENTATION</span><a href="quickstart.html" >Quick start</a><a href="architecture.html" >Architecture</a><a href="plugins.html" class="active" aria-current="page">Plugin development</a><a href="api.html" >HTTP API</a><a href="configuration.html" >Configuration</a><a href="sdk-cli.html" >SDK & CLI</a><a href="operations.html" >Operations</a><a href="wraithos.html" >WraithOS</a><a href="security.html" >Security boundaries</a><a href="benchmarks.html" >Benchmarks</a><a href="testing.html" >Testing & contributing</a><a href="source-map.html" >Source map</a></aside><main class="book-article" id="article"><div class="article-meta"><span class="pill violet">SOURCE-GUIDED</span><span>7 min read</span><a href="../plugins.md">Markdown source</a></div><h1 id="plugin-development-guide">Plugin development guide</h1><p>A plugin is a WebAssembly <strong>component</strong> implementing the host&#39;s WIT world. You can start without understanding every Wasmtime internal: compile a small Rust library, upload it, and call its <code>run</code> export over HTTP.</p>
+<h2 id="the-contract-is-the-source-of-truth">The contract is the source of truth <a class="heading-anchor" href="#the-contract-is-the-source-of-truth" aria-label="Link to The contract is the source of truth">#</a></h2><p><code>orchestrator/wit/host-capabilities.wit</code> defines:</p>
+<div class="code-block"><button class="copy-code" aria-label="Copy code">Copy</button><pre><code class="language-wit">package orchestrator:host;
+
+interface http {
+    get: func(url: string) -&gt; result&lt;string, string&gt;;
+}
+interface tcp {
+    connect: func(host: string, port: u16) -&gt; result&lt;u32, string&gt;;
+    read: func(handle: u32, max-bytes: u32) -&gt; result&lt;list&lt;u8&gt;, string&gt;;
+    write: func(handle: u32, data: list&lt;u8&gt;) -&gt; result&lt;u32, string&gt;;
+    close: func(handle: u32) -&gt; result&lt;_, string&gt;;
+}
+interface events {
+    emit: func(kind: string, payload-json: string) -&gt; result&lt;_, string&gt;;
+}
+world plugin {
+    import http;
+    import tcp;
+    import events;
+    export run: func(payload: string) -&gt; result&lt;string, string&gt;;
+}</code></pre></div><p>WIT strings are UTF-8. The host adds a JSON convention on top: input is serialized JSON and output must be serialized JSON. The component-model world, not a Rust trait name alone, determines compatibility.</p>
+<h2 id="complete-offline-example">Complete offline example <a class="heading-anchor" href="#complete-offline-example" aria-label="Link to Complete offline example">#</a></h2><p>The runnable files are in <code>docs/examples/empty-plugin/</code>. Its manifest declares a standalone workspace so it is not accidentally treated as a host workspace member.</p>
+<p><code>Cargo.toml</code>:</p>
+<div class="code-block"><button class="copy-code" aria-label="Copy code">Copy</button><pre><code class="language-toml">[package]
+name = &quot;empty-plugin&quot;
+version = &quot;0.1.0&quot;
+edition = &quot;2021&quot;
+
+[lib]
+crate-type = [&quot;cdylib&quot;]
+
+[dependencies]
+wit-bindgen = &quot;0.37&quot;
+
+[workspace]</code></pre></div><p><code>src/lib.rs</code>:</p>
+<div class="code-block"><button class="copy-code" aria-label="Copy code">Copy</button><pre><code class="language-rust">wit_bindgen::generate!({ path: &quot;wit&quot;, world: &quot;plugin&quot; });
+
+struct Empty;
+
+impl Guest for Empty {
+    fn run(_payload: String) -&gt; Result&lt;String, String&gt; {
+        Ok(&quot;{}&quot;.to_string())
+    }
+}
+
+export!(Empty);</code></pre></div><p>The example includes a copy of the host WIT file. If the contract changes, update that copy deliberately. Build from the repository root:</p>
+<div class="code-block"><button class="copy-code" aria-label="Copy code">Copy</button><pre><code class="language-bash">rustup target add wasm32-wasip2
+cargo build --manifest-path docs/examples/empty-plugin/Cargo.toml \
+  --target wasm32-wasip2 --release</code></pre></div><p>Upload and execute:</p>
+<div class="code-block"><button class="copy-code" aria-label="Copy code">Copy</button><pre><code class="language-bash">curl --fail -X POST http://127.0.0.1:9090/modules \
+  -H &#39;X-Module-Id: empty&#39; \
+  --data-binary @docs/examples/empty-plugin/target/wasm32-wasip2/release/empty_plugin.wasm
+
+curl --fail -X POST http://127.0.0.1:9090/modules/empty/execute \
+  -H &#39;Content-Type: application/json&#39; -d &#39;{}&#39;</code></pre></div><p>This example is behaviorally equivalent to the benchmark guest, not a byte-for-byte reproduction of <code>empty3</code>.</p>
+<h2 id="input-and-output-patterns">Input and output patterns <a class="heading-anchor" href="#input-and-output-patterns" aria-label="Link to Input and output patterns">#</a></h2><h3 id="echo-a-json-value">Echo a JSON value <a class="heading-anchor" href="#echo-a-json-value" aria-label="Link to Echo a JSON value">#</a></h3><div class="code-block"><button class="copy-code" aria-label="Copy code">Copy</button><pre><code class="language-rust">fn run(payload: String) -&gt; Result&lt;String, String&gt; {
+    serde_json::from_str::&lt;serde_json::Value&gt;(&amp;payload)
+        .map_err(|e| e.to_string())?;
+    Ok(payload)
+}</code></pre></div><p>This requires adding serde_json to the guest manifest. The host already validates incoming HTTP JSON, but validating again makes the guest reusable outside this host.</p>
+<h3 id="return-a-typed-object">Return a typed object <a class="heading-anchor" href="#return-a-typed-object" aria-label="Link to Return a typed object">#</a></h3><p>Use a JSON library rather than interpolating untrusted strings into JSON. The checked-in sample has a small escape helper for its limited output; a real plugin should prefer serde_json or an equivalent serializer.</p>
+<div class="code-block"><button class="copy-code" aria-label="Copy code">Copy</button><pre><code class="language-rust">#[derive(serde::Serialize)]
+struct Output { ok: bool, message: String }
+
+fn run(_payload: String) -&gt; Result&lt;String, String&gt; {
+    serde_json::to_string(&amp;Output {
+        ok: true,
+        message: &quot;completed&quot;.into(),
+    }).map_err(|e| e.to_string())
+}</code></pre></div><p>Returning <code>Ok(&quot;not json&quot;)</code> fails at the host&#39;s result parser. Returning <code>Err(&quot;reason&quot;)</code> becomes a guest error. Neither is a special HTTP response object.</p>
+<h2 id="http-from-a-guest">HTTP from a guest <a class="heading-anchor" href="#http-from-a-guest" aria-label="Link to HTTP from a guest">#</a></h2><div class="code-block"><button class="copy-code" aria-label="Copy code">Copy</button><pre><code class="language-rust">match orchestrator::host::http::get(&quot;https://example.com&quot;) {
+    Ok(body) =&gt; Ok(format!(&quot;{{\&quot;bytes\&quot;:{}}}&quot;, body.len())),
+    Err(error) =&gt; Err(error),
+}</code></pre></div><p>The host checks the hostname allowlist before sending. It rejects non-success HTTP status and follows no redirects. <code>http_timeout_secs</code> controls the outbound client timeout. There is no guest-visible response-header API or dedicated response-size cap in this contract.</p>
+<p>A denied host returns <code>Err</code> to the guest. You may propagate it (usually HTTP 500) or catch it and return a structured report (potentially HTTP 200). Define your application&#39;s error semantics explicitly.</p>
+<h2 id="tcp-from-a-guest">TCP from a guest <a class="heading-anchor" href="#tcp-from-a-guest" aria-label="Link to TCP from a guest">#</a></h2><div class="code-block"><button class="copy-code" aria-label="Copy code">Copy</button><pre><code class="language-rust">let handle = orchestrator::host::tcp::connect(&quot;example.com&quot;, 80)?;
+let request = b&quot;GET / HTTP/1.0\r\nHost: example.com\r\n\r\n&quot;;
+orchestrator::host::tcp::write(handle, request)?;
+let bytes = orchestrator::host::tcp::read(handle, 8192)?;
+orchestrator::host::tcp::close(handle)?;</code></pre></div><p>A read returns available bytes up to the requested maximum; it is not guaranteed to return a complete protocol message. Implement framing and handle partial reads. <code>write</code> uses <code>write_all</code> internally and reports the buffer length on success. The contract exposes raw TCP, not TLS; use the HTTP bridge for verified HTTPS.</p>
+<p>Close handles on every path you control. The current registry is global and owner-keyed by module ID; it is not automatically cleared when an invocation ends. Avoid handle leaks and do not treat this as strong isolation between identically named modules in different tenants.</p>
+<h2 id="emit-an-event">Emit an event <a class="heading-anchor" href="#emit-an-event" aria-label="Link to Emit an event">#</a></h2><div class="code-block"><button class="copy-code" aria-label="Copy code">Copy</button><pre><code class="language-rust">orchestrator::host::events::emit(
+    &quot;job.finished&quot;,
+    &quot;{\&quot;job_id\&quot;:\&quot;demo\&quot;,\&quot;ok\&quot;:true}&quot;
+)?;</code></pre></div><p>The second argument is a JSON string. Capability kinds match exactly unless <code>*</code> is configured. The bus adds <code>source_module</code> from the host manifest; the guest does not choose that field.</p>
+<p>Observe events at <code>/ws/events</code> or in the dashboard. Delivery is best-effort broadcast, not a durable job queue. Do not use it as the sole record of a financial or irreversible action.</p>
+<h2 id="rhai-rules">Rhai rules <a class="heading-anchor" href="#rhai-rules" aria-label="Link to Rhai rules">#</a></h2><p>An operator-configured script can react to guest events:</p>
+<div class="code-block"><button class="copy-code" aria-label="Copy code">Copy</button><pre><code class="language-rhai">log_info(&quot;event: &quot; + event_kind);
+
+if event_kind == &quot;job.finished&quot; {
+    emit_event(&quot;job.observed&quot;, &quot;{\&quot;observer\&quot;:\&quot;rhai\&quot;}&quot;);
+}</code></pre></div><p><code>event_payload</code> is a string. The current worker exposes only <code>log_info</code> and <code>emit_event</code> plus those two variables; it does not automatically provide JSON parsing, HTTP, SQL, or arbitrary Rust callbacks. Events emitted by source <code>rhai</code> are skipped by that worker to prevent self-loops.</p>
+<p>The script is trusted code without an explicit fuel/time limit. Keep it small and controlled by the operator, not uploaded by arbitrary tenants.</p>
+<h2 id="capabilities-and-quotas-at-upload">Capabilities and quotas at upload <a class="heading-anchor" href="#capabilities-and-quotas-at-upload" aria-label="Link to Capabilities and quotas at upload">#</a></h2><div class="code-block"><button class="copy-code" aria-label="Copy code">Copy</button><pre><code class="language-bash">curl --fail -X POST http://127.0.0.1:9090/modules \
+  -H &#39;X-Module-Id: jobs&#39; \
+  -H &#39;X-Module-Quota: {&quot;max_memory_mb&quot;:64,&quot;max_concurrent&quot;:1,&quot;rate_limit_per_sec&quot;:5}&#39; \
+  -H &#39;X-Module-Capabilities: [{&quot;type&quot;:&quot;http-get&quot;,&quot;allowed_hosts&quot;:[&quot;api.example.com&quot;]},{&quot;type&quot;:&quot;emit-event&quot;,&quot;allowed_kinds&quot;:[&quot;job.finished&quot;]}]&#39; \
+  --data-binary @jobs.wasm</code></pre></div><p>The capability header is a permission grant, not an intersection with global policy. Only trusted uploaders should set it. Omitting it uses the global fallback. An explicitly empty array is not a durable deny-all after restart because the loader treats an empty sidecar as fallback. For no host access, use a guest that makes no host calls and enforce an operator-controlled deployment policy until this boundary is hardened.</p>
+<p><code>db-query</code> and <code>log</code> exist in shared capability types but are not WIT guest imports. Rhai logging uses the global log permission.</p>
+<h2 id="build-from-source">Build from source <a class="heading-anchor" href="#build-from-source" aria-label="Link to Build from source">#</a></h2><p>The optional HTTP compiler expects an archive root like:</p>
+<div class="code-block"><button class="copy-code" aria-label="Copy code">Copy</button><pre><code class="language-text">Cargo.toml
+src/lib.rs
+wit/host-capabilities.wit</code></pre></div><p>Create it from inside a standalone guest directory:</p>
+<div class="code-block"><button class="copy-code" aria-label="Copy code">Copy</button><pre><code class="language-bash">tar -czf /tmp/guest-source.tar.gz Cargo.toml src wit</code></pre></div><p>Do not archive the parent directory itself: the server looks for <code>Cargo.toml</code> at extraction root. The crate must produce <code>target/wasm32-wasip2/release/&lt;package_name_with_underscores&gt;.wasm</code> through a <code>cdylib</code> library.</p>
+<p>Server prerequisites:</p>
+<ul>
+<li><code>enable_build=true</code>; startup requires Bubblewrap.</li>
+<li>Cargo at <code>&lt;cargo_home&gt;/bin/cargo</code> and a discoverable rustup toolchain.</li>
+<li>The <code>wasm32-wasip2</code> target installed in that toolchain.</li>
+<li>With <code>enable_build_network=false</code>, all crates/build dependencies must already be available in the Cargo cache. The cache is mounted read-only; a cold dependency fetch cannot populate it in offline mode.</li>
+<li>With network enabled, the sandbox shares the network namespace; this increases exfiltration risk from build scripts.</li>
+</ul>
+<p>The server uses <code>bwrap --unshare-all</code>, read-only system/toolchain mounts, a writable source directory, tmpfs home/tmp, and optional <code>--share-net</code>. It allows one build at a time and kills the child on drop/timeout. This is mitigation, not an audited multi-tenant compiler boundary. Tar extraction happens before the Cargo sandbox; archive trust and resource consumption still matter.</p>
+<p>The outer HTTP timeout is 60 seconds while Cargo&#39;s timeout is 300 seconds. A client timeout does not prove compilation stopped. Poll module state/logs rather than blindly retrying and creating competing work.</p>
+<p><strong>Persistence caveat:</strong> this path does not verify <code>X-Module-Signature</code>, save a signature sibling, or persist a capabilities sidecar. It uses global capabilities. With signing enforcement enabled, a built module may be skipped on the next startup. Prefer offline compilation plus a controlled signing/deployment workflow for reproducible releases.</p>
+<h2 id="sign-a-component">Sign a component <a class="heading-anchor" href="#sign-a-component" aria-label="Link to Sign a component">#</a></h2><p>Module signatures are raw Ed25519 over the exact <code>.wasm</code> bytes. They are separate from GPG release signatures.</p>
+<p>Using a trusted signing tool that supports raw Ed25519 keys, produce a 64-byte signature. At upload, encode it as 128 hex characters in <code>X-Module-Signature</code>. For disk loading, place it beside the component as <code>&lt;id&gt;.wasm.sig</code> in raw binary form and configure the corresponding 32-byte public key as hex in <code>trusted_signer_keys</code>.</p>
+<p>The repository includes signing helpers for <strong>release tarballs</strong>, not a complete raw-Wasm signing CLI. Do not feed a GPG <code>.asc</code> signature to the module verifier. See <a href="security.html#signatures">signature lifecycle gaps</a>.</p>
+<h2 id="compatibility-and-debugging-checklist">Compatibility and debugging checklist <a class="heading-anchor" href="#compatibility-and-debugging-checklist" aria-label="Link to Compatibility and debugging checklist">#</a></h2><ul>
+<li>Build a component for <code>wasm32-wasip2</code>, not a core module for an unspecified target.</li>
+<li>Use the exact WIT package/world understood by the host.</li>
+<li>Export <code>run</code> through the generated guest bindings.</li>
+<li>Return valid JSON text on success.</li>
+<li>Keep guest dependencies small; linear-memory caps do not include all host overhead.</li>
+<li>Inspect startup warnings if a disk module is skipped.</li>
+<li>Check capability errors inside sample-style HTTP 200 reports.</li>
+<li>Treat WIT/bindgen/Wasmtime upgrades as coordinated host/guest changes and rerun integration tests.</li>
+</ul>
+<div class="book-bottom"><a href="architecture.html">← Architecture</a><a href="api.html">HTTP API →</a></div></main><aside class="book-toc" aria-label="On this page"><span class="eyebrow">ON THIS PAGE</span><a href="#the-contract-is-the-source-of-truth">The contract is the source of truth</a><a href="#complete-offline-example">Complete offline example</a><a href="#input-and-output-patterns">Input and output patterns</a><a href="#http-from-a-guest">HTTP from a guest</a><a href="#tcp-from-a-guest">TCP from a guest</a><a href="#emit-an-event">Emit an event</a><a href="#rhai-rules">Rhai rules</a><a href="#capabilities-and-quotas-at-upload">Capabilities and quotas at upload</a><a href="#build-from-source">Build from source</a><a href="#sign-a-component">Sign a component</a><a href="#compatibility-and-debugging-checklist">Compatibility and debugging checklist</a></aside></div><dialog id="search-dialog" aria-label="Search documentation"><div class="search-box"><div class="search-input-row"><span>⌕</span><input id="search-input" type="search" placeholder="Search routes, boot slots, quotas…" autocomplete="off" aria-label="Search documentation"><button data-search-close aria-label="Close search">Esc</button></div><div id="search-results" class="search-results"></div><div class="search-footer">↑ ↓ to navigate · Enter to open · Esc to close</div></div></dialog></body></html>

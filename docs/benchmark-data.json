@@ -1,0 +1,31 @@
+{
+  "provenance": "Maintainer-supplied in the documentation request; not independently rerun",
+  "date_utc": "2026-11-04T08:07:39Z",
+  "reported_orchestrator_version": "v0.27.1",
+  "checkout_crate_version": "0.1.0",
+  "platform": "Oracle Cloud VPS",
+  "kernel": "6.9.0-207.111.5.4.el9uek.x86_64",
+  "binary": "x86_64-unknown-linux-musl, static, stripped",
+  "runtime": "wasmtime 48.0.8 (Cranelift JIT)",
+  "config": {"max_concurrent_wasm": 2, "wasm_memory_limit_mb": 256, "wasm_acquire_timeout_secs": 10},
+  "module": {"id": "empty3", "size_bytes": 68405, "cold_build_ms": 8988, "body": "Returns {} immediately; no I/O or intentional compute"},
+  "procedure": {"warmup_requests": 3, "measured_requests": 20, "total_metric_count": 23, "concurrency": "sequential", "client": "curl, new process and TCP connection per request", "server": "127.0.0.1:9090"},
+  "wall": {"real_seconds": 0.122, "user_seconds": 0.034, "sys_seconds": 0.058, "mean_ms_per_request": 6.1},
+  "execution": {"sum_seconds": 0.004159642, "count": 23, "mean_microseconds": 180.854, "reported_quantiles": [0, 0, 0, 0, 0, 0, 0]},
+  "pool_wait": {"sum_seconds": 0.000033360999999999994, "count": 23, "mean_microseconds": 1.450478260869565, "reported_quantiles": [0, 0, 0, 0, 0, 0, 0]},
+  "result": {"ok_count": 23, "reported_saturation_events": 0, "single_response": {}, "single_http_status": 200},
+  "quantile_levels": [0, 0.5, 0.9, 0.95, 0.99, 0.999, 1],
+  "audit_excerpt": [
+    {"module_id": "empty3", "status": "ok", "duration_ms": 0, "error_message": null, "executed_at": "2026-11-04 08:07:39"},
+    {"module_id": "empty3", "status": "ok", "duration_ms": 0, "error_message": null, "executed_at": "2026-11-04 08:07:39"},
+    {"module_id": "empty3", "status": "ok", "duration_ms": 0, "error_message": null, "executed_at": "2026-11-04 08:07:39"}
+  ],
+  "scope_notes": [
+    "Execution includes Store creation, instantiate_async, input serialization, call_run, and output JSON parsing.",
+    "Execution excludes HTTP, module lookup, quota acquisition, and audit insertion; pool wait is separate.",
+    "Metrics include three warmups; wall timing covers only the following 20 requests.",
+    "Reported zero quantiles are not evidence of zero latency or valid sub-millisecond tail estimates.",
+    "The remainder outside execution timing is not attributed quantitatively to individual HTTP/client components.",
+    "The benchmark guest is not the checked-in sample.wasm; the exact benchmark commit and binary hash were not supplied."
+  ]
+}
