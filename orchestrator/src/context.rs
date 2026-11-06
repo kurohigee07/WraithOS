@@ -66,17 +66,23 @@ impl WasmPool {
     }
 
     pub async fn acquire(&self) -> Result<WasmPermit> {
-        let permit = tokio::time::timeout(self.acquire_timeout, self.sem.clone().acquire_owned())
-            .await
-            .map_err(|_| {
-                OrchestratorError::CapabilityDenied(format!(
-                    "wasm pool acquire timeout after {:?} ({}/{} in flight)",
-                    self.acquire_timeout,
-                    self.total - self.sem.available_permits(),
-                    self.total,
-                ))
-            })?
-            .map_err(|e| OrchestratorError::CapabilityDenied(format!("wasm pool closed: {e}")))?;
+        let in_flight = self.total - self.sem.available_permits();
+        let permit = match tokio::time::timeout(
+            self.acquire_timeout,
+            self.sem.clone().acquire_owned(),
+        )
+        .await
+        {
+            Err(_) => {
+                return Err(OrchestratorError::WasmPoolTimeout {
+                    wait: self.acquire_timeout,
+                    in_flight,
+                    total: self.total,
+                });
+            }
+            Ok(Err(_)) => return Err(OrchestratorError::WasmPoolClosed),
+            Ok(Ok(p)) => p,
+        };
 
         let n = self.inflight.fetch_add(1, Ordering::Relaxed) + 1;
         metrics::gauge!("wasm_pool_in_flight").set(n as f64);
@@ -417,10 +423,13 @@ mod tests {
         // Kapasitas penuh: acquire ke-3 harus timeout.
         let err = pool.acquire().await.err().expect("must saturate");
         match err {
-            OrchestratorError::CapabilityDenied(msg) => {
-                assert!(msg.contains("timeout"), "unexpected message: {msg}");
+            OrchestratorError::WasmPoolTimeout {
+                in_flight, total, ..
+            } => {
+                assert_eq!(in_flight, 2);
+                assert_eq!(total, 2);
             }
-            other => panic!("expected CapabilityDenied, got {other:?}"),
+            other => panic!("expected WasmPoolTimeout, got {other:?}"),
         }
 
         // Release satu, slot kembali tersedia.

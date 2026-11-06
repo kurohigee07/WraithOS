@@ -330,6 +330,9 @@ async fn execute_shared(
         Err(QuotaExecError::ConcurrencyTimeout) => {
             Err(ApiError::Unavailable("module concurrency timeout".into()))
         }
+        Err(QuotaExecError::PoolTimeout) => {
+            Err(ApiError::Unavailable("wasm pool acquire timeout".into()))
+        }
         Err(QuotaExecError::Internal(e)) => Err(ApiError::Internal(format!("execute: {e}"))),
     }
 }
