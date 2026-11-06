@@ -1,0 +1,162 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#0c0b12"><meta name="description" content="Architecture: follow a request to the source This is a source-level description of commit 20cb378 , not an aspirational design document. The interactive request lab simplifies timi"><title>Architecture — Wraith</title><link rel="icon" href="../assets/favicon.svg" type="image/svg+xml"><link rel="stylesheet" href="../assets/style.css"><script defer src="../assets/search-index.js"></script><script defer src="../assets/app.js"></script></head><body data-base="../"><a class="skip-link" href="#article">Skip to article</a><header class="site-header"><div class="header-inner"><a class="brand" href="../index.html"><img src="../assets/favicon.svg" alt="" width="32" height="32"><span>wraith<span class="brand-dot">.</span></span><span class="brand-tag">DOCUMENTATION</span></a><nav class="desktop-nav" aria-label="Main navigation"><a href="../index.html#runtime">Runtime</a><a href="../index.html#request-lab">Labs</a><a href="../index.html#benchmarks">Benchmarks</a><a href="quickstart.html">Guides</a><a href="source-map.html">Source map</a></nav><div class="header-actions"><button class="search-trigger" data-search-open aria-label="Search documentation"><span>Search docs</span><kbd>⌘ K</kbd></button><button class="menu-toggle" aria-label="Open navigation" aria-expanded="false">☰</button></div></div><nav class="mobile-nav" aria-label="Mobile guide navigation" hidden><a href="../index.html">Interactive overview</a><a href="quickstart.html" >Quick start</a><a href="architecture.html" class="active" aria-current="page">Architecture</a><a href="plugins.html" >Plugin development</a><a href="api.html" >HTTP API</a><a href="configuration.html" >Configuration</a><a href="sdk-cli.html" >SDK & CLI</a><a href="operations.html" >Operations</a><a href="wraithos.html" >WraithOS</a><a href="security.html" >Security boundaries</a><a href="benchmarks.html" >Benchmarks</a><a href="testing.html" >Testing & contributing</a><a href="source-map.html" >Source map</a></nav><div class="reading-progress" aria-hidden="true"></div></header><div class="book-layout"><aside class="book-sidebar" aria-label="Documentation guides"><a class="back-home" href="../index.html">← Interactive overview</a><span class="eyebrow">THE DOCUMENTATION</span><a href="quickstart.html" >Quick start</a><a href="architecture.html" class="active" aria-current="page">Architecture</a><a href="plugins.html" >Plugin development</a><a href="api.html" >HTTP API</a><a href="configuration.html" >Configuration</a><a href="sdk-cli.html" >SDK & CLI</a><a href="operations.html" >Operations</a><a href="wraithos.html" >WraithOS</a><a href="security.html" >Security boundaries</a><a href="benchmarks.html" >Benchmarks</a><a href="testing.html" >Testing & contributing</a><a href="source-map.html" >Source map</a></aside><main class="book-article" id="article"><div class="article-meta"><span class="pill violet">SOURCE-GUIDED</span><span>9 min read</span><a href="../architecture.md">Markdown source</a></div><h1 id="architecture-follow-a-request-to-the-source">Architecture: follow a request to the source</h1><p>This is a source-level description of commit <code>20cb378</code>, not an aspirational design document. The interactive request lab simplifies timing for teaching; the sequence below describes the actual code.</p>
+<h2 id="system-overview">System overview <a class="heading-anchor" href="#system-overview" aria-label="Link to System overview">#</a></h2><figure class="diagram"><img src="../assets/architecture-flow.svg" alt="Wraith request, host-import, event, and observability flow" width="1120" height="650"><figcaption>Source-guided overview. The surrounding text explains exact behavior and limitations.</figcaption></figure><h2 id="repository-boundaries">Repository boundaries <a class="heading-anchor" href="#repository-boundaries" aria-label="Link to Repository boundaries">#</a></h2><p>The Cargo workspace has five members:</p>
+<ul>
+<li><code>orchestrator</code>: library plus thin <code>main.rs</code> binary.</li>
+<li><code>shared-types</code>: serializable manifest, capability, and quota types.</li>
+<li><code>sample-plugin</code>: a <code>cdylib</code> guest; excluded from default workspace builds.</li>
+<li><code>wraith-sdk</code>: HTTP client, not an embedding of Wasmtime.</li>
+<li><code>wraith-cli</code>: Clap interface over the SDK.</li>
+</ul>
+<p>WraithOS is outside the Cargo workspace. It packages a separately cross-compiled orchestrator into Buildroot filesystem overlays.</p>
+<h2 id="startup-sequence">Startup sequence <a class="heading-anchor" href="#startup-sequence" aria-label="Link to Startup sequence">#</a></h2><p><code>orchestrator/src/main.rs</code> performs the following, in order:</p>
+<ol>
+<li>Parse CLI flags. Load TOML if the selected file exists; otherwise use Rust defaults. Apply CLI overrides for module directory and logging.</li>
+<li>Initialize tracing. <code>RUST_LOG</code> takes precedence over the configured log filter. <code>--dry-run</code> exits here.</li>
+<li>Warn if global Wasm concurrency is at least available CPU parallelism.</li>
+<li>Install the Prometheus recorder and build a shared Wasmtime engine with component-model and epoch interruption enabled.</li>
+<li>Start a native epoch ticker thread: one tick every 100 ms.</li>
+<li>Build <code>AppContext</code>: install the ring TLS provider, construct reqwest, open SQLite with WAL, create the audit table, and allocate socket/Wasm registries.</li>
+<li>Migrate recognized flat module files into <code>modules/default/</code>; existing destinations are not overwritten. The destination is literally <code>default</code>, even if <code>default_tenant</code> has another name.</li>
+<li>If global authentication is required, verify that the default tenant has a token configured.</li>
+<li>Resolve Cargo home; if source builds are enabled, require <code>bwrap --version</code> to succeed.</li>
+<li>Construct the tenant registry, validate Argon2 PHC syntax, and load module directories/components/sidecars/signatures.</li>
+<li>Construct wizard state and the shared <code>ApiState</code>; bind the HTTP listener if <code>metrics_bind</code> is nonempty.</li>
+<li>Compile the Rhai AST, subscribe its worker, start a Rust logging subscriber, and publish one <code>scan.completed</code> smoke event.</li>
+<li>Wait for SIGINT/SIGTERM on Unix, then run shutdown cleanup.</li>
+</ol>
+<p>There is no startup execution of every module. The old probe was removed to avoid unintended guest side effects.</p>
+<h2 id="shared-state-and-ownership">Shared state and ownership <a class="heading-anchor" href="#shared-state-and-ownership" aria-label="Link to Shared state and ownership">#</a></h2><p><code>AppContext</code> is shared through <code>Arc</code> and owns:</p>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Purpose</th>
+<th>Lifetime</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>http</code></td>
+<td>Reqwest client with rustls/ring, webpki roots, no redirects</td>
+<td>Process</td>
+</tr>
+<tr>
+<td><code>db</code></td>
+<td>SQLx SQLite pool</td>
+<td>Process; explicitly closed at shutdown</td>
+</tr>
+<tr>
+<td><code>sockets</code></td>
+<td>Global bounded map of TCP streams</td>
+<td>Until closed/released; not automatically scoped to a Store</td>
+</tr>
+<tr>
+<td><code>wasm_pool</code></td>
+<td>Global semaphore and in-flight gauge</td>
+<td>Process</td>
+</tr>
+<tr>
+<td><code>capabilities</code></td>
+<td>Global fallback policy</td>
+<td>Process</td>
+</tr>
+<tr>
+<td><code>event_bus</code></td>
+<td>Broadcast sender</td>
+<td>Process</td>
+</tr>
+<tr>
+<td><code>config</code></td>
+<td>Effective host resource settings</td>
+<td>Process</td>
+</tr>
+</tbody></table></div>
+<p>A <code>WasmModule</code> owns a manifest, shared engine, compiled <code>Component</code>, <code>Linker&lt;WasmHostState&gt;</code>, quota state, and capability set. It does <strong>not</strong> own a permanently running guest instance.</p>
+<h2 id="the-execution-path-in-detail">The execution path in detail <a class="heading-anchor" href="#the-execution-path-in-detail" aria-label="Link to The execution path in detail">#</a></h2><h3 id="1-routing-and-authentication">1. Routing and authentication <a class="heading-anchor" href="#1-routing-and-authentication" aria-label="Link to 1. Routing and authentication">#</a></h3><p>The single Axum router serves health, metrics, debug state, module lifecycle, UI, WebSocket, wizard, and optionally source builds. A 60-second <code>TimeoutLayer</code> wraps the router.</p>
+<p>If <code>require_auth=true</code>, middleware exempts only exact <code>/healthz</code> and <code>/readyz</code> paths and verifies the <strong>default tenant&#39;s</strong> Bearer token. Module handlers then perform tenant-specific verification again. This is not an RBAC system; read <a href="security.html#authentication-is-not-tenant-isolation">authentication semantics</a>.</p>
+<p>Module routes parse JSON before the execution handler runs. The module router applies a 10 MiB body limit. Uploads are raw bytes, not multipart forms.</p>
+<h3 id="2-lookup-and-tenant-gates">2. Lookup and tenant gates <a class="heading-anchor" href="#2-lookup-and-tenant-gates" aria-label="Link to 2. Lookup and tenant gates">#</a></h3><p>The registry key is <code>(tenant, id)</code>. A missing module produces 404. Execution then:</p>
+<ol>
+<li>Consumes a tenant rate token, if configured.</li>
+<li>Acquires a tenant concurrency permit, if configured, with <code>wasm_acquire_timeout_secs</code> as the wait limit.</li>
+</ol>
+<p>The returned permit is RAII-owned: dropping it releases capacity and updates the tenant gauge.</p>
+<h3 id="3-module-gates">3. Module gates <a class="heading-anchor" href="#3-module-gates" aria-label="Link to 3. Module gates">#</a></h3><p><code>WasmModule::execute_quota</code> consumes a module rate token and then acquires a module concurrency permit. Zero-valued quota fields mean no extra gate at this layer.</p>
+<p>Rate-limit rejection is immediate. Concurrency rejection waits up to the configured timeout. These branches update rejection metrics; early tenant rejections do not create execution audit rows.</p>
+<h3 id="4-global-pool">4. Global pool <a class="heading-anchor" href="#4-global-pool" aria-label="Link to 4. Global pool">#</a></h3><p><code>WasmPool::acquire</code> waits for one of <code>max_concurrent_wasm</code> permits. The wait is measured separately as <code>wasm_pool_wait_seconds</code>. On timeout it returns a capability-denied library error, which the HTTP layer currently maps through the internal-error path to <strong>500</strong>.</p>
+<p>Permits are not pre-created Wasm instances. A permit only authorizes work.</p>
+<h3 id="5-fresh-store-and-host-state">5. Fresh Store and host state <a class="heading-anchor" href="#5-fresh-store-and-host-state" aria-label="Link to 5. Fresh Store and host state">#</a></h3><p>For every accepted execution, <code>execute_impl</code>:</p>
+<ul>
+<li>Chooses the module memory cap, falling back to the global cap when the module value is zero.</li>
+<li>Creates a new <code>Store&lt;WasmHostState&gt;</code>.</li>
+<li>Sets an epoch deadline of 600 ticks, approximately 60 seconds at the configured 100 ms tick interval.</li>
+<li>Installs <code>StoreLimits</code> with <code>memory_size</code> and <code>trap_on_grow_failure(true)</code>.</li>
+<li>Creates a fresh WASI context and resource table, inheriting standard I/O but not adding arbitrary filesystem preopens.</li>
+<li>Instantiates the component asynchronously using the compiled component and linker.</li>
+</ul>
+<p>This explains why the benchmark explicitly includes Store creation and instantiation. There is no persistent Wasm instance pool.</p>
+<h3 id="6-payload-guest-call-and-result">6. Payload, guest call, and result <a class="heading-anchor" href="#6-payload-guest-call-and-result" aria-label="Link to 6. Payload, guest call, and result">#</a></h3><p>The conversion is deliberately string-based:</p>
+<div class="code-block"><button class="copy-code" aria-label="Copy code">Copy</button><pre><code class="language-text">HTTP JSON value
+  → serde_json::to_string
+  → WIT run(payload: string)
+  → guest Result&lt;String, String&gt;
+  → serde_json::from_str
+  → HTTP JSON value</code></pre></div><p>Both sides must honor the JSON convention. Returning arbitrary text such as <code>hello</code> is a valid WIT string but fails host JSON parsing. Returning <code>Ok(&quot;\&quot;hello\&quot;&quot;)</code> would produce a JSON string response.</p>
+<p>A guest <code>Err</code>, trap, instantiation failure, or invalid output JSON becomes an execution error. A host-import error is not necessarily an execution error if the guest catches it and returns valid JSON, as the sample does.</p>
+<h3 id="7-audit-and-metrics">7. Audit and metrics <a class="heading-anchor" href="#7-audit-and-metrics" aria-label="Link to 7. Audit and metrics">#</a></h3><p>After <code>execute_impl</code> completes, the host:</p>
+<ul>
+<li>Records success/error counters.</li>
+<li>Inserts an audit row with integer milliseconds and an optional error string.</li>
+<li>Records execution duration in seconds as a floating-point histogram observation.</li>
+</ul>
+<p>The execution timer starts immediately before <code>execute_impl</code> and stops before the audit insert and execution-histogram recording. It includes payload serialization and result parsing. It excludes lookup, rate/concurrency acquisition, global-pool waiting, HTTP parsing, and audit writes.</p>
+<p>The audit insert ignores its own <code>Result</code>: a database write failure does not currently turn a successful guest execution into an HTTP failure. Plan independent database monitoring and backup verification.</p>
+<h2 id="wit-host-bridges">WIT host bridges <a class="heading-anchor" href="#wit-host-bridges" aria-label="Link to WIT host bridges">#</a></h2><p>The complete contract is in <code>orchestrator/wit/host-capabilities.wit</code>.</p>
+<h3 id="http">HTTP <a class="heading-anchor" href="#http" aria-label="Link to HTTP">#</a></h3><p><code>http.get(url)</code> parses the URL, checks the host against exact, wildcard-subdomain, or <code>*</code> matchers, and sends a GET through the shared reqwest client. Non-2xx responses become guest-visible errors. Redirect following is disabled.</p>
+<p>The matcher checks the hostname, <strong>not the scheme, port, resolved IP, or response size</strong>. The overall reqwest timeout defaults to 30 seconds. An allowlisted hostname that resolves to a private address can still create SSRF exposure.</p>
+<h3 id="tcp">TCP <a class="heading-anchor" href="#tcp" aria-label="Link to TCP">#</a></h3><p><code>tcp.connect(host, port)</code> checks the configured port list, opens a Tokio TCP stream, enables TCP_NODELAY on a best-effort basis, and stores it in the global socket registry. <code>read</code>, <code>write</code>, and <code>close</code> use the returned handle.</p>
+<p>The current owner string is the module ID, not <code>(tenant, module ID)</code>. Socket handles are not automatically removed when a Store is dropped. Guests should close their handles; the implementation needs stronger execution/tenant scoping for untrusted multi-tenant use.</p>
+<p><code>CapabilitySet</code> contains a TCP-host matcher field, but the shared <code>TcpConnect</code> type and config expose only ports, so that field is not populated through the current public configuration path.</p>
+<h3 id="events">Events <a class="heading-anchor" href="#events" aria-label="Link to Events">#</a></h3><p><code>events.emit(kind, payload_json)</code> checks event-kind permission and parses the payload before publishing:</p>
+<div class="code-block"><button class="copy-code" aria-label="Copy code">Copy</button><pre><code class="language-json">{
+  &quot;kind&quot;: &quot;sample.emitted&quot;,
+  &quot;payload&quot;: {},
+  &quot;source_module&quot;: &quot;sample&quot;
+}</code></pre></div><p>The bus is a Tokio broadcast channel with capacity 1024 in the main binary. It is in-memory, lossy for lagging receivers, and has no durable replay or tenant partition. A slow WebSocket client or Rhai worker can miss events.</p>
+<h2 id="rhai-event-processing">Rhai event processing <a class="heading-anchor" href="#rhai-event-processing" aria-label="Link to Rhai event processing">#</a></h2><p>The worker compiles the configured script once. For each non-Rhai event it:</p>
+<ol>
+<li>Serializes the payload to a string.</li>
+<li>Creates a fresh Rhai engine inside <code>spawn_blocking</code>.</li>
+<li>Exposes <code>event_kind</code>, <code>event_payload</code>, <code>log_info</code>, and <code>emit_event</code>.</li>
+<li>Runs the shared AST.</li>
+<li>Drains emitted events and publishes them with source <code>rhai</code>.</li>
+<li>Skips source <code>rhai</code> on receipt to prevent immediate self-feedback.</li>
+</ol>
+<p>Only <code>log_info</code> is gated by the global log capability. Rhai emission is not checked against the Wasm event-kind allowlist. The script is operator-provided trusted code; the current engine has no explicit operation/memory budget or cancellation deadline. <code>spawn_blocking</code> moves CPU work off an async worker but is not a security sandbox.</p>
+<h2 id="registry-and-disk-persistence">Registry and disk persistence <a class="heading-anchor" href="#registry-and-disk-persistence" aria-label="Link to Registry and disk persistence">#</a></h2><p>A successful raw upload writes:</p>
+<div class="code-block"><button class="copy-code" aria-label="Copy code">Copy</button><pre><code class="language-text">modules/&lt;tenant&gt;/&lt;id&gt;.wasm
+modules/&lt;tenant&gt;/&lt;id&gt;.wasm.quota.json
+modules/&lt;tenant&gt;/&lt;id&gt;.wasm.capabilities.json</code></pre></div><p><code>atomic_write</code> creates a sibling temporary file, writes, fsyncs, renames, and attempts directory fsync. This makes an individual file replacement atomic; it does <strong>not</strong> make the three-file commit plus in-memory registry update a single transaction.</p>
+<p>On startup, directories become tenant names and filename stems become module IDs. Invalid components or signatures are skipped. Missing/invalid sidecars fall back to defaults. An empty capability manifest uses global capabilities at runtime; this means an explicitly empty upload manifest is not a durable deny-all policy.</p>
+<p>Hot replacement swaps the registry <code>Arc</code>. An execution already holding the previous module finishes against that old object. Delete removes the registry entry and attempts to remove Wasm/quota files, but does not currently remove the capabilities sidecar or signature sibling.</p>
+<h2 id="build-pipeline">Build pipeline <a class="heading-anchor" href="#build-pipeline" aria-label="Link to Build pipeline">#</a></h2><p>When explicitly enabled, <code>/modules/build</code> accepts a tar or gzip tar with <code>Cargo.toml</code> at the archive root. It extracts into a temporary directory, parses the package name, and runs release compilation for <code>wasm32-wasip2</code> through Bubblewrap. A global semaphore permits one build at a time. Cargo has a 300-second timeout; tar write/wait phases have separate 30-second limits.</p>
+<p>The sandbox unshares namespaces, binds system/toolchain paths read-only, makes the source directory writable, and uses tmpfs for home/tmp. Network is shared only when explicitly enabled. Offline mode requires dependencies already available in the read-only Cargo cache.</p>
+<p>The outer HTTP timeout remains 60 seconds: a long build can outlive the client&#39;s HTTP response. Build success does not currently verify/persist a module signature or persist a capabilities sidecar. Treat this as trusted-operator functionality, not an audited public compiler service.</p>
+<h2 id="health-and-observability">Health and observability <a class="heading-anchor" href="#health-and-observability" aria-label="Link to Health and observability">#</a></h2><ul>
+<li><code>/healthz</code>: liveness only.</li>
+<li><code>/readyz</code>: <code>SELECT 1</code> plus at least one available global Wasm permit; zero loaded modules is acceptable.</li>
+<li><code>/debug/state</code>: global module/pool/socket snapshot, not tenant-filtered.</li>
+<li><code>/metrics</code>: Prometheus recorder output; process-local counters reset on restart.</li>
+<li><code>/audit/logs</code>: latest 50 rows across all tenants; no pagination in the current API.</li>
+</ul>
+<h2 id="shutdown">Shutdown <a class="heading-anchor" href="#shutdown" aria-label="Link to Shutdown">#</a></h2><p>On SIGINT/SIGTERM, main signals the Rhai worker, drops its local bus clone, awaits workers, stops the HTTP listener, and closes SQLite. Axum graceful shutdown and SQLx pool closing can wait for work/connection release.</p>
+<p>There are cleanup gaps: the Rust event subscriber has no independent stop signal while other bus senders remain alive, TCP streams are not explicitly execution-scoped, and the outer service manager may enforce a shorter deadline. Test shutdown under realistic load rather than assuming every in-flight request drains within a fixed time.</p>
+<h2 id="design-trade-offs-for-senior-readers">Design trade-offs for senior readers <a class="heading-anchor" href="#design-trade-offs-for-senior-readers" aria-label="Link to Design trade-offs for senior readers">#</a></h2><ul>
+<li><strong>Fresh Store per call:</strong> simple state isolation and predictable lifecycle, at the cost of instantiation overhead.</li>
+<li><strong>Shared Engine/Component:</strong> reuse compilation-related host structures without reusing guest linear memory.</li>
+<li><strong>Semaphore before instantiation:</strong> bound expensive work rather than discovering resource pressure after allocation.</li>
+<li><strong>Async host imports + synchronous Rhai offload:</strong> different execution models connected by an event contract.</li>
+<li><strong>Single-process tenancy:</strong> low operational overhead, but not a hostile-tenant security boundary.</li>
+<li><strong>Filesystem + SQLite rather than a control-plane database:</strong> easy self-hosting, with explicit multi-file consistency and backup limitations.</li>
+</ul>
+<p>Continue with <a href="security.html">Security</a> for the threat model and <a href="source-map.html">Source map</a> for file-by-file navigation.</p>
+<div class="book-bottom"><a href="quickstart.html">← Quick start</a><a href="plugins.html">Plugin development →</a></div></main><aside class="book-toc" aria-label="On this page"><span class="eyebrow">ON THIS PAGE</span><a href="#system-overview">System overview</a><a href="#repository-boundaries">Repository boundaries</a><a href="#startup-sequence">Startup sequence</a><a href="#shared-state-and-ownership">Shared state and ownership</a><a href="#the-execution-path-in-detail">The execution path in detail</a><a href="#wit-host-bridges">WIT host bridges</a><a href="#rhai-event-processing">Rhai event processing</a><a href="#registry-and-disk-persistence">Registry and disk persistence</a><a href="#build-pipeline">Build pipeline</a><a href="#health-and-observability">Health and observability</a><a href="#shutdown">Shutdown</a><a href="#design-trade-offs-for-senior-readers">Design trade-offs for senior readers</a></aside></div><dialog id="search-dialog" aria-label="Search documentation"><div class="search-box"><div class="search-input-row"><span>⌕</span><input id="search-input" type="search" placeholder="Search routes, boot slots, quotas…" autocomplete="off" aria-label="Search documentation"><button data-search-close aria-label="Close search">Esc</button></div><div id="search-results" class="search-results"></div><div class="search-footer">↑ ↓ to navigate · Enter to open · Esc to close</div></div></dialog></body></html>

@@ -1,0 +1,74 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#0c0b12"><meta name="description" content="Rust SDK and CLI The SDK is a thin HTTP client. It does not embed the orchestrator or execute Wasm locally. The CLI is a Clap application over that client. Install and connect # Gl"><title>SDK &amp; CLI — Wraith</title><link rel="icon" href="../assets/favicon.svg" type="image/svg+xml"><link rel="stylesheet" href="../assets/style.css"><script defer src="../assets/search-index.js"></script><script defer src="../assets/app.js"></script></head><body data-base="../"><a class="skip-link" href="#article">Skip to article</a><header class="site-header"><div class="header-inner"><a class="brand" href="../index.html"><img src="../assets/favicon.svg" alt="" width="32" height="32"><span>wraith<span class="brand-dot">.</span></span><span class="brand-tag">DOCUMENTATION</span></a><nav class="desktop-nav" aria-label="Main navigation"><a href="../index.html#runtime">Runtime</a><a href="../index.html#request-lab">Labs</a><a href="../index.html#benchmarks">Benchmarks</a><a href="quickstart.html">Guides</a><a href="source-map.html">Source map</a></nav><div class="header-actions"><button class="search-trigger" data-search-open aria-label="Search documentation"><span>Search docs</span><kbd>⌘ K</kbd></button><button class="menu-toggle" aria-label="Open navigation" aria-expanded="false">☰</button></div></div><nav class="mobile-nav" aria-label="Mobile guide navigation" hidden><a href="../index.html">Interactive overview</a><a href="quickstart.html" >Quick start</a><a href="architecture.html" >Architecture</a><a href="plugins.html" >Plugin development</a><a href="api.html" >HTTP API</a><a href="configuration.html" >Configuration</a><a href="sdk-cli.html" class="active" aria-current="page">SDK & CLI</a><a href="operations.html" >Operations</a><a href="wraithos.html" >WraithOS</a><a href="security.html" >Security boundaries</a><a href="benchmarks.html" >Benchmarks</a><a href="testing.html" >Testing & contributing</a><a href="source-map.html" >Source map</a></nav><div class="reading-progress" aria-hidden="true"></div></header><div class="book-layout"><aside class="book-sidebar" aria-label="Documentation guides"><a class="back-home" href="../index.html">← Interactive overview</a><span class="eyebrow">THE DOCUMENTATION</span><a href="quickstart.html" >Quick start</a><a href="architecture.html" >Architecture</a><a href="plugins.html" >Plugin development</a><a href="api.html" >HTTP API</a><a href="configuration.html" >Configuration</a><a href="sdk-cli.html" class="active" aria-current="page">SDK & CLI</a><a href="operations.html" >Operations</a><a href="wraithos.html" >WraithOS</a><a href="security.html" >Security boundaries</a><a href="benchmarks.html" >Benchmarks</a><a href="testing.html" >Testing & contributing</a><a href="source-map.html" >Source map</a></aside><main class="book-article" id="article"><div class="article-meta"><span class="pill violet">SOURCE-GUIDED</span><span>3 min read</span><a href="../sdk-cli.md">Markdown source</a></div><h1 id="rust-sdk-and-cli">Rust SDK and CLI</h1><p>The SDK is a thin HTTP client. It does not embed the orchestrator or execute Wasm locally. The CLI is a Clap application over that client.</p>
+<h2 id="install-and-connect">Install and connect <a class="heading-anchor" href="#install-and-connect" aria-label="Link to Install and connect">#</a></h2><div class="code-block"><button class="copy-code" aria-label="Copy code">Copy</button><pre><code class="language-bash">cargo install --locked --path wraith-cli
+wraith --server http://127.0.0.1:9090 list</code></pre></div><p>Global options:</p>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>Flag</th>
+<th>Default</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>--server</code></td>
+<td><code>http://127.0.0.1:9090</code></td>
+<td>Base URL; trailing slash is trimmed when constructing requests</td>
+</tr>
+<tr>
+<td><code>--token</code></td>
+<td>None</td>
+<td>Bearer token</td>
+</tr>
+<tr>
+<td><code>--tenant</code></td>
+<td>None</td>
+<td>Use named-tenant routes instead of legacy default routes</td>
+</tr>
+</tbody></table></div>
+<div class="code-block"><button class="copy-code" aria-label="Copy code">Copy</button><pre><code class="language-bash">wraith --tenant alice --token &quot;$WRAITH_TOKEN&quot; list
+wraith exec hello -p &#39;{&quot;value&quot;:42}&#39;
+wraith deploy --id hello --file ./empty_plugin.wasm
+wraith delete hello
+wraith logs</code></pre></div><p>Short flags are <code>deploy -i &lt;ID&gt; -f &lt;FILE&gt;</code> and <code>exec -p &lt;JSON&gt;</code>. Avoid literal secrets in command lines; environment expansion can still appear in shell history or process arguments depending on your shell/tooling.</p>
+<h2 id="command-behavior">Command behavior <a class="heading-anchor" href="#command-behavior" aria-label="Link to Command behavior">#</a></h2><ul>
+<li><code>list</code>: prints ID, tenant, version, and count.</li>
+<li><code>deploy</code>: reads a local file and performs POST upload. It does not expose quota, capability, or signature headers; use HTTP for those features.</li>
+<li><code>exec</code>: parses the payload as JSON before sending; prints pretty-printed response JSON.</li>
+<li><code>delete</code>: DELETE and a confirmation line.</li>
+<li><code>logs</code>: latest 50 global audit rows in a table.</li>
+</ul>
+<p>There are no SDK/CLI methods for source builds, quota updates, replacement, wizard operations, or WebSocket subscription in this checkout.</p>
+<h2 id="embed-the-sdk">Embed the SDK <a class="heading-anchor" href="#embed-the-sdk" aria-label="Link to Embed the SDK">#</a></h2><p>Add a path dependency while developing inside this repository:</p>
+<div class="code-block"><button class="copy-code" aria-label="Copy code">Copy</button><pre><code class="language-toml">[dependencies]
+wraith-sdk = { path = &quot;../wraith-sdk&quot; }
+tokio = { version = &quot;1&quot;, features = [&quot;macros&quot;, &quot;rt-multi-thread&quot;] }
+serde_json = &quot;1&quot;</code></pre></div><p>Example:</p>
+<div class="code-block"><button class="copy-code" aria-label="Copy code">Copy</button><pre><code class="language-rust">use serde_json::json;
+use wraith_sdk::WraithClient;
+
+#[tokio::main]
+async fn main() -&gt; Result&lt;(), Box&lt;dyn std::error::Error&gt;&gt; {
+    let client = WraithClient::new(&quot;http://127.0.0.1:9090&quot;)?
+        .with_token(std::env::var(&quot;WRAITH_TOKEN&quot;)?);
+    let result = client.execute(&quot;hello&quot;, None, json!({&quot;test&quot;: true})).await?;
+    println!(&quot;{result:#}&quot;);
+    Ok(())
+}</code></pre></div><p>For a tokenless local server, omit <code>with_token</code>. For a named tenant, pass <code>Some(&quot;alice&quot;)</code> to list/upload/execute/delete. <code>get_logs</code> has no tenant argument and reads the global audit endpoint.</p>
+<h2 id="public-surface">Public surface <a class="heading-anchor" href="#public-surface" aria-label="Link to Public surface">#</a></h2><div class="code-block"><button class="copy-code" aria-label="Copy code">Copy</button><pre><code class="language-text">WraithClient::new(base_url) -&gt; Result&lt;Self, SdkError&gt;
+WraithClient::with_token(token) -&gt; Self
+list(Option&lt;tenant&gt;) -&gt; Result&lt;ListResponse, SdkError&gt;
+upload(id, Option&lt;tenant&gt;, Vec&lt;u8&gt;) -&gt; Result&lt;serde_json::Value, SdkError&gt;
+execute(id, Option&lt;tenant&gt;, serde_json::Value) -&gt; Result&lt;serde_json::Value, SdkError&gt;
+delete(id, Option&lt;tenant&gt;) -&gt; Result&lt;(), SdkError&gt;
+get_logs() -&gt; Result&lt;Vec&lt;ExecutionLog&gt;, SdkError&gt;</code></pre></div><p>The client installs the ring crypto provider once, uses a 30-second reqwest timeout, and attaches Bearer auth when configured. <code>new</code> only checks that the string starts with <code>http</code>; it is a permissive prefix check, not comprehensive URL validation. Use an exact trusted base URL.</p>
+<p><code>SdkError</code> distinguishes transport errors, non-success API responses (status plus body), and invalid URL prefix. Non-2xx bodies are preserved as text.</p>
+<h2 id="important-current-limitations">Important current limitations <a class="heading-anchor" href="#important-current-limitations" aria-label="Link to Important current limitations">#</a></h2><ul>
+<li><code>list</code> and <code>get_logs</code> deserialize successful responses with <code>unwrap_or</code>/<code>unwrap_or_default</code>. A schema mismatch can look like an empty result instead of an error. Validate critical integrations against the HTTP API directly.</li>
+<li>Tenant and module IDs are interpolated into paths without percent-encoding. Use validated simple IDs/names.</li>
+<li>Upload cannot attach signatures/capabilities/quotas.</li>
+<li>Authentication follows the server&#39;s actual global-plus-tenant semantics; the SDK cannot fix the single-header tenant-token limitation.</li>
+<li>There is no built-in retry policy. Retry idempotent reads cautiously; do not blindly retry execution of a guest with side effects.</li>
+<li>The SDK does not expose a streaming event client.</li>
+</ul>
+<p>For exact status codes and header behavior, use the <a href="api.html">HTTP API reference</a>.</p>
+<div class="book-bottom"><a href="configuration.html">← Configuration</a><a href="operations.html">Operations →</a></div></main><aside class="book-toc" aria-label="On this page"><span class="eyebrow">ON THIS PAGE</span><a href="#install-and-connect">Install and connect</a><a href="#command-behavior">Command behavior</a><a href="#embed-the-sdk">Embed the SDK</a><a href="#public-surface">Public surface</a><a href="#important-current-limitations">Important current limitations</a></aside></div><dialog id="search-dialog" aria-label="Search documentation"><div class="search-box"><div class="search-input-row"><span>⌕</span><input id="search-input" type="search" placeholder="Search routes, boot slots, quotas…" autocomplete="off" aria-label="Search documentation"><button data-search-close aria-label="Close search">Esc</button></div><div id="search-results" class="search-results"></div><div class="search-footer">↑ ↓ to navigate · Enter to open · Esc to close</div></div></dialog></body></html>

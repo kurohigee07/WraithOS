@@ -1,0 +1,145 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#0c0b12"><meta name="description" content="Benchmark: an empty component on Oracle Cloud Evidence status: maintainer-supplied measurement dated 2026-11-04 08:07:39 UTC . It was not independently rerun for this documentation"><title>Benchmarks — Wraith</title><link rel="icon" href="../assets/favicon.svg" type="image/svg+xml"><link rel="stylesheet" href="../assets/style.css"><script defer src="../assets/search-index.js"></script><script defer src="../assets/app.js"></script></head><body data-base="../"><a class="skip-link" href="#article">Skip to article</a><header class="site-header"><div class="header-inner"><a class="brand" href="../index.html"><img src="../assets/favicon.svg" alt="" width="32" height="32"><span>wraith<span class="brand-dot">.</span></span><span class="brand-tag">DOCUMENTATION</span></a><nav class="desktop-nav" aria-label="Main navigation"><a href="../index.html#runtime">Runtime</a><a href="../index.html#request-lab">Labs</a><a href="../index.html#benchmarks">Benchmarks</a><a href="quickstart.html">Guides</a><a href="source-map.html">Source map</a></nav><div class="header-actions"><button class="search-trigger" data-search-open aria-label="Search documentation"><span>Search docs</span><kbd>⌘ K</kbd></button><button class="menu-toggle" aria-label="Open navigation" aria-expanded="false">☰</button></div></div><nav class="mobile-nav" aria-label="Mobile guide navigation" hidden><a href="../index.html">Interactive overview</a><a href="quickstart.html" >Quick start</a><a href="architecture.html" >Architecture</a><a href="plugins.html" >Plugin development</a><a href="api.html" >HTTP API</a><a href="configuration.html" >Configuration</a><a href="sdk-cli.html" >SDK & CLI</a><a href="operations.html" >Operations</a><a href="wraithos.html" >WraithOS</a><a href="security.html" >Security boundaries</a><a href="benchmarks.html" class="active" aria-current="page">Benchmarks</a><a href="testing.html" >Testing & contributing</a><a href="source-map.html" >Source map</a></nav><div class="reading-progress" aria-hidden="true"></div></header><div class="book-layout"><aside class="book-sidebar" aria-label="Documentation guides"><a class="back-home" href="../index.html">← Interactive overview</a><span class="eyebrow">THE DOCUMENTATION</span><a href="quickstart.html" >Quick start</a><a href="architecture.html" >Architecture</a><a href="plugins.html" >Plugin development</a><a href="api.html" >HTTP API</a><a href="configuration.html" >Configuration</a><a href="sdk-cli.html" >SDK & CLI</a><a href="operations.html" >Operations</a><a href="wraithos.html" >WraithOS</a><a href="security.html" >Security boundaries</a><a href="benchmarks.html" class="active" aria-current="page">Benchmarks</a><a href="testing.html" >Testing & contributing</a><a href="source-map.html" >Source map</a></aside><main class="book-article" id="article"><div class="article-meta"><span class="pill violet">SOURCE-GUIDED</span><span>6 min read</span><a href="../benchmarks.md">Markdown source</a></div><h1 id="benchmark-an-empty-component-on-oracle-cloud">Benchmark: an empty component on Oracle Cloud</h1><p><strong>Evidence status:</strong> maintainer-supplied measurement dated <strong>2026-11-04 08:07:39 UTC</strong>. It was not independently rerun for this documentation update. Raw values are preserved in <a href="../benchmark-data.json">benchmark-data.json</a>, and a reproducible procedure is provided below.</p>
+<h2 id="results-at-a-glance">Results at a glance <a class="heading-anchor" href="#results-at-a-glance" aria-label="Link to Results at a glance">#</a></h2><div class="table-scroll"><table>
+<thead>
+<tr>
+<th>Metric</th>
+<th align="right">Value</th>
+<th>What it measures</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Mean execution duration</td>
+<td align="right"><strong>180.854 µs</strong></td>
+<td>Sum/count over 23 executions, including three warmups</td>
+</tr>
+<tr>
+<td>Mean global-pool wait</td>
+<td align="right"><strong>1.450 µs</strong></td>
+<td>Separate sum/count over the same 23 executions</td>
+</tr>
+<tr>
+<td>Client wall time</td>
+<td align="right"><strong>6.10 ms/request</strong></td>
+<td>20 sequential curl processes after warmup</td>
+</tr>
+<tr>
+<td>Reported successful executions</td>
+<td align="right"><strong>23/23</strong></td>
+<td>Execution counter and audit verification</td>
+</tr>
+<tr>
+<td>Cold source build</td>
+<td align="right"><strong>8,988 ms</strong></td>
+<td>One full compile in a fresh temporary directory</td>
+</tr>
+<tr>
+<td>Guest artifact size</td>
+<td align="right"><strong>68,405 bytes</strong></td>
+<td>The reported <code>empty3</code> component, not the checked-in sample</td>
+</tr>
+</tbody></table></div>
+<p>The interactive benchmark explorer displays these scopes separately. It does not turn an empty no-I/O benchmark into a production throughput or tail-latency claim.</p>
+<h2 id="environment-reported-by-the-maintainer">Environment reported by the maintainer <a class="heading-anchor" href="#environment-reported-by-the-maintainer" aria-label="Link to Environment reported by the maintainer">#</a></h2><div class="code-block"><button class="copy-code" aria-label="Copy code">Copy</button><pre><code class="language-text">Orchestrator label: v0.27.1
+Platform:          Oracle Cloud VPS
+Kernel:            6.9.0-207.111.5.4.el9uek.x86_64
+Binary target:     x86_64-unknown-linux-musl, static, stripped
+Runtime:           Wasmtime 48.0.8, Cranelift JIT
+Global Wasm cap:   2
+Memory cap:        256 MiB per instance
+Pool wait timeout: 10 seconds
+Client/server:     curl → 127.0.0.1:9090
+Concurrency:       sequential; a new TCP connection per request</code></pre></div><p>The source lockfile contains Wasmtime 48.0.8. The crate manifests, however, declare version <code>0.1.0</code>; historical notes and the supplied benchmark use different release labels. The exact benchmark commit/build command was not supplied. <strong>Do not assume the reported v0.27.1 binary is byte-identical to a binary built from this checkout.</strong></p>
+<h2 id="guest-and-procedure">Guest and procedure <a class="heading-anchor" href="#guest-and-procedure" aria-label="Link to Guest and procedure">#</a></h2><p>The guest exports the standard <code>run(string) -&gt; result&lt;string,string&gt;</code> function and immediately returns <code>&quot;{}&quot;</code>. It performs no I/O or intentional computation.</p>
+<div class="code-block"><button class="copy-code" aria-label="Copy code">Copy</button><pre><code class="language-rust">wit_bindgen::generate!({ path: &quot;wit&quot;, world: &quot;plugin&quot; });
+struct Empty;
+impl Guest for Empty {
+    fn run(_payload: String) -&gt; Result&lt;String, String&gt; {
+        Ok(&quot;{}&quot;.to_string())
+    }
+}
+export!(Empty);</code></pre></div><p>Reported procedure:</p>
+<ol>
+<li>Upload source tar.gz to <code>POST /modules/build</code>; compile and load as <code>empty3</code>.</li>
+<li>Execute three warmup requests and discard their client timings.</li>
+<li>Execute 20 sequential requests inside a shell <code>time</code> block.</li>
+<li>Read <code>/metrics</code> and verify <code>/audit/logs</code>.</li>
+</ol>
+<p>The metrics count is <strong>23</strong>, because warmups are included. Dividing the execution sum by only 20 would mix scopes and produce the wrong mean.</p>
+<h2 id="raw-server-values">Raw server values <a class="heading-anchor" href="#raw-server-values" aria-label="Link to Raw server values">#</a></h2><div class="code-block"><button class="copy-code" aria-label="Copy code">Copy</button><pre><code class="language-text">wasm_executions_total{module=&quot;empty3&quot;,tenant=&quot;default&quot;,result=&quot;ok&quot;} 23
+
+wasm_pool_wait_seconds_sum{module=&quot;empty3&quot;,tenant=&quot;default&quot;} 0.000033360999999999994
+wasm_pool_wait_seconds_count{module=&quot;empty3&quot;,tenant=&quot;default&quot;} 23
+
+wasm_execution_duration_seconds_sum{module=&quot;empty3&quot;,tenant=&quot;default&quot;} 0.004159642
+wasm_execution_duration_seconds_count{module=&quot;empty3&quot;,tenant=&quot;default&quot;} 23</code></pre></div><p>All reported quantiles for both histograms are zero, including quantile 1. The supplied explanation attributes this to exporter resolution at sub-millisecond durations. That explanation is preserved as context, not independently validated here. <strong>Zero quantiles are not evidence that every request took zero microseconds.</strong> Use sum/count for the reported average; do not infer p95/p99 from these values.</p>
+<p>First three supplied audit rows:</p>
+<div class="code-block"><button class="copy-code" aria-label="Copy code">Copy</button><pre><code class="language-json">{&quot;module_id&quot;:&quot;empty3&quot;,&quot;status&quot;:&quot;ok&quot;,&quot;duration_ms&quot;:0,&quot;error_message&quot;:null,&quot;executed_at&quot;:&quot;2026-11-04 08:07:39&quot;}
+{&quot;module_id&quot;:&quot;empty3&quot;,&quot;status&quot;:&quot;ok&quot;,&quot;duration_ms&quot;:0,&quot;error_message&quot;:null,&quot;executed_at&quot;:&quot;2026-11-04 08:07:39&quot;}
+{&quot;module_id&quot;:&quot;empty3&quot;,&quot;status&quot;:&quot;ok&quot;,&quot;duration_ms&quot;:0,&quot;error_message&quot;:null,&quot;executed_at&quot;:&quot;2026-11-04 08:07:39&quot;}</code></pre></div><p>The real API also returns <code>id</code> and <code>tenant</code>; the excerpt above preserves the maintainer&#39;s abbreviated rows. Integer millisecond rounding explains why a roughly 181 µs execution can appear as <code>0 ms</code>.</p>
+<h2 id="derivations">Derivations <a class="heading-anchor" href="#derivations" aria-label="Link to Derivations">#</a></h2><div class="code-block"><button class="copy-code" aria-label="Copy code">Copy</button><pre><code class="language-text">Execution mean = 0.004159642 seconds / 23
+               = 0.000180854 seconds
+               = 180.854 microseconds
+
+Pool-wait mean = 0.000033361 seconds / 23
+               ≈ 0.000001450478 seconds
+               ≈ 1.450478 microseconds
+
+Client mean   = 0.122 seconds / 20
+               = 0.00610 seconds
+               = 6.10 milliseconds
+
+Execution mean / client mean ≈ 2.9648%</code></pre></div><p>The roughly 97.04% remainder is <strong>outside the measured execution interval</strong>. It can include HTTP parsing/routing, authentication/lookup/quota work, response framing, TCP setup, curl process startup, and scheduling. The supplied information does not quantify each component, so attributing all of it specifically to curl would be unjustified.</p>
+<p>Pool wait is not included in execution duration. Do not add the client, execution, and build bars as though they were consecutive phases of one request.</p>
+<h2 id="what-the-execution-timer-includes">What the execution timer includes <a class="heading-anchor" href="#what-the-execution-timer-includes" aria-label="Link to What the execution timer includes">#</a></h2><p>The timer in <code>WasmModule::execute_quota</code> starts just before <code>execute_impl</code> and stops when its future returns. That interval includes:</p>
+<ul>
+<li>Choosing the effective memory limit and creating <code>Store&lt;WasmHostState&gt;</code>.</li>
+<li>Setting epoch/memory limits and creating WASI state.</li>
+<li><code>Plugin::instantiate_async</code>.</li>
+<li>Serializing the input JSON to a string.</li>
+<li><code>call_run</code> and guest execution.</li>
+<li>Parsing the returned string as JSON.</li>
+</ul>
+<p>It excludes module lookup, tenant/module/global permit acquisition, HTTP extraction/routing, audit insertion, and recording the execution histogram. Global-pool wait has its own histogram. There is no persistent instance pool: a fresh Store is created for each accepted request.</p>
+<h2 id="what-this-benchmark-demonstrates">What this benchmark demonstrates <a class="heading-anchor" href="#what-this-benchmark-demonstrates" aria-label="Link to What this benchmark demonstrates">#</a></h2><ul>
+<li>In this specific local, sequential, empty-guest setup, the recorded mean execution interval was sub-millisecond.</li>
+<li>Reusing the Engine/Component while creating a fresh Store can still yield a small measured interval for a trivial guest.</li>
+<li>The global pool did not report meaningful waiting in this sequential test with two permits.</li>
+<li>Metrics and audit provide a way to inspect the measurement rather than relying only on shell wall time.</li>
+</ul>
+<h2 id="what-it-does-not-demonstrate">What it does not demonstrate <a class="heading-anchor" href="#what-it-does-not-demonstrate" aria-label="Link to What it does not demonstrate">#</a></h2><ul>
+<li>Throughput at concurrency, sustained requests/second, or behavior with many tenants.</li>
+<li>p95/p99 latency, long-run variance, or behavior under CPU/memory pressure.</li>
+<li>HTTP/TCP guest work, Rhai load, large payloads, audit-disk latency, or cold JIT behavior across many distinct modules.</li>
+<li>That 6.10 ms is the service&#39;s network latency for persistent HTTP connections.</li>
+<li>That a different machine, release, compiler, or component will produce the same result.</li>
+<li>Security isolation or production readiness.</li>
+</ul>
+<p>The report states zero pool-saturation events. The source does not expose a dedicated saturation counter; low wait and sequential arrival are consistent with that report, but a future reproduction should record pool availability/in-flight and rejection metrics explicitly.</p>
+<h2 id="reproduce-responsibly">Reproduce responsibly <a class="heading-anchor" href="#reproduce-responsibly" aria-label="Link to Reproduce responsibly">#</a></h2><p>Use a disposable/local instance and record the exact commit, toolchain, flags, config, CPU/memory limits, and guest hash. Source builds are disabled by default and require Bubblewrap plus a prepared Cargo cache/toolchain. For a safer latency-only reproduction, compile the <a href="../examples/empty-plugin/Cargo.toml">offline example</a> locally and upload the component instead of enabling remote compilation.</p>
+<p>Set authentication if configured:</p>
+<div class="code-block"><button class="copy-code" aria-label="Copy code">Copy</button><pre><code class="language-bash">BASE=http://127.0.0.1:9090
+AUTH=()
+if [ -n &quot;${WRAITH_TOKEN:-}&quot; ]; then
+  AUTH=(-H &quot;Authorization: Bearer $WRAITH_TOKEN&quot;)
+fi</code></pre></div><p>Warmup:</p>
+<div class="code-block"><button class="copy-code" aria-label="Copy code">Copy</button><pre><code class="language-bash">for i in 1 2 3; do
+  curl --fail -sS -o /dev/null -X POST \
+    &quot;$BASE/modules/empty3/execute&quot; &quot;${AUTH[@]}&quot; \
+    -H &#39;Content-Type: application/json&#39; -d &#39;{}&#39;
+done</code></pre></div><p>Measure the supplied 20-process wall-time method:</p>
+<div class="code-block"><button class="copy-code" aria-label="Copy code">Copy</button><pre><code class="language-bash">time (
+  for i in $(seq 1 20); do
+    curl --fail -sS -o /dev/null -X POST \
+      &quot;$BASE/modules/empty3/execute&quot; &quot;${AUTH[@]}&quot; \
+      -H &#39;Content-Type: application/json&#39; -d &#39;{}&#39;
+  done
+)</code></pre></div><p>Inspect metrics and audit:</p>
+<div class="code-block"><button class="copy-code" aria-label="Copy code">Copy</button><pre><code class="language-bash">curl --fail -sS &quot;$BASE/metrics&quot; &quot;${AUTH[@]}&quot; | grep &#39;empty3&#39;
+curl --fail -sS &quot;$BASE/audit/logs&quot; &quot;${AUTH[@]}&quot;</code></pre></div><p>Counters are cumulative across the process lifetime. For a rigorous rerun, record before/after deltas or use a fresh process with no other executions of that module. Three warmups plus 20 measured requests should add 23 to the relevant execution count, not necessarily make the absolute counter equal 23.</p>
+<p>To reproduce the <strong>source-build</strong> portion, enable the build route only in a trusted test environment, package a standalone crate with <code>Cargo.toml</code>, <code>src/</code>, and <code>wit/</code> at archive root, then:</p>
+<div class="code-block"><button class="copy-code" aria-label="Copy code">Copy</button><pre><code class="language-bash">curl --fail -X POST &quot;$BASE/modules/build&quot; &quot;${AUTH[@]}&quot; \
+  -H &#39;X-Module-Id: empty3&#39; \
+  -H &#39;Content-Type: application/octet-stream&#39; \
+  --data-binary @empty3-source.tar.gz</code></pre></div><p>Record returned <code>build_ms</code>, artifact size/hash, compiler version, cache state, and sandbox network setting. The original 8,988 ms cold build is not reproducible from timing alone without those details.</p>
+<h2 id="reporting-checklist-for-future-benchmarks">Reporting checklist for future benchmarks <a class="heading-anchor" href="#reporting-checklist-for-future-benchmarks" aria-label="Link to Reporting checklist for future benchmarks">#</a></h2><p>Include commit and dirty-tree status; binary hash; Rust/Wasmtime versions; CPU model/count and memory; OS/kernel; virtualization; build profile/linker; config; guest source/hash; warmup policy; request count/concurrency; connection reuse; payload size; client implementation; before/after metrics; audit errors; and percentile methodology. Report failed requests rather than silently dropping them. Keep build time, execution interval, pool wait, and end-to-end latency separate.</p>
+<div class="book-bottom"><a href="security.html">← Security boundaries</a><a href="testing.html">Testing & contributing →</a></div></main><aside class="book-toc" aria-label="On this page"><span class="eyebrow">ON THIS PAGE</span><a href="#results-at-a-glance">Results at a glance</a><a href="#environment-reported-by-the-maintainer">Environment reported by the maintainer</a><a href="#guest-and-procedure">Guest and procedure</a><a href="#raw-server-values">Raw server values</a><a href="#derivations">Derivations</a><a href="#what-the-execution-timer-includes">What the execution timer includes</a><a href="#what-this-benchmark-demonstrates">What this benchmark demonstrates</a><a href="#what-it-does-not-demonstrate">What it does not demonstrate</a><a href="#reproduce-responsibly">Reproduce responsibly</a><a href="#reporting-checklist-for-future-benchmarks">Reporting checklist for future benchmarks</a></aside></div><dialog id="search-dialog" aria-label="Search documentation"><div class="search-box"><div class="search-input-row"><span>⌕</span><input id="search-input" type="search" placeholder="Search routes, boot slots, quotas…" autocomplete="off" aria-label="Search documentation"><button data-search-close aria-label="Close search">Esc</button></div><div id="search-results" class="search-results"></div><div class="search-footer">↑ ↓ to navigate · Enter to open · Esc to close</div></div></dialog></body></html>
