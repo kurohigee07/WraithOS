@@ -1,101 +1,77 @@
-# WraithOS / Orchestrator — TODO
+# WraithOS / Orchestrator — Historical TODO
 
-Status per v0.20.8-final. VPS Oracle deadline: ~15 days from 2026-11-02.
+> **Archival planning list, translated into English.** This records the reported v0.20.8-final plan and an approximately 15-day Oracle VPS window starting 2026-11-02. Checkboxes and effort estimates are historical, not current status. Several items now have implementations in source. Use [docs/testing.md](docs/testing.md), [docs/security.md](docs/security.md), and [docs/source-map.md](docs/source-map.md) for the current verification boundary. The original mixed-language list is preserved at [baseline commit 20cb378](https://github.com/kurohigee07/Orchestrator-/blob/20cb3785d1f17e4b05759b539ffa016eaea50324/TODO.md).
 
-## 🔴 Critical — sebelum buka ke publik
+## Critical — before public exposure
 
-- [ ] **Build pipeline sandbox** — `POST /modules/build` = arbitrary code execution via `build.rs`
-  - Fix: bubblewrap / systemd-nspawn sandbox, atau disable di production
-  - Effort: 1-2 hari
+- [ ] **Source-build sandbox.** `POST /modules/build` can execute arbitrary code through `build.rs`.
+  - Proposed fix: Bubblewrap/systemd-nspawn sandbox, or disable in production.
+  - Historical estimate: 1–2 days.
+  - Current source: builds are disabled by default and use Bubblewrap when enabled; additional archive/resource/authz hardening is still needed.
 
-- [ ] **Tenant isolation** — registry `(tenant, id)` cuma namespace
-  - Shared process, shared FS, shared memory. Panic 1 tenant = crash semua
-  - Fix: fork per tenant, atau multi-instance + gateway
-  - Effort: 1 minggu
-  - Relevan: hanya kalau jual ke multi-customer
+- [ ] **Tenant isolation.** The `(tenant, id)` registry was recognized as a namespace rather than a complete security boundary.
+  - Shared process/filesystem/resources; the release profile aborts on panic.
+  - Proposed fix: process-per-tenant or multiple instances behind a gateway.
+  - Historical estimate: one week.
+  - Relevance: especially important for mutually untrusting customers.
 
-## 🟡 High — feature roadmap
+## High — feature roadmap
 
-- [ ] **M29: First-boot wizard** — `/ui/wizard` embedded HTML + Rust handler
-  - Setup: hostname, admin password (argon2), network (DHCP/static), disk encryption option
-  - Effort: 2-3 jam
+- [ ] **M29: first-boot wizard.** Embedded HTML and Rust handlers for hostname, Argon2 admin password, DHCP/static network, and optional disk encryption. Historical estimate: 2–3 hours.
+- [ ] **M30: AArch64 build.** Raspberry Pi/ARM mini-PC target and `wraithos_aarch64_defconfig`. Historical estimate: 2–3 hours, mostly build time.
+- [ ] **M31: encrypted `/data`.** Passphrase or TPM2 unlock. Historical estimate: 3–4 hours.
+- [ ] **M32: signed releases.** GPG, SHA256SUMS, and reproducible builds. Historical estimate: 1–2 hours.
 
-- [ ] **M30: aarch64 build** — Raspberry Pi / ARM mini PC
-  - Buildroot config `wraithos_aarch64_defconfig`
-  - Effort: 2-3 jam (mostly waiting)
+These estimates are preserved as planning context, not promises. Current implementations and their integration gaps are described in the guides.
 
-- [ ] **M31: LUKS encrypted `/data`** — passphrase atau TPM2 unlock
-  - Effort: 3-4 jam
+## Medium — technical debt
 
-- [ ] **M32: Signed releases** — GPG sign + SHA256SUMS + reproducible build
-  - Effort: 1-2 jam
+- [ ] **Wasmtime execution scheduling.** The note proposed moving CPU-heavy work to `spawn_blocking` for ten or more parallel calls. Historical estimate: 2–3 hours. Validate with measurements before changing the async execution model.
+- [ ] **Per-module CPU/deadline configuration.** A manifest-level epoch deadline was proposed alongside the global 60-second deadline. Historical estimate: one hour.
+- [ ] **HTTP timeout.** Add a tower-http `TimeoutLayer`. Historical estimate: 30 minutes. Current source has a fixed 60-second outer timeout.
+- [ ] **Deep `/readyz`.** Add database/module checks. Historical estimate: one hour. Current source checks SQLite and global-pool availability; zero modules is still considered ready.
+- [ ] **Integration suite.** Start → upload → execute → verify. Historical estimate: 1–2 days. Current source contains ten router-level integration tests, not a complete production-binary/security suite.
+- [ ] **Metric cardinality.** Review tenant labels at 100+ tenants. Historical estimate: one day; relevant to PaaS scale.
 
-## 🟢 Medium — technical debt
+## Low — polish
 
-- [ ] **Wasmtime async in tokio worker** — currently pool cap 2. For 10+ parallel, migrate to `spawn_blocking`
-  - Effort: 2-3 jam
+- [ ] More informative `--dry-run` output.
+- [ ] Configurable graceful-shutdown timeout.
+- [ ] Structured log fields instead of debug formatting.
+- [ ] OpenAPI documentation.
+- [ ] A real backup/restore drill.
 
-- [ ] **CPU time per module** — epoch 60s global. Per-module `epoch_deadline` in manifest
-  - Effort: 1 jam
+## Historical priority order
 
-- [ ] **HTTP handler timeout** — Axum default no timeout. Add `TimeoutLayer` from tower-http
-  - Effort: 30 menit
+**Phase 1, days 1–2: avoid preventable regret**
 
-- [ ] **`/readyz` deep check** — currently returns "ok" without DB/module check
-  - Fix: `db.ping()`, module count check
-  - Effort: 1 jam
+1. Verify image and daily backups.
+2. Add HTTP timeout and deep readiness checks.
+3. Sandbox the build pipeline before sharing access.
+4. Tag `v0.21.0-stable`.
 
-- [ ] **Integration test suite** — no end-to-end test (start → upload → execute → verify)
-  - Effort: 1-2 hari
+**Phase 2, days 3–8: feature completion**
 
-- [ ] **Metrics cardinality** — label `tenant` per metric. 100+ tenants = 100x time series
-  - Relevan: hanya kalau PaaS-scale
-  - Effort: 1 hari
+- Wizard → AArch64 → LUKS → signing.
+- Tag `v0.22.0-feature-complete`.
 
-## ⚪ Low — polish
+**Phase 3, days 9–14: hardening and release**
 
-- [ ] Config `--dry-run` output lebih informatif
-- [ ] Graceful shutdown timeout configurable
-- [ ] Log struct field proper (currently Debug formatting)
-- [ ] OpenAPI spec docs
-- [ ] Backup restore drill (test actual restore)
+- Integration tests, final documentation, signed release tarballs, and OCI archival.
+- Day 15 reserved as buffer/migration time.
 
-## Urutan prioritas (rekomendasi)
+## Reported cosmetic fixes
 
-**Fase 1 (hari 1-2): anti-regret**
-1. Backup verify (image + daily)
-2. Quick wins: HTTP timeout + `/readyz` deep (1 jam)
-3. Build pipeline sandbox (kalau buka ke temen)
-4. Tag `v0.21.0-stable`
+- `/tmp` mount working in v0.20.5.
+- Seven clean boot log lines and no errors reported in v0.20.5.
+- Bash/bracketed paste and gray prompt reported in v0.20.6.
 
-**Fase 2 (hari 3-8): feature complete**
-- M29 wizard → M30 aarch64 → M31 LUKS → M32 signing
-- Tag `v0.22.0-feature-complete`
+## Historical backup inventory
 
-**Fase 3 (hari 9-14): hardening + release**
-- Integration test suite
-- Docs finalization
-- Release tarball + signature
-- Archive everything to OCI
-- **Hari 15**: buffer + migrate kalau perlu
+- Source: GitHub `kurohigee07/Orchestrator-`.
+- Buildroot configuration: `wraithos/br2-ext/`.
+- Reported 577 MB image: `oci:wraith-bucket/wraithos-images/`, approximately 150 MB compressed.
+- Binary artifacts: `oci:wraith-bucket/wraithos-builds/`.
+- Daily DB/config backups: `oci:wraith-bucket/daily/`, seven-generation retention.
 
-## Known cosmetic (non-blocking)
-
-- `/tmp` mount working (fixed v0.20.5)
-- Boot log clean (7 OK lines, zero errors, v0.20.5)
-- Bash + bracketed paste (v0.20.6)
-- Gray prompt (v0.20.6)
-
-## Backup status
-
-- Source code: GitHub `kurohigee07/Orchestrator-`
-- Buildroot configs: GitHub `wraithos/br2-ext/`
-- Full image 577MB: OCI `wraith-bucket/wraithos-images/` (compressed ~150MB)
-- Artifact binary: OCI `wraith-bucket/wraithos-builds/`
-- Daily DB/config: OCI `wraith-bucket/daily/` (7 retention)
-
-Recovery from scratch (~30 menit):
-1. Clone repo
-2. `rclone copy oci:wraith-bucket/wraithos-images/`
-3. `tar -xzf` image
-4. `dd` to USB / boot QEMU
+The proposed roughly 30-minute recovery procedure was: clone the repository, copy the image from OCI, extract it, then write it to USB or boot it in QEMU. Those remote objects and timings were not verified here. Writing an image to a block device is destructive; use the current [operations](docs/operations.md) and [WraithOS](docs/wraithos.md) guides with backups and an isolated target.

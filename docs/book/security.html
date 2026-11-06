@@ -1,0 +1,177 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#0c0b12"><meta name="description" content="Security model and known limitations Audience: anyone considering a non-loopback bind, shared deployment, uploaded source, or customer-facing plugin service. Wraith has useful defe"><title>Security boundaries — Wraith</title><link rel="icon" href="../assets/favicon.svg" type="image/svg+xml"><link rel="stylesheet" href="../assets/style.css"><script defer src="../assets/search-index.js"></script><script defer src="../assets/app.js"></script></head><body data-base="../"><a class="skip-link" href="#article">Skip to article</a><header class="site-header"><div class="header-inner"><a class="brand" href="../index.html"><img src="../assets/favicon.svg" alt="" width="32" height="32"><span>wraith<span class="brand-dot">.</span></span><span class="brand-tag">DOCUMENTATION</span></a><nav class="desktop-nav" aria-label="Main navigation"><a href="../index.html#runtime">Runtime</a><a href="../index.html#request-lab">Labs</a><a href="../index.html#benchmarks">Benchmarks</a><a href="quickstart.html">Guides</a><a href="source-map.html">Source map</a></nav><div class="header-actions"><button class="search-trigger" data-search-open aria-label="Search documentation"><span>Search docs</span><kbd>⌘ K</kbd></button><button class="menu-toggle" aria-label="Open navigation" aria-expanded="false">☰</button></div></div><nav class="mobile-nav" aria-label="Mobile guide navigation" hidden><a href="../index.html">Interactive overview</a><a href="quickstart.html" >Quick start</a><a href="architecture.html" >Architecture</a><a href="plugins.html" >Plugin development</a><a href="api.html" >HTTP API</a><a href="configuration.html" >Configuration</a><a href="sdk-cli.html" >SDK & CLI</a><a href="operations.html" >Operations</a><a href="wraithos.html" >WraithOS</a><a href="security.html" class="active" aria-current="page">Security boundaries</a><a href="benchmarks.html" >Benchmarks</a><a href="testing.html" >Testing & contributing</a><a href="source-map.html" >Source map</a></nav><div class="reading-progress" aria-hidden="true"></div></header><div class="book-layout"><aside class="book-sidebar" aria-label="Documentation guides"><a class="back-home" href="../index.html">← Interactive overview</a><span class="eyebrow">THE DOCUMENTATION</span><a href="quickstart.html" >Quick start</a><a href="architecture.html" >Architecture</a><a href="plugins.html" >Plugin development</a><a href="api.html" >HTTP API</a><a href="configuration.html" >Configuration</a><a href="sdk-cli.html" >SDK & CLI</a><a href="operations.html" >Operations</a><a href="wraithos.html" >WraithOS</a><a href="security.html" class="active" aria-current="page">Security boundaries</a><a href="benchmarks.html" >Benchmarks</a><a href="testing.html" >Testing & contributing</a><a href="source-map.html" >Source map</a></aside><main class="book-article" id="article"><div class="article-meta"><span class="pill violet">SOURCE-GUIDED</span><span>9 min read</span><a href="../security.md">Markdown source</a></div><h1 id="security-model-and-known-limitations">Security model and known limitations</h1><p><strong>Audience:</strong> anyone considering a non-loopback bind, shared deployment, uploaded source, or customer-facing plugin service.</p>
+<p>Wraith has useful defensive mechanisms, but the current implementation is best understood as a <strong>single-operator runtime with namespace/resource tenancy</strong>, not an independently audited hostile multi-tenant platform. This page describes what the code does and does not guarantee.</p>
+<h2 id="trust-boundaries">Trust boundaries <a class="heading-anchor" href="#trust-boundaries" aria-label="Link to Trust boundaries">#</a></h2><div class="table-scroll"><table>
+<thead>
+<tr>
+<th>Boundary</th>
+<th>Implemented control</th>
+<th>What it does not establish</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Guest → host</td>
+<td>Component model, explicit WIT imports, capability checks, Store memory limit, epoch deadline</td>
+<td>A secure boundary for every WASI/host resource or a total process RSS/CPU budget</td>
+</tr>
+<tr>
+<td>Caller → API</td>
+<td>Optional Bearer middleware, per-tenant token verification</td>
+<td>Roles, tenant-wide isolation of admin endpoints, or safe tokenless tenants</td>
+</tr>
+<tr>
+<td>Tenant → tenant</td>
+<td><code>(tenant,id)</code> registry keys, directories, optional resource caps</td>
+<td>Separate process/kernel/filesystem/event/audit isolation</td>
+</tr>
+<tr>
+<td>Source → compiler</td>
+<td>Opt-in route, Bubblewrap namespaces, read-only toolchain, timeout, one-build semaphore</td>
+<td>Audited arbitrary-source execution or complete archive/resource sandboxing</td>
+</tr>
+<tr>
+<td>Artifact → runtime</td>
+<td>Optional raw Ed25519 verification</td>
+<td>Complete signature persistence across every ingestion path</td>
+</tr>
+<tr>
+<td>OS update → boot</td>
+<td>Read-only rootfs; ARM trial/commit/watchdog scripts</td>
+<td>Verified boot, signed rootfs updates, or transactional power-loss safety</td>
+</tr>
+</tbody></table></div>
+<h2 id="recommended-local-posture">Recommended local posture <a class="heading-anchor" href="#recommended-local-posture" aria-label="Link to Recommended local posture">#</a></h2><ol>
+<li>Keep <code>metrics_bind=&quot;127.0.0.1:9090&quot;</code>.</li>
+<li>Leave <code>enable_build=false</code> and <code>enable_build_network=false</code>.</li>
+<li>Upload only components you built or trust.</li>
+<li>Use explicit outbound host/port permissions; avoid <code>*</code> outside a demo.</li>
+<li>Keep token plaintext, signing private keys, and appliance password material out of Git.</li>
+<li>Use an OS service account and resource limits appropriate to the host.</li>
+<li>Before remote access, place the service behind a correctly configured TLS proxy and firewall, and resolve the authorization limitations below.</li>
+</ol>
+<p>Binding to <code>0.0.0.0</code> is not a secure “publish” switch. The same listener carries module administration, metrics, audit, debug state, WebSocket, and wizard routes.</p>
+<h2 id="authentication-is-not-tenant-isolation">Authentication is not tenant isolation <a class="heading-anchor" href="#authentication-is-not-tenant-isolation" aria-label="Link to Authentication is not tenant isolation">#</a></h2><p>With <code>require_auth=false</code>, a tenant without a token passes handler verification without credentials. This is intentional development behavior.</p>
+<p>With <code>require_auth=true</code>:</p>
+<ol>
+<li>Middleware checks the default tenant&#39;s token for every route except exact <code>/healthz</code> and <code>/readyz</code>.</li>
+<li>A named-tenant handler checks that tenant&#39;s token again.</li>
+<li>If the named tenant has no token, its handler allows the request after default-token middleware.</li>
+<li>If it has a different token, the request cannot supply two different Bearer values in the current design.</li>
+</ol>
+<p>Therefore the default token effectively grants access to tokenless named tenants and global operator endpoints. This may suit one administrator; it is not a customer-safe permission model.</p>
+<p>Global <code>/audit/logs</code>, <code>/debug/state</code>, <code>/metrics</code>, UI fragments, wizard routes, and <code>/ws/events</code> are not tenant-filtered. The module list route is tenant-specific, but that alone does not create an information-security boundary.</p>
+<p><strong>Operational implication:</strong> do not give mutually untrusting customers access to the same instance under the assumption that tenant tokens isolate all data and resources.</p>
+<h2 id="capabilities-are-authorization-data">Capabilities are authorization data <a class="heading-anchor" href="#capabilities-are-authorization-data" aria-label="Link to Capabilities are authorization data">#</a></h2><p>The global <code>[[capabilities]]</code> list is a fallback. An uploader can provide <code>X-Module-Capabilities</code> to replace it, including broader permissions. The code does not intersect the requested set with a global maximum.</p>
+<p>Anyone allowed to upload effectively participates in granting host permissions. Keep upload access operator-only until a separate policy-authorization layer exists.</p>
+<p>An empty capability sidecar/manifest falls back to global permissions on reload. <code>[]</code> is not a durable deny-all. A network-free guest plus controlled deployment is safer than relying on an empty manifest for isolation.</p>
+<h3 id="http-specific-risks">HTTP-specific risks <a class="heading-anchor" href="#http-specific-risks" aria-label="Link to HTTP-specific risks">#</a></h3><p>The HTTP check is hostname-based. It does not restrict schemes to HTTPS, block private/link-local IP ranges, pin DNS answers, or cap response-body size. Redirects are disabled, which removes one bypass class but not DNS rebinding or an allowlisted host that serves internal content.</p>
+<p>Use network egress controls for SSRF defense. Treat <code>allowed_hosts=[&quot;*&quot;]</code> as broad outbound GET authority.</p>
+<h3 id="tcp-specific-risks">TCP-specific risks <a class="heading-anchor" href="#tcp-specific-risks" aria-label="Link to TCP-specific risks">#</a></h3><p>Only ports are configurable through the current capability type. There is no destination-host allowlist in that public schema. Socket ownership uses module ID rather than tenant-qualified identity, and handles can outlive a Store unless closed. Same-ID modules across tenants are not strongly separated at this registry layer.</p>
+<h3 id="unused-capability-surfaces">Unused capability surfaces <a class="heading-anchor" href="#unused-capability-surfaces" aria-label="Link to Unused capability surfaces">#</a></h3><p><code>db-query</code> has a shared enum/checker but no WIT database import. <code>log</code> controls Rhai logging, not a guest logging import. Their presence in a manifest should not be mistaken for implemented guest functionality.</p>
+<h2 id="execution-resource-limits">Execution resource limits <a class="heading-anchor" href="#execution-resource-limits" aria-label="Link to Execution resource limits">#</a></h2><p>Implemented:</p>
+<ul>
+<li>Global semaphore: default 2 concurrent executions.</li>
+<li>Optional tenant/module concurrency semaphores.</li>
+<li>Optional tenant/module token buckets.</li>
+<li>Default 256 MiB Wasm linear-memory ceiling per Store.</li>
+<li>Approximate 60-second epoch deadline.</li>
+<li>Default 256 global TCP handles.</li>
+<li>Fixed 60-second HTTP timeout and 30-second outbound HTTP timeout.</li>
+</ul>
+<p>Not equivalent to a complete container sandbox:</p>
+<ul>
+<li>Linear-memory limits do not bound all host/JIT/DB/network allocations.</li>
+<li>Epoch time is not per-module CPU accounting and cannot be configured per manifest in this checkout.</li>
+<li>TCP read/connect behavior lacks a dedicated configurable operation timeout.</li>
+<li>Rhai runs trusted scripts without an explicit operation/fuel/memory limit.</li>
+<li>Shared process failure can affect all tenants; release builds use <code>panic=&quot;abort&quot;</code>.</li>
+<li>SQLite/event/dashboard work shares the same service resources.</li>
+</ul>
+<p>Use host-level cgroups/systemd limits and load tests for deployment capacity. Do not infer safe tenant density from an empty-guest microbenchmark.</p>
+<h2 id="signatures">Signatures <a class="heading-anchor" href="#signatures" aria-label="Link to Signatures">#</a></h2><p>Two different signing systems exist:</p>
+<ol>
+<li><strong>Wasm module signatures:</strong> raw Ed25519, 64-byte signature, 32-byte hex public key.</li>
+<li><strong>Release signatures:</strong> GPG signature over SHA256SUMS and detached tarball signatures.</li>
+</ol>
+<p>They are not interchangeable.</p>
+<p>When <code>trusted_signer_keys</code> is nonempty, disk loading requires a valid <code>.wasm.sig</code>; raw upload requires <code>X-Module-Signature</code>. However:</p>
+<ul>
+<li>Raw upload does not write the supplied signature to a sibling file.</li>
+<li>Source build does not enforce the signature header or produce a signature sibling.</li>
+<li>Delete does not reliably remove signature/capability siblings.</li>
+<li>Trusted-key hex is decoded during verification, not prevalidated as a complete startup policy. An invalid hex entry returns an error and stops that verification attempt; wrong-length or invalid key bytes are skipped with warnings.</li>
+</ul>
+<p>A module accepted over HTTP may therefore disappear after restart when signature enforcement is active. Prefer an offline build/sign/deploy workflow that atomically stages the component and raw signature, then verifies startup loading. Do not claim end-to-end signed ingestion until these paths are fixed and tested.</p>
+<p>The repository contains a release <strong>public</strong> key. It does not establish that every binary in the tree was signed by that key. Verify the actual release manifest and out-of-band fingerprint.</p>
+<h2 id="source-build-sandbox">Source-build sandbox <a class="heading-anchor" href="#source-build-sandbox" aria-label="Link to Source-build sandbox">#</a></h2><p>The current code is substantially more defensive than the old TODO description: builds are disabled by default and Cargo runs through Bubblewrap when enabled. System/toolchain paths are read-only; home/tmp are tmpfs; namespaces are unshared; network is off unless explicitly enabled; one global build slot is allowed.</p>
+<p>Remaining concerns include:</p>
+<ul>
+<li>Tar extraction occurs outside the Bubblewrap Cargo invocation and relies on the external tar implementation&#39;s path/link behavior.</li>
+<li>Archive expansion and compiler memory/CPU/disk consumption need stronger explicit budgets.</li>
+<li>Network-enabled builds can execute build scripts/proc macros with outbound access.</li>
+<li>A read-only offline cache must be prepared correctly; dependency resolution is not magically available offline.</li>
+<li>The 60-second HTTP timeout differs from the 300-second compiler timeout.</li>
+<li>Build artifact signing/capability persistence is incomplete.</li>
+</ul>
+<p>Keep this route restricted to trusted operators. “Sandboxed” does not mean “safe to accept arbitrary public source without further review.”</p>
+<h2 id="dashboard-and-wizard">Dashboard and wizard <a class="heading-anchor" href="#dashboard-and-wizard" aria-label="Link to Dashboard and wizard">#</a></h2><p>The dashboard serves HTMX locally and escapes server-generated HTML table fields. However, its WebSocket message handler inserts event kind/source/payload into <code>innerHTML</code> without equivalent escaping. Event payloads can originate from permitted plugins. Treat the dashboard as an operator surface and do not assume all event content is safe HTML.</p>
+<p>The UI hard-codes <code>ws://</code> and does not attach Bearer tokens to fetch/HTMX requests. HTTPS and authenticated deployments require UI changes or a carefully designed proxy session-auth layer. There is no built-in CSRF token/CORS hardening profile; browser exposure deserves a separate review.</p>
+<p>The wizard stores an Argon2 admin-password hash, hostname, and network TOML, but this checkout does not show a complete path that applies those values to OS login, API Bearer configuration, network activation, or an actual reboot. The HTML does not expose the optional encryption-password field even though the backend accepts it. Do not infer that completing the web form secures console login or rotates runtime credentials.</p>
+<h2 id="appliance-credential-and-boot-material">Appliance credential and boot material <a class="heading-anchor" href="#appliance-credential-and-boot-material" aria-label="Link to Appliance credential and boot material">#</a></h2><p>The ARM tree contains a tracked <code>board/wraithos/etc/shadow</code> file outside the rootfs overlay. Its contents are intentionally not reproduced here. Review whether that build-time credential material belongs in Git, whether it enters an image, and rotate/remove it through a deliberate security change before public distribution. This documentation update does not alter credentials.</p>
+<p>The ARM shell profile disables history/core dumps and fixes PATH, but these are usability/hardening settings, not a substitute for authenticated console access. <code>root</code> is the configured shell account. Read-only rootfs does not mean verified boot or encrypted persistent data.</p>
+<h2 id="wraithos-update-and-encryption-caveats">WraithOS update and encryption caveats <a class="heading-anchor" href="#wraithos-update-and-encryption-caveats" aria-label="Link to WraithOS update and encryption caveats">#</a></h2><ul>
+<li>x86 uses a simple <code>boot_b</code> marker; no automatic failed-boot counter is implemented there.</li>
+<li>ARM uses GRUB env plus watchdog proof, but <code>wraith-update</code> does not cryptographically verify the supplied rootfs image.</li>
+<li>ARM updater writes only the inactive SquashFS slot; it does not replace the ESP&#39;s <code>Image-a</code>/<code>Image-b</code> kernels. Kernel updates require a separate coordinated procedure.</li>
+<li>GRUB environment rewriting uses a temporary runtime file followed by overwrite plus sync; it is not proven power-loss atomic at the storage layer.</li>
+<li>Watchdog health proof is stronger than “process exists,” but its logic and grace behavior need hardware/failure-injection validation.</li>
+<li>LUKS setup targets hard-coded <code>/dev/vda4</code> and formats it. A wrong device/layout or populated partition can cause irreversible data loss.</li>
+</ul>
+<p>See <a href="wraithos.html">WraithOS</a> for exact architecture differences and recovery procedures.</p>
+<h2 id="data-handling-and-persistence">Data handling and persistence <a class="heading-anchor" href="#data-handling-and-persistence" aria-label="Link to Data handling and persistence">#</a></h2><p>SQLite stores execution status/errors, not a designed durable queue of guest payloads. Error strings can still contain sensitive guest/host details. Restrict audit/debug/log access and define retention; the application does not automatically prune audit rows.</p>
+<p>The event bus is global, in-memory, and lossy. WebSocket clients see events across tenants. Do not publish secrets in event payloads on a shared instance.</p>
+<p>Individual disk writes use fsync/rename, but module + sidecars + registry are not one transaction. Backups use SQLite <code>.backup</code> when the sqlite3 CLI is installed; the fallback file copy is explicitly not transactionally consistent.</p>
+<h2 id="deployment-decision-guide">Deployment decision guide <a class="heading-anchor" href="#deployment-decision-guide" aria-label="Link to Deployment decision guide">#</a></h2><div class="table-scroll"><table>
+<thead>
+<tr>
+<th>Use case</th>
+<th>Current recommendation</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Personal localhost runtime</td>
+<td>Reasonable starting point with trusted modules and conservative capabilities</td>
+</tr>
+<tr>
+<td>One operator serving their own integrations</td>
+<td>Possible after auth, proxy, backup, resource-limit, and restore validation</td>
+</tr>
+<tr>
+<td>Trusted teammates uploading prebuilt modules</td>
+<td>Restrict administration; document signature/build gaps and audit access</td>
+</tr>
+<tr>
+<td>Public arbitrary source compilation</td>
+<td>Do not expose without additional sandbox/queue/resource/security work</td>
+</tr>
+<tr>
+<td>Mutually untrusting paying tenants</td>
+<td>Require stronger authz, tenant-scoped observability/events/sockets, and process/instance isolation first</td>
+</tr>
+<tr>
+<td>Security-critical appliance fleet</td>
+<td>Add signed/verified updates, credential provisioning, device identity, and failure-injection testing first</td>
+</tr>
+</tbody></table></div>
+<h2 id="priority-hardening-backlog">Priority hardening backlog <a class="heading-anchor" href="#priority-hardening-backlog" aria-label="Link to Priority hardening backlog">#</a></h2><p>This is a documentation-derived recommendation, not a claim that these changes were implemented:</p>
+<ol>
+<li>Define operator/admin versus tenant roles and tenant-filter every sensitive surface.</li>
+<li>Make global capability policy an upper bound; persist explicit deny semantics.</li>
+<li>Scope socket ownership and event/audit visibility by tenant and execution.</li>
+<li>Persist and verify signatures consistently across upload/build/restart/delete.</li>
+<li>Add archive validation, compiler resource budgets, and a durable build job model.</li>
+<li>Add Rhai limits, outbound response limits, egress controls, and shutdown drain tests.</li>
+<li>Complete wizard-to-OS credential/network/reboot integration and remove tracked secret material.</li>
+<li>Validate ARM boot/update/encryption through power-loss and failed-boot drills; sign update artifacts.</li>
+</ol>
+<p>No security audit or penetration test was performed for this documentation update.</p>
+<div class="book-bottom"><a href="wraithos.html">← WraithOS</a><a href="benchmarks.html">Benchmarks →</a></div></main><aside class="book-toc" aria-label="On this page"><span class="eyebrow">ON THIS PAGE</span><a href="#trust-boundaries">Trust boundaries</a><a href="#recommended-local-posture">Recommended local posture</a><a href="#authentication-is-not-tenant-isolation">Authentication is not tenant isolation</a><a href="#capabilities-are-authorization-data">Capabilities are authorization data</a><a href="#execution-resource-limits">Execution resource limits</a><a href="#signatures">Signatures</a><a href="#source-build-sandbox">Source-build sandbox</a><a href="#dashboard-and-wizard">Dashboard and wizard</a><a href="#appliance-credential-and-boot-material">Appliance credential and boot material</a><a href="#wraithos-update-and-encryption-caveats">WraithOS update and encryption caveats</a><a href="#data-handling-and-persistence">Data handling and persistence</a><a href="#deployment-decision-guide">Deployment decision guide</a><a href="#priority-hardening-backlog">Priority hardening backlog</a></aside></div><dialog id="search-dialog" aria-label="Search documentation"><div class="search-box"><div class="search-input-row"><span>⌕</span><input id="search-input" type="search" placeholder="Search routes, boot slots, quotas…" autocomplete="off" aria-label="Search documentation"><button data-search-close aria-label="Close search">Esc</button></div><div id="search-results" class="search-results"></div><div class="search-footer">↑ ↓ to navigate · Enter to open · Esc to close</div></div></dialog></body></html>

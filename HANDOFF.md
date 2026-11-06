@@ -1,561 +1,311 @@
-# Wraith-V2 + WraithOS — Handoff Document
+# Wraith-V2 + WraithOS — Historical Handoff
 
-**Last updated:** 2026-11-02
-**Repo:** https://github.com/kurohigee07/Orchestrator-
-**Current version:** v0.17.1 (WebSocket + Dashboard + Audit Logs + SDK/CLI)
-**WraithOS build status:** In-progress (Buildroot compilation)
+> **Archival document, translated into English.** This file preserves development notes through 2026-11-04. Version labels, completion claims, measurements, and deployment details below are historical reports, not independently verified current status. For the source-guided description of this checkout, start with [README.md](README.md), [docs/architecture.md](docs/architecture.md), and [docs/source-map.md](docs/source-map.md). The original mixed-language file remains available at [baseline commit 20cb378](https://github.com/kurohigee07/Orchestrator-/blob/20cb3785d1f17e4b05759b539ffa016eaea50324/HANDOFF.md).
 
----
-
-## 1. Project Overview
-
-**Wraith-V2** = unified core engine (Rust static musl binary) untuk menjalankan:
-- Wasm plugins (component model, wasm32-wasip2)
-- Rhai scripting (embedded, event-driven)
-- HTTP API (:9090)
-- Multi-tenant (auth argon2, quota, audit logs)
-- Metrics (Prometheus), WebSocket event stream, web dashboard (HTMX)
-
-**WraithOS** = appliance OS (Buildroot-based) yang boot langsung ke Wraith-V2.
-- Immutable rootfs (SquashFS + overlayfs)
-- A/B atomic update (RAUC) — planned M27
-- Kernel tuned: eBPF, AF_PACKET, cgroups v2, panic=5, watchdog
-- tmpfs untuk /modules & SQLite (sub-millisecond Wasm exec)
+**Last historical update:** 2026-11-04
+**Repository:** https://github.com/kurohigee07/Orchestrator-
+**Initial document version:** v0.17.1 (WebSocket, dashboard, audit logs, SDK/CLI)
+**Initial WraithOS status:** Buildroot compilation in progress
 
 ---
 
-## 2. Current State (milestones)
+## 1. Project overview
 
-| Version | Feature |
-|---------|---------|
-| v0.1.0-mvp | M1-M7: static musl binary, Wasm bridge, Rhai worker, hardening |
-| v0.2.0 | M8-M9: config TOML + CLI + metrics + systemd |
-| v0.3.0 | M10-A: bounded Wasm concurrency (Semaphore) |
-| v0.4.0 | M10-B: per-instance memory limit (256 MB) |
-| v0.5.0 | M11-M13: tracing + /debug/state + install/smoke scripts |
-| v0.6.0 | M14: ed25519 signature verification |
-| v0.7.0 | M15: module lifecycle API (upload/replace/delete/execute) |
-| v0.8.0 | M16: per-module quota (mem, conc, rate) |
-| v0.9.0 | M17: multi-tenant (auth argon2, namespace isolation) |
+**Wraith-V2** was described as a unified Rust static-musl core for:
+
+- Wasm plugins using the component model and `wasm32-wasip2`.
+- Embedded, event-driven Rhai scripting.
+- An HTTP API on port 9090.
+- Multi-tenant namespaces with Argon2 authentication, quotas, and audit logs.
+- Prometheus metrics, a WebSocket event stream, and an HTMX dashboard.
+
+**WraithOS** was described as a Buildroot appliance booting into Wraith-V2:
+
+- Immutable SquashFS root filesystem; the initial notes also mentioned overlayfs.
+- A/B atomic updates through RAUC, planned for M27. Later notes describe a custom updater instead.
+- Kernel options for eBPF, AF_PACKET, cgroups v2, `panic=5`, and watchdog behavior.
+- tmpfs for modules and SQLite in the early MVP. Later integration notes describe persistent `/data` bind mounts.
+
+These statements describe successive historical designs. Do not combine them into one current architecture without checking source.
+
+## 2. Reported milestone history
+
+| Version | Reported feature set |
+|---|---|
+| v0.1.0-mvp | M1–M7: static musl binary, Wasm bridge, Rhai worker, hardening |
+| v0.2.0 | M8–M9: TOML config, CLI, metrics, systemd |
+| v0.3.0 | M10-A: bounded Wasm concurrency through a semaphore |
+| v0.4.0 | M10-B: per-instance 256 MB memory limit |
+| v0.5.0 | M11–M13: tracing, `/debug/state`, install/smoke scripts |
+| v0.6.0 | M14: Ed25519 signature verification |
+| v0.7.0 | M15: upload/replace/delete/execute lifecycle API |
+| v0.8.0 | M16: per-module memory/concurrency/rate quotas |
+| v0.9.0 | M17: tenant namespaces and Argon2 authentication |
 | v0.10.0 | M18: per-tenant resource caps |
-| v0.11.0 | M19: build-from-source pipeline (cargo build in sandbox) |
-| v0.12.0 | M20: OCI Object Storage backup (rclone, daily timer) |
-| v0.13.0 | M21: Wraith SDK (Rust client) + CLI (wraith binary) |
-| v0.14.0 | M22: Wasm EventBus (cross-language: Wasm to Rhai to Rust) |
-| v0.15.0 | M23: audit logs (SQLite execution_logs table) |
-| v0.16.0 | M24: web dashboard (HTML + HTMX, /ui) |
-| v0.17.0 | M25: WebSocket live event stream (/ws/events) |
-| v0.17.1 | M25: WS test helper script |
+| v0.11.0 | M19: source-build pipeline |
+| v0.12.0 | M20: OCI Object Storage backup through rclone and a daily timer |
+| v0.13.0 | M21: Rust SDK and `wraith` CLI |
+| v0.14.0 | M22: Wasm → Rhai → Rust EventBus |
+| v0.15.0 | M23: SQLite `execution_logs` audit table |
+| v0.16.0 | M24: embedded HTML/HTMX dashboard at `/ui` |
+| v0.17.0 | M25: WebSocket live events at `/ws/events` |
+| v0.17.1 | M25: WebSocket test helper |
 
----
+## 3. Historical deployment details
 
-## 3. Deployment Details
+**Oracle VPS:**
 
-**VPS Oracle:**
-- Hostname: instance-20261018-1417
-- OS: Oracle Linux 9 (x86_64)
-- RAM: 48 GB, 8 CPU
-- User: opc
-- Project dir: ~/orchestrator-project
+- Hostname: `instance-20261018-1417`.
+- OS: Oracle Linux 9, x86_64.
+- Reported resources: 48 GB RAM, 8 CPUs.
+- User: `opc`.
+- Project directory: `~/orchestrator-project`.
 
 **Service:**
-- systemd user unit: ~/.config/systemd/user/orchestrator.service
-- Binary: ~/orchestrator-project/target/x86_64-unknown-linux-musl/release/orchestrator
-- Config: ~/orchestrator-project/orchestrator.toml
-- Logs: ~/orchestrator-project/logs/orchestrator.log
-- Bind: 127.0.0.1:9090 (localhost only)
+
+- User unit: `~/.config/systemd/user/orchestrator.service`.
+- Binary: `~/orchestrator-project/target/x86_64-unknown-linux-musl/release/orchestrator`.
+- Config: `~/orchestrator-project/orchestrator.toml`.
+- Log: `~/orchestrator-project/logs/orchestrator.log`.
+- Bind: `127.0.0.1:9090`.
 
 **Backup:**
-- OCI bucket: oci:wraith-bucket/daily
-- rclone config: ~/.config/rclone/rclone.conf (native oracleobjectstorage provider)
-- OCI config: ~/.oci/config
-- Backup script: deploy/backup.sh
-- Systemd timer: ~/.config/systemd/user/orchestrator-backup.timer (daily 03:00)
-- Retention: 7 terakhir
 
-**CLI:**
-- Binary: ~/.cargo/bin/wraith
-- Commands: list, deploy, exec, delete, logs
-- Source: wraith-cli/, wraith-sdk/
+- Remote: `oci:wraith-bucket/daily`.
+- rclone config: `~/.config/rclone/rclone.conf`, using the native Oracle Object Storage provider.
+- OCI config: `~/.oci/config`.
+- Script: `deploy/backup.sh`.
+- Timer: `orchestrator-backup.timer`, daily at 03:00.
+- Retention: seven newest generations.
 
----
+**CLI:** binary `~/.cargo/bin/wraith`; commands `list`, `deploy`, `exec`, `delete`, `logs`; source in `wraith-cli/` and `wraith-sdk/`.
 
-## 4. WraithOS Build Status
+These are environment-specific historical paths, not credentials or a universal installation recipe.
 
-**Build directory:** ~/buildroot-2024.02.9
-**BR2_EXTERNAL:** ~/wraithos-br2-ext
-**Defconfig:** ~/buildroot-2024.02.9/configs/wraithos_x86_64_defconfig
-**Build log:** /tmp/wraithos-build.log
-**tmux session:** wraith-build
+## 4. Initial WraithOS build notes
 
-**Build command:**
-    cd ~/buildroot-2024.02.9
-    make O=output -j8 2>&1 | tee -a /tmp/wraithos-build.log
+- Build directory: `~/buildroot-2024.02.9`.
+- External tree: `~/wraithos-br2-ext`.
+- Defconfig: `~/buildroot-2024.02.9/configs/wraithos_x86_64_defconfig`.
+- Log: `/tmp/wraithos-build.log`.
+- tmux session: `wraith-build`.
 
-**Target artifacts (setelah selesai):**
-    ~/buildroot-2024.02.9/output/images/
-    bzImage
-    rootfs.squashfs
-    wraithos.img (kalau ada post-image script)
+Historical build command:
 
-**Custom overlay (BR2_EXTERNAL):**
-    ~/wraithos-br2-ext/board/wraithos/
-    kernel.fragment              (eBPF, AF_PACKET, cgroups, panic=5)
-    rootfs_overlay/
-        sbin/wraith-init         (binary orchestrator)
-        etc/fstab                (tmpfs /modules & /var/lib/orchestrator)
-        etc/wraith/orchestrator.toml
-        etc/systemd/system/multi-user.target.wants/orchestrator.service
-        usr/lib/systemd/system/orchestrator.service
+```sh
+cd ~/buildroot-2024.02.9
+make O=output -j8 2>&1 | tee -a /tmp/wraithos-build.log
+```
 
-**Known build gotchas (sudah diatasi):**
+Expected artifacts after completion:
 
-1. Oracle Linux repos (ol9_ksplice, RHCK, UEK) timeout -> disable via dnf --disablerepo atau ganti ke AlmaLinux mirror untuk install deps
-2. Legacy config di Buildroot -> pakai BR2_SKIP_LEGACY=y atau update nama opsi (BR2_PACKAGE_CURL -> BR2_PACKAGE_LIBCURL_CURL)
-3. Mirror Savannah/MPFR lemot (~5 KB/s) -> set BR2_PRIMARY_SITE="https://mirrors.kernel.org/sources/" di output/.config
-4. Kill build di tengah -> AMAN, Buildroot pakai stamp files (.stamp_*_installed) untuk resume
-5. Fix deps kurang (gcc-c++, patch, perl, ncurses-devel) -> pakai AlmaLinux mirror sementara:
-   sudo tee /etc/yum.repos.d/alma-temp.repo -> dnf --disablerepo=* --enablerepo=alma_* install ...
+```text
+~/buildroot-2024.02.9/output/images/
+  bzImage
+  rootfs.squashfs
+  wraithos.img   # only when the post-image pipeline is wired correctly
+```
 
----
+The external overlay was expected to contain the kernel fragment, host binary, fstab, runtime config, and systemd unit/wants symlink. The current x86 defconfig selects systemd while the overlay also contains BusyBox-style init files; see [the current WraithOS guide](docs/wraithos.md) before rebuilding.
 
-## 5. Architecture (High Level)
+Historical build obstacles and workarounds:
 
-**Wraith-V2 binary:**
-- Axum HTTP server (routes: /modules, /t/{tenant}/modules, /ui, /ws/events, /metrics, /healthz, /audit/logs, /build)
-- Wasmtime component model (Wasm plugins, sandboxed)
-- Rhai (event-driven scripts, spawn_blocking isolation)
-- EventBus (tokio broadcast)
-- SQLx SQLite (execution_logs, persistent state)
-- Rustls-ring TLS (no OpenSSL)
+1. Oracle Linux repositories timed out; dependencies were installed through an AlmaLinux mirror or by disabling the failing repositories.
+2. Legacy Buildroot options required `BR2_SKIP_LEGACY=y` or renamed options such as `BR2_PACKAGE_LIBCURL_CURL`.
+3. Slow Savannah/MPFR downloads were redirected through `BR2_PRIMARY_SITE="https://mirrors.kernel.org/sources/"`.
+4. Interrupted builds were resumed using Buildroot stamp files. A resume is not proof that every generated artifact is consistent.
+5. Missing `gcc-c++`, `patch`, Perl, and ncurses development packages were installed through a temporary AlmaLinux repository.
 
-**Defense-in-depth limits:**
-- Epoch deadline: 60s per execute
-- Wasm memory: 256 MB per instance (StoreLimits)
-- WasmPool concurrency: 2 (global Semaphore)
-- Module quota: per module (memory, concurrency, rate limit)
-- Tenant caps: per tenant (modules, concurrency, rate limit)
-- Socket registry: 256 global cap
-- Build timeout: 300s, concurrency 1
+## 5. Historical high-level architecture
 
-**Multi-tenant:**
-- Registry key: (tenant, id)
-- Auth: Bearer via argon2 PHC hash (or plaintext for dev)
-- Storage: modules/{tenant}/*.wasm
-- Cross-tenant exec: 404 (not 401, avoid existence leak)
+The binary was described as combining Axum, Wasmtime components, Rhai on `spawn_blocking`, Tokio broadcast events, SQLx SQLite, and rustls/ring without OpenSSL.
 
----
+Reported limits:
 
-## 6. Config Penting
+- 60-second epoch deadline.
+- 256 MB Wasm memory per instance.
+- Two global Wasm permits.
+- Module and tenant memory/concurrency/rate controls.
+- 256 global socket handles.
+- One source build at a time with a 300-second compiler timeout.
 
-**orchestrator.toml** highlights:
-    db_path = "orchestrator.db"
-    modules_dir = "./modules"
-    max_concurrent_wasm = 2
-    wasm_memory_limit_mb = 256
-    metrics_bind = "127.0.0.1:9090"
-    default_tenant = "default"
+Tenant notes described `(tenant, id)` registry keys, Bearer tokens verified against Argon2 PHC hashes or development plaintext, and `modules/{tenant}/*.wasm` storage. The notes claimed cross-tenant execution returned 404 to avoid an existence leak. Current authentication and observability are broader than namespace isolation; read [the security model](docs/security.md).
 
-**Kernel fragment** (wraithos-br2-ext/board/wraithos/kernel.fragment):
-- CONFIG_PACKET=y, CONFIG_BPF_SYSCALL=y, CONFIG_BPF_JIT=y
-- CONFIG_CGROUPS=y, CONFIG_CGROUP_BPF=y
-- CONFIG_WATCHDOG_NOWAYOUT=y, CONFIG_PANIC_TIMEOUT=5, CONFIG_PANIC_ON_OOPS=y
-- CONFIG_SQUASHFS=y, CONFIG_SQUASHFS_LZ4=y, CONFIG_OVERLAY_FS=y
-- Disable: DRM, FB, SOUND, WLAN, BT
+## 6. Important historical configuration
 
----
+```toml
+db_path = "orchestrator.db"
+modules_dir = "./modules"
+max_concurrent_wasm = 2
+wasm_memory_limit_mb = 256
+metrics_bind = "127.0.0.1:9090"
+default_tenant = "default"
+```
 
-## 7. Roadmap
+The kernel fragment was reported to enable packet sockets, BPF syscall/JIT, cgroups/BPF, watchdog nowayout, five-second panic reboot, panic on oops, SquashFS/LZ4, and overlayfs, while disabling DRM, framebuffer, sound, WLAN, and Bluetooth. Verify the final kernel config rather than assuming a fragment alone applied every option.
 
-**Selesai:** M1-M25 (lihat tabel section 2)
+## 7. Historical roadmap
 
-**In-progress:**
-- M26: WraithOS Level 2 (Production Appliance)
-  - [x] Buildroot base config
-  - [x] Kernel fragment (eBPF, cgroups, panic, watchdog)
-  - [x] Custom overlay (binary, systemd, fstab tmpfs)
-  - [ ] Build compile (in-progress)
-  - [ ] QEMU boot test
-  - [ ] Verify 6 checkpoints
+M1–M25 were reported complete. M26, WraithOS Level 2, had base config, kernel fragment, and overlay work marked complete, with compilation, QEMU boot, and six verification checkpoints still pending at the time of the initial note.
 
-**Planned (Level 3 kalau waktu cukup):**
-- M27: RAUC A/B update (atomic, rollback)
-- M28: Web first-boot wizard (:8080, HTML form)
-- M29: LUKS encrypted data partition
-- M30: aarch64 build (Raspberry Pi)
-- M31: Signed releases (GPG + SHA256SUMS)
+Planned Level 3 work included RAUC A/B updates, a first-boot wizard originally proposed on port 8080, LUKS, AArch64, and signed releases. Later section entries supersede parts of this plan; the current wizard is served by the main listener at `/wizard`.
+
+## 8. Original resume instructions
+
+The original note asked a new assistant chat to read this handoff, treat v0.17.1 as the latest milestone, inspect the `wraith-build` tmux session, and continue with QEMU testing after compilation. That environment is not available in the documentation workspace. Use the current source and guides rather than assuming the historical session still exists.
+
+## 9. Original WraithOS verification checklist
+
+The proposed six checks were:
+
+1. `systemctl status orchestrator.service` shows active/running.
+2. `curl http://127.0.0.1:9090/healthz` returns `ok`.
+3. `/modules` and `/var/lib/orchestrator` are tmpfs mounts.
+4. `/proc/cmdline` contains `panic=5`.
+5. `/sys/fs/cgroup/cgroup.controllers` exists.
+6. The BPF filesystem is mounted or a BPF feature probe succeeds.
+
+Later notes report BusyBox rather than systemd and persistent data rather than tmpfs. Adapt checks to the actual image; do not require obsolete mount/init behavior blindly.
+
+## 10. Ownership
+
+- Owner: `kurohigee07` on GitHub.
+- The initial note described the repository as private by default; current visibility must be checked on GitHub.
+- Backups were reported across OCI, GitHub, and local storage.
 
 ---
 
-## 8. How to Resume in New Chat
+## WraithOS Level 2 MVP — reported verified, 2026-11-02
 
-Kalau context window assistant habis dan buka chat baru, kirim pesan:
+### Reported artifacts
 
-    Project: WraithOS (appliance OS untuk Wraith-V2 orchestrator).
-    Repo: github.com/kurohigee07/Orchestrator-
-    Milestone terakhir: v0.17.1 (WebSocket + Dashboard + Audit Logs + SDK/CLI).
-    WraithOS status: buildroot build in-progress di tmux session 'wraith-build'.
-    Baca HANDOFF.md di repo untuk full context.
-    Next step: QEMU boot test setelah build selesai.
+- Linux 6.6 `bzImage`: 11 MB.
+- Immutable `rootfs.squashfs`: 7.1 MB.
+- Static-musl `wraith-init`: 23 MB, embedded in the rootfs.
+- The note called the image “18 MB total.” That is a historical headline, not the later full partitioned disk size.
 
-Assistant di chat baru langsung ngerti tanpa perlu recap panjang.
+### Reported QEMU/KVM checks
 
----
+- Kernel boot in 5–8 seconds.
+- `/bin/sh` used as a temporary init bypass.
+- `/sbin/wraith-init` and `/etc/wraith/orchestrator.toml` present.
+- tmpfs mounted at `/modules` (256M) and `/var/lib/orchestrator` (512M).
+- `panic=5`, cgroups v2, and BPF filesystem observed.
+- Loopback ping reported at 0.036 ms.
+- Orchestrator PID 83 running; `/healthz` returned HTTP 200 `ok`.
+- SQLite running in tmpfs.
+- Rhai smoke event reported `delivered=2`.
 
-## 9. Verification Checklist (WraithOS)
+### Reported MVP issues
 
-Setelah build selesai, verify 6 hal ini di QEMU:
+1. BusyBox init stalled in S40network waiting for `eth0`; the workaround was manual loopback setup and host startup from a shell.
+2. The systemd service did not auto-start under BusyBox; an init.d script was proposed.
+3. BusyBox wget required loopback to be up.
 
-1. **Systemd started:**
-       systemctl status orchestrator.service
-   Expected: active (running)
+Next steps included init/network fixes, a GRUB disk image, RAUC, LUKS, AArch64, and a wizard.
 
-2. **Healthz:**
-       curl http://127.0.0.1:9090/healthz
-   Expected: ok
+## WraithOS M28 A/B update — reported verified, 2026-11-02 14:09 UTC
 
-3. **tmpfs aktif:**
-       mount | grep -E '/modules|/var/lib/orchestrator'
-   Expected: keduanya tmpfs
+The note reported:
 
-4. **panic=5 aktif:**
-       cat /proc/cmdline
-   Expected: panic=5 di cmdline
+- Slot A boot from `/dev/vda2`, healthy orchestrator.
+- A → B update through `dd` to `/dev/vda3`, a `boot_b` marker, and reboot.
+- Slot B boot from `/dev/vda3`, healthy orchestrator.
+- B → A rollback by removing `/boot/boot_b` and rebooting.
+- Bidirectional QEMU/KVM verification.
 
-5. **cgroups v2:**
-       ls /sys/fs/cgroup/
-   Expected: cgroup.controllers (v2 marker)
+The described layout was a 64M FAT32 boot partition, two 128M SquashFS roots, and a 256M ext4 data partition. Selection used a custom updater and GRUB marker files, not RAUC or `grub-editenv`. The kernel command line carried `slot=A/B`.
 
-6. **eBPF tersedia:**
-       ls /sys/fs/bpf/ 2>/dev/null || mount | grep bpf
-   Expected: bpf filesystem mounted atau bpftool feature probe works
+Cosmetic issues included manual `/tmp` mounting, network/sysctl warnings, and the default Buildroot banner. Wizard, signing, AArch64, and LUKS remained future work in that entry.
 
-Kalau 6/6 pass -> WraithOS Level 2 SELESAI.
+## WraithOS integration — reported verified
 
----
+The notes emphasized that the Rust orchestrator was inside WraithOS as `/sbin/wraith-init`, started by `/etc/init.d/S99wraith-init`, with config, DB/logs, and modules bind-mounted from `/data`.
 
-## 10. Contact / Ownership
+The following were reported working: health, metrics, debug state, audit, dashboard, WebSocket, module CRUD, tenant routes, and the build route. The build route is opt-in in the current source; a historical endpoint list does not prove it was enabled.
 
-- Owner: kurohigee07 (github)
-- Repo visibility: private (default)
-- Backup: OCI bucket + GitHub + local (kalau perlu)
+QEMU access was described through:
 
----
+```text
+-netdev user,hostfwd=tcp::9091-:9090
+```
 
-**End of Handoff Document**
+Then the host could call `http://127.0.0.1:9091/ui`, optionally through an SSH tunnel.
 
----
+The entry called the dashboard “production-ready” and proposed a separate port-8080 wizard. Those are historical claims, not current security conclusions. The current dashboard has documented authentication/HTTPS/event-escaping limitations, and the wizard shares the main listener.
 
-## WraithOS Level 2 MVP — VERIFIED (2026-11-02)
+A final 2026-11-02 entry reported the dashboard HTML, debug JSON with 32-second uptime, auto-start, persistent SQLite, bidirectional A/B behavior, and all 25 milestones working inside the OS. These observations were not rerun for this documentation update.
 
-### Artifacts
-- Kernel: bzImage 11 MB (Linux 6.6, eBPF + cgroups v2 + panic=5)
-- Rootfs: rootfs.squashfs 7.1 MB (immutable)
-- Binary: wraith-init 23 MB (static musl, embedded in rootfs)
-- Image size: 18 MB total
+## Termux deployment — reported verified, 2026-11-02 22:40
 
-### Verification (in QEMU with KVM)
-- [x] Kernel boots (5-8s with KVM acceleration)
-- [x] /bin/sh as init works (init=/bin/sh bypass for test)
-- [x] /sbin/wraith-init present (23 MB ELF 64-bit static)
-- [x] /etc/wraith/orchestrator.toml present
-- [x] tmpfs mounted: /modules (256M), /var/lib/orchestrator (512M)
-- [x] Kernel cmdline: panic=5 confirmed
-- [x] cgroups v2: /sys/fs/cgroup/cgroup.controllers present
-- [x] eBPF filesystem: bpf on /sys/fs/bpf type bpf
-- [x] Loopback network: ping 127.0.0.1 0.036ms
-- [x] Orchestrator PID 83 running
-- [x] HTTP /healthz responds "ok" (HTTP/1.1 200 OK)
-- [x] SQLite DB running in tmpfs
-- [x] Rhai event processing (smoke test delivered=2)
+The note reported native Android ARM64 execution in Termux without emulation:
 
-### Known Issues (non-blocking for MVP)
-1. BusyBox init stuck at S40network (wait_iface timeout on eth0)
-   - Workaround: boot with init=/bin/sh, manually setup lo + start orchestrator
-   - Fix: rename interfaces to en* wildcard OR disable wait_iface
-2. No auto-start of orchestrator.service (systemd not active, BusyBox init)
-   - Workaround: manual /sbin/wraith-init
-   - Fix: add /etc/init.d/S99orchestrator
-3. wget in BusyBox requires loopback UP before use
-   - Fix: bring up lo in init script or disable wait_iface
+- `wraith-termux-aarch64.tar.gz`: 8.3 MB compressed, 16 MB extracted.
+- Cross-compilation through `cargo zigbuild --target aarch64-unknown-linux-musl`.
+- Static musl ELF running in Termux; PID 28226 and healthy uptime reported.
+- Health, readiness, metrics, audit, debug state, dashboard, and Rhai smoke event reported working.
 
-### Next Steps for Level 3
-- Fix init scripts (auto-start + network)
-- Add post-image.sh to bundle bootable .img with GRUB
-- RAUC A/B update (atomic rollback)
-- LUKS encrypted /var/lib/orchestrator
-- aarch64 build (Raspberry Pi)
-- Web first-boot wizard
+The package directory was described as containing the binary, a phone-oriented config (128 MB memory, 64 sockets), run/stop/status helpers, and README. The binary is not tracked in the current package directory and must be supplied separately.
 
----
+An OCI pre-authenticated download URL was reported with roughly seven-day expiry from 2026-11-02. No usable URL is reproduced here. The note planned to move the permanent host to an HP Termux instance after the Oracle VPS ended; that migration is not verified by this checkout.
 
-## WraithOS M28 — A/B Atomic Update VERIFIED (2026-11-02 14:09 UTC)
+## Session update, 2026-11-03 — v0.21.5 through v0.23.5
 
-### Confirmed working:
-- Slot A boot: root=/dev/vda2, orchestrator runs, healthz ok
-- A→B update: wraith-update dd to vda3, boot_b marker, reboot → slot=B
-- Slot B boot: root=/dev/vda3, orchestrator runs, healthz ok
-- B→A rollback: rm /boot/boot_b, reboot → slot=A
-- All bidirectional verified in QEMU with KVM
-
-### Architecture:
-- 4 partitions: boot(FAT32 64M) + rootfs-a(squashfs 128M) + rootfs-b(squashfs 128M) + data(ext4 256M)
-- GRUB markers: /boot/boot_b (or boot_a) as default override
-- Custom updater: /usr/bin/wraith-update (no RAUC, no grub-editenv dependency)
-- Kernel cmdline: slot=A/B for runtime detection
-
-### Known cosmetic issues (non-blocking):
-- /tmp fstab not auto-applied (workaround: manual mount tmpfs)
-- S40network/sysctl warns (cosmetic, boot continues)
-- Buildroot "Welcome to Buildroot" banner (issue file not overridden yet)
-
-### Next steps:
-- M29: Web first-boot wizard (embedded HTML + Rust handler)
-- M30: Signed release bundles (SHA256SUMS + GPG)
-- M31: aarch64 build for Raspberry Pi
-- M32: LUKS encrypted /data partition
-
----
-
-## WraithOS Integration Status — VERIFIED
-
-**Rust orchestrator IS inside WraithOS** (not a separate project):
-
-- Binary: `/sbin/wraith-init` = `target/x86_64-unknown-linux-musl/release/orchestrator`
-- Auto-start: `/etc/init.d/S99wraith-init`
-- Config: `/etc/wraith/orchestrator.toml` (bind-mounted from `/data/wraith/`)
-- DB: `/var/lib/orchestrator/orchestrator.db` (persistent via /data)
-- Logs: `/var/lib/orchestrator/wraith.log`
-- Modules: `/modules/` (persistent via /data)
-
-**All orchestrator features work inside WraithOS:**
-
-- `/healthz` → ok
-- `/metrics` → Prometheus
-- `/debug/state` → JSON snapshot
-- `/audit/logs` → execution history
-- `/ui` → HTMX dashboard (embedded via include_str!)
-- `/ws/events` → WebSocket live stream
-- `/modules` → module CRUD
-- `/t/{tenant}/modules` → multi-tenant
-- `/modules/build` → build pipeline
-
-**Network access (QEMU → external):**
-
-Boot with `-netdev user,hostfwd=tcp::9091-:9090`.
-Then from VPS host: `curl http://127.0.0.1:9091/ui`
-Or via SSH tunnel from laptop: `ssh -L 9091:127.0.0.1:9091 opc@vps`
-
-**Future work (if continuing):**
-
-- M29: Web first-boot wizard (separate port :8080, embedded HTML)
-- M30: aarch64 build for Raspberry Pi
-- M31: LUKS encrypted /data
-- M32: Signed releases
-
-The orchestrator dashboard (`/ui`) is **already production-ready** inside
-WraithOS. No additional integration needed — it's the same binary.
-
----
-
-## Final Verification — 2026-11-02
-
-Dashboard `/ui` confirmed live inside WraithOS:
-- HTML response: `<!DOCTYPE html>... <title>Wraith Orchestrator</title>`
-- `/debug/state` JSON: `{"modules":[],...,"uptime_secs":32}`
-- Orchestrator binary auto-starts on boot
-- All 25 milestones functional inside OS
-- Persistent SQLite in `/data` bind mount
-- A/B atomic update verified bidirectional
-
-Rust project == WraithOS runtime. One binary, one OS.
-
----
-
-## Termux Deployment — VERIFIED (2026-11-02 22:40)
-
-Orchestrator runs **native** on Android ARM64 (Termux, no emulation):
-- Binary: wraith-termux-aarch64.tar.gz (8.3MB compressed, 16MB extracted)
-- Cross-compiled via `cargo zigbuild --target aarch64-unknown-linux-musl`
-- Static musl ELF works on Android (Termux userland)
-- PID 28226, uptime verified, healthz ok
-- All endpoints working: /healthz, /readyz, /metrics, /audit/logs, /debug/state
-- Dashboard accessible at http://127.0.0.1:9090/ui from phone browser
-- Rhai EventBus functional (smoke event processed)
-
-### Termux package contents (in wraithos/termux-package/)
-- orchestrator (16MB aarch64 musl binary)
-- orchestrator.toml (optimized for phone: 128MB mem, 64 sockets)
-- run.sh, stop.sh, status.sh (helper scripts)
-- README.txt (usage)
-
-### Recovery via PAR URL
-OCI bucket: oci:wraith-bucket/termux/wraith-termux-aarch64.tar.gz
-Pre-Authenticated URL works (no auth needed at download time)
-Expiry: ~7 days from 2026-11-02
-
-### After VPS Oracle terminates
-The HP Termux instance becomes the permanent orchestrator host.
-No service interruption. Dashboard accessible from phone.
-
----
-
-## Session Update: 2026-11-03 (v0.21.5 -> v0.23.5)
-
-**10 tags, cross-arch full stack complete.**
-
-### Completed today
-
-| Tag | Scope |
+| Reported tag | Scope |
 |---|---|
-| v0.21.5 | Socket ownership isolation + log race fix |
-| v0.22.0 | TCP real read/write (WIT + async host bridge) |
-| v0.22.1 | CI workflow + integration test (10 tests) |
-| v0.22.2 | Auth middleware + build gate |
-| v0.23.0 | Per-module capabilities (not global) |
-| v0.23.1 | ARM aarch64 build + boot |
-| v0.23.2 | ARM bash + lockdown |
-| v0.23.3 | ARM immutable squashfs |
-| v0.23.4 | ARM A/B + GRUB EFI (bidirectional verified) |
-| v0.23.5 | ARM size optimization (17MB squashfs) |
+| v0.21.5 | Socket ownership checks and a logging race fix |
+| v0.22.0 | TCP read/write through WIT and the async host bridge |
+| v0.22.1 | CI workflow and ten integration tests |
+| v0.22.2 | Authentication middleware and build gate |
+| v0.23.0 | Per-module capability manifests/sidecars |
+| v0.23.1 | AArch64 build and boot |
+| v0.23.2 | ARM Bash and shell restrictions |
+| v0.23.3 | ARM immutable SquashFS |
+| v0.23.4 | ARM A/B and GRUB EFI, reported bidirectional |
+| v0.23.5 | ARM size optimization, reported 17 MB SquashFS |
 
-### Reviewer feedback resolved
+The note listed seven reviewer findings as addressed: missing integration tests, missing auth boundary, global-only capabilities, placeholder TCP behavior, unscoped sockets, startup execution probes, and missing ARM support. Current source still has important scope/persistence limitations; “addressed” is not equivalent to a completed security audit.
 
-Original Arena review flagged 7 items, all addressed:
-- Zero integration test -> 10 integration tests
-- Auth boundary missing -> auth_middleware + startup validation
-- Capability global (fundamental) -> per-module manifest + sidecar
-- TCP teater -> read/write full I/O
-- Socket ownership global -> owner-tracked, cross-module denied
-- Startup probe in production -> removed
-- ARM target -> WraithOS ARM boot verified
+Reported state:
 
-### Current state
+- x86_64 disk: 577 MB, BIOS GRUB, A/B plus data.
+- ARM64 disk: 458 MB, EFI GRUB, A/B plus data, 17 MB rootfs.
+- Static binaries: x86 about 23 MB, ARM about 19 MB.
+- The note claimed feature parity. Current trees differ materially in boot counters, watchdog scripts, init configuration, and update behavior.
 
-- **x86_64 WraithOS**: 577MB, BIOS GRUB, A/B + data
-- **ARM64 WraithOS**: 458MB, EFI GRUB, A/B + data, rootfs 17MB squashfs
-- **Orchestrator binaries**: x86 23MB, ARM 19MB, static musl
-- **Feature parity**: x86 == ARM (A/B, persistent /data, bash lockdown, orchestrator)
+The recorded product direction was a developer PaaS; ARM appliance work was described as investment Oracle Always Free deployment rather than the core PaaS roadmap.
 
-### Remaining (from TODO.md)
+Remaining work at that point included the build sandbox, local HTMX/XSS fixes, wizard, LUKS, signing, boot counters, CI formatting/Clippy, distribution cleanup, and documentation synchronization.
 
-**Fase 1**: Build pipeline sandbox (bubblewrap/systemd-nspawn) - RCE risk
-**Fase 2**: M29 wizard, M31 LUKS, M32 signing
-**Fase 3**: HTMX lokal + XSS, boot counter auto-revert, CI fmt-clippy fix, dist cleanup, docs sync
+A 2026-11-04 status update marked those phases complete except LUKS, automatic A/B boot-counter rollback, and documentation synchronization. It named `v0.27.0-wip-m31-config` and `v0.26.0`. Current source contains additional wizard/LUKS and ARM boot-counter code, so that status is itself historical.
 
-### Direction
+## M31 LUKS work-in-progress specification
 
-User chose PaaS direction (sell to developers). Appliance track (ARM WraithOS) was investment for Oracle Always Free ARM deployment, not PaaS feature work. PaaS core priority going forward.
+The historical note reported Block 1 complete: kernel DM_CRYPT and XTS/AES/SHA256/HMAC options, plus ARM cryptsetup/libgcrypt/libuuid/popt/json-c packages.
 
-### Next session priority
+Remaining blocks were:
 
-1. Build sandbox (4-6 hours, critical)
-2. HTMX lokal + XSS (2 hours)
-3. M29 wizard (2-3 hours)
-4. CI fmt-clippy fix (1 hour)
+1. Extend the wizard finish path to format `/dev/vda4` and create ext4 on the mapper device.
+2. Teach S30data to unlock LUKS before mounting.
+3. Leave the ARM data region unformatted in post-image generation.
+4. Rebuild and test ARM boot/unlock in QEMU.
 
-STATUS UPDATE (2026-11-04): All from Fase 1/2/3 above is DONE except:
-- M31 LUKS (WIP, Block 1/5 done, see next section)
-- Boot counter A/B auto-revert (deferred)
-- Docs sync (deferred)
-Current tag: v0.27.0-wip-m31-config. All other phases complete at v0.26.0.
+The proposed wizard extension added optional `encryption_password`, an in-memory password field, and a `luks_enabled` marker. It specified minimum length eight, checking that `/dev/vda4` exists and is not already LUKS, then running:
 
+```text
+cryptsetup luksFormat --type luks2 --cipher aes-xts-plain64 \
+  --key-size 512 --hash sha256 --batch-mode --key-file - /dev/vda4
+cryptsetup luksOpen --key-file - /dev/vda4 wraith-data
+mkfs.ext4 /dev/mapper/wraith-data
+cryptsetup luksClose wraith-data
+```
+
+The proposal included a LUKS-active marker and an Argon2 hash file, with command failures returning a stderr tail. **This is a destructive historical specification, not a safe command to run on an arbitrary host.** The current backend still hardcodes the device, and the embedded wizard does not expose the encryption-password input.
+
+The S30data proposal used `cryptsetup isLuks`, an unlock prompt, and a mapper mount. The genimage proposal removed the preformatted ext4 data image. The QEMU plan required setting an encryption password through the wizard, finishing setup, verifying LUKS, rebooting, unlocking through serial, and checking persistent mounts.
+
+The final note warned that the existing tarball still used plain ext4 and had to be rebuilt before testing the new behavior. It estimated cryptsetup compilation at 5–8 minutes and kernel rebuild at about 15 minutes. Those estimates were not measured here.
 
 ---
 
-M31 LUKS WIP (v0.27.0-wip-m31-config)
-
-Block 1 done (config): kernel DM_CRYPT + CRYPTO_XTS/AES/SHA256/HMAC.
-ARM defconfig: CRYPTSETUP + libgcrypt + libuuid + popt + json-c.
-
-Remaining:
-Block 2: wizard.rs finish() -> cryptsetup luksFormat /dev/vda4 + mkfs.ext4 /dev/mapper.
-Block 3: S30data init script - luksOpen before mount if isLuks.
-Block 4: post-image-arm.sh - empty data partition (no ext4 pre-format).
-Block 5: QEMU ARM boot + LUKS unlock test.
-
-Safe state: config ready, no runtime behavior change yet.
-Current ARM build still works (ext4 /dev/vda4 unchanged).
-
-Resume prompt:
-Repo github.com/kurohigee07/Orchestrator-
-Last tag v0.27.0-wip-m31-config (main)
-Baca HANDOFF.md section M31 LUKS WIP
-Continue Block 2: wizard.rs finish LUKS
-Backup verified HP + OCI safe-backup/v0.24.1/
-
-
-### M31 Block 2 DETAILED SPEC (wizard.rs finish_handler LUKS)
-
-File: orchestrator/src/wizard.rs
-Current: finish_handler(State(s): State<ApiState>) -> Response
-(no payload param today - wire Step1Payload extension OR new step endpoint)
-
-Step1Payload extension:
-    #[derive(Deserialize)]
-    struct Step1Payload {
-        hostname: String,
-        password: String,
-        #[serde(default)]
-        encryption_password: Option<String>,   // NEW
-    }
-
-WizardData extension:
-    encryption_password: Option<String>,       // NEW (in-memory only, not persisted raw)
-    luks_enabled: bool,                        // NEW
-
-step1_handler: store p.encryption_password in WizardData (validate len >= 8 if Some)
-
-finish_handler NEW LOGIC:
-    After writing hostname.txt + admin.password.argon2 + network.toml:
-
-    if let Some(luks_pwd) = w.encryption_password.as_ref() {
-        // Check /dev/vda4 exists
-        if !std::path::Path::new("/dev/vda4").exists() {
-            return 400 "data partition /dev/vda4 not found"
-        }
-        // Check not already LUKS
-        let isluks = Command::new("cryptsetup").args(["isLuks", "/dev/vda4"]).status();
-        if isluks.map(|s| s.success()).unwrap_or(false) {
-            return 409 "data partition already encrypted"
-        }
-        // luksFormat with stdin password
-        // cryptsetup luksFormat --type luks2 --cipher aes-xts-plain64
-        //   --key-size 512 --hash sha256 --batch-mode --key-file - /dev/vda4
-        // stdin: pwd + newline
-        // luksOpen with stdin password
-        // cryptsetup luksOpen --key-file - /dev/vda4 wraith-data
-        // mkfs.ext4 /dev/mapper/wraith-data
-        // luksClose wraith-data
-        // Write marker: data_dir/wizard.luks-active
-        // Hash pwd argon2id, write data_dir/wraith/unlock.argon2
-    }
-
-    Error handling: cryptsetup exit != 0 -> 500 with stderr tail (last 200 chars).
-
-Block 3 SPEC (S30data):
-Path: wraithos/aarch64-br2-ext/board/wraithos/rootfs_overlay/etc/init.d/S30data
-Replace mount logic:
-    if cryptsetup isLuks /dev/vda4 2>/dev/null; then
-        echo -n "Unlocking /dev/vda4 (LUKS): "
-        # read password from serial, or use unlock.argon2 verification
-        cryptsetup luksOpen /dev/vda4 wraith-data
-        mount -t ext4 /dev/mapper/wraith-data /data
-    else
-        mount -t ext4 /dev/vda4 /data 2>/dev/null
-    fi
-
-Block 4 SPEC (genimage-arm.cfg):
-Remove: image data.ext4 { ext4 { label = "DATA" } size = 128M }
-Change partition data:
-    image = null  (or use empty raw)
-post-image-arm.sh: remove cp data.ext4 logic; wizard creates LUKS.
-
-Block 5 SPEC (QEMU test):
-Boot ARM image -> curl /wizard (set encryption pwd) -> /wizard/finish
--> verify /dev/vda4 is LUKS (cryptsetup isLuks) -> reboot
--> serial prompt for passphrase -> login -> orchestrator up -> /dev/mapper/wraith-data mounted
-
-IMPORTANT: kryp to test - tarball was built with `ext4 /dev/vda4` behavior.
-Rebuild ARM image after Block 2+3+4 done before Block 5 QEMU test.
-Buildroot rebuild time: cryptsetup package compile ~5-8 min, kernel rebuild ~15 min.
+**End of historical handoff.** For current behavior, verification boundaries, and safe operational guidance, use the [English documentation index](docs/index.html).
