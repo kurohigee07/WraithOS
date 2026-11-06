@@ -349,6 +349,19 @@ pub(crate) fn write_capabilities_sidecar(
         .map_err(|e| anyhow::anyhow!("write capabilities sidecar {}: {e}", path.display()))
 }
 
+pub(crate) fn write_sig_sidecar(
+    tenant_dir: &std::path::Path,
+    id: &str,
+    sig_bytes: &[u8],
+) -> anyhow::Result<()> {
+    if sig_bytes.len() != 64 {
+        anyhow::bail!("signature length {} != 64", sig_bytes.len());
+    }
+    let path = tenant_dir.join(format!("{id}.wasm.sig"));
+    atomic_write(&path, sig_bytes)
+        .map_err(|e| anyhow::anyhow!("write sig sidecar {}: {e}", path.display()))
+}
+
 fn verify_bytes(
     wasm_bytes: &[u8],
     sig_bytes: &[u8],
@@ -422,6 +435,23 @@ mod tests {
         let other_vk = hex::encode(other_sk.verifying_key().to_bytes());
         let sig = sk.sign(b"hello");
         assert!(verify_bytes(b"hello", &sig.to_bytes(), &[other_vk]).is_err());
+    }
+
+    #[test]
+    fn write_sig_sidecar_writes_64_bytes() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let sig = [0xABu8; 64];
+        write_sig_sidecar(tmp.path(), "mod-x", &sig).expect("write");
+        let back = std::fs::read(tmp.path().join("mod-x.wasm.sig")).expect("read");
+        assert_eq!(back, sig);
+    }
+
+    #[test]
+    fn write_sig_sidecar_rejects_bad_length() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let sig = [0u8; 32];
+        let err = write_sig_sidecar(tmp.path(), "mod-x", &sig).unwrap_err();
+        assert!(err.to_string().contains("signature length"), "err: {err}");
     }
 
     #[test]
