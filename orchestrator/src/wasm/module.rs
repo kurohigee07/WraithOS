@@ -27,6 +27,7 @@ pub struct WasmModule {
 pub enum QuotaExecError {
     RateLimited { retry_after_ms: u64 },
     ConcurrencyTimeout,
+    PoolTimeout,
     Internal(anyhow::Error),
 }
 
@@ -37,6 +38,7 @@ impl std::fmt::Display for QuotaExecError {
                 write!(f, "rate limited, retry after {}ms", retry_after_ms)
             }
             QuotaExecError::ConcurrencyTimeout => write!(f, "concurrency timeout"),
+            QuotaExecError::PoolTimeout => write!(f, "wasm pool acquire timeout"),
             QuotaExecError::Internal(e) => write!(f, "{}", e),
         }
     }
@@ -159,6 +161,9 @@ impl WasmModule {
                 )
                 .increment(1);
                 span.record("outcome", "error");
+                if e.is_wasm_pool_timeout() {
+                    return Err(QuotaExecError::PoolTimeout);
+                }
                 return Err(QuotaExecError::Internal(anyhow::anyhow!("pool: {e}")));
             }
         };
@@ -288,6 +293,7 @@ impl OrchestratorModule for WasmModule {
                 anyhow::anyhow!("rate limited, retry after {retry_after_ms}ms")
             }
             QuotaExecError::ConcurrencyTimeout => anyhow::anyhow!("concurrency timeout"),
+            QuotaExecError::PoolTimeout => anyhow::anyhow!("wasm pool acquire timeout"),
             QuotaExecError::Internal(e) => e,
         })
     }
