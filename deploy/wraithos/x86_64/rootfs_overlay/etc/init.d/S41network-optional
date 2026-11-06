@@ -1,0 +1,14 @@
+#!/bin/sh
+# Non-blocking DHCP for en* interfaces (3s timeout)
+case "$1" in
+    start)
+        for d in /sys/class/net/en*; do
+            [ -d "$d" ] || continue
+            iface=$(basename "$d")
+            echo -n "Starting network ($iface, best effort): "
+            ip link set "$iface" up 2>/dev/null
+            udhcpc -i "$iface" -t 1 -T 3 -n -q -b 2>/dev/null
+            echo "OK"
+        done
+        ;;
+esac
