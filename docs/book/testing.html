@@ -1,0 +1,89 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#0c0b12"><meta name="description" content="Testing, verification, and contributing What the Rust suite contains # At the documented baseline there are 23 unit tests in the orchestrator and 10 HTTP integration tests : Area C"><title>Testing &amp; contributing — Wraith</title><link rel="icon" href="../assets/favicon.svg" type="image/svg+xml"><link rel="stylesheet" href="../assets/style.css"><script defer src="../assets/search-index.js"></script><script defer src="../assets/app.js"></script></head><body data-base="../"><a class="skip-link" href="#article">Skip to article</a><header class="site-header"><div class="header-inner"><a class="brand" href="../index.html"><img src="../assets/favicon.svg" alt="" width="32" height="32"><span>wraith<span class="brand-dot">.</span></span><span class="brand-tag">DOCUMENTATION</span></a><nav class="desktop-nav" aria-label="Main navigation"><a href="../index.html#runtime">Runtime</a><a href="../index.html#request-lab">Labs</a><a href="../index.html#benchmarks">Benchmarks</a><a href="quickstart.html">Guides</a><a href="source-map.html">Source map</a></nav><div class="header-actions"><button class="search-trigger" data-search-open aria-label="Search documentation"><span>Search docs</span><kbd>⌘ K</kbd></button><button class="menu-toggle" aria-label="Open navigation" aria-expanded="false">☰</button></div></div><nav class="mobile-nav" aria-label="Mobile guide navigation" hidden><a href="../index.html">Interactive overview</a><a href="quickstart.html" >Quick start</a><a href="architecture.html" >Architecture</a><a href="plugins.html" >Plugin development</a><a href="api.html" >HTTP API</a><a href="configuration.html" >Configuration</a><a href="sdk-cli.html" >SDK & CLI</a><a href="operations.html" >Operations</a><a href="wraithos.html" >WraithOS</a><a href="security.html" >Security boundaries</a><a href="benchmarks.html" >Benchmarks</a><a href="testing.html" class="active" aria-current="page">Testing & contributing</a><a href="source-map.html" >Source map</a></nav><div class="reading-progress" aria-hidden="true"></div></header><div class="book-layout"><aside class="book-sidebar" aria-label="Documentation guides"><a class="back-home" href="../index.html">← Interactive overview</a><span class="eyebrow">THE DOCUMENTATION</span><a href="quickstart.html" >Quick start</a><a href="architecture.html" >Architecture</a><a href="plugins.html" >Plugin development</a><a href="api.html" >HTTP API</a><a href="configuration.html" >Configuration</a><a href="sdk-cli.html" >SDK & CLI</a><a href="operations.html" >Operations</a><a href="wraithos.html" >WraithOS</a><a href="security.html" >Security boundaries</a><a href="benchmarks.html" >Benchmarks</a><a href="testing.html" class="active" aria-current="page">Testing & contributing</a><a href="source-map.html" >Source map</a></aside><main class="book-article" id="article"><div class="article-meta"><span class="pill violet">SOURCE-GUIDED</span><span>4 min read</span><a href="../testing.md">Markdown source</a></div><h1 id="testing-verification-and-contributing">Testing, verification, and contributing</h1><h2 id="what-the-rust-suite-contains">What the Rust suite contains <a class="heading-anchor" href="#what-the-rust-suite-contains" aria-label="Link to What the Rust suite contains">#</a></h2><p>At the documented baseline there are <strong>23 unit tests</strong> in the orchestrator and <strong>10 HTTP integration tests</strong>:</p>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>Area</th>
+<th align="right">Count</th>
+<th>Coverage shape</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Capability matching</td>
+<td align="right">2</td>
+<td>Wildcard and exact HTTP host matching</td>
+</tr>
+<tr>
+<td>Context/resource registries</td>
+<td align="right">3</td>
+<td>Socket cap, owner checking, global pool timeout/release</td>
+</tr>
+<tr>
+<td>Module signatures</td>
+<td align="right">4</td>
+<td>Valid, tampered, wrong key, bad signature length</td>
+</tr>
+<tr>
+<td>Module quota</td>
+<td align="right">3</td>
+<td>Token refill, concurrency, zero/default quota</td>
+</tr>
+<tr>
+<td>Tenant registry</td>
+<td align="right">6</td>
+<td>Token comparison/auth, rate, concurrency, module capacity</td>
+</tr>
+<tr>
+<td>HTML escaping</td>
+<td align="right">3</td>
+<td>Server-rendered dashboard field escaping</td>
+</tr>
+<tr>
+<td>Wizard markers</td>
+<td align="right">2</td>
+<td>Fresh state and persisted markers</td>
+</tr>
+<tr>
+<td>HTTP integration</td>
+<td align="right">10</td>
+<td>Health, upload/execute/audit, missing module, auth, build gate, capability behavior</td>
+</tr>
+</tbody></table></div>
+<p>The integration tests call the Axum router through <code>tower::oneshot</code>; they do not launch the production binary or bind port 9090. Several use the checked-in sample and can require real access to <code>example.com</code>. Some assertions are permissive, and the suite is not a complete hostile-tenant/security test.</p>
+<h2 id="run-the-source-checks">Run the source checks <a class="heading-anchor" href="#run-the-source-checks" aria-label="Link to Run the source checks">#</a></h2><div class="code-block"><button class="copy-code" aria-label="Copy code">Copy</button><pre><code class="language-bash">cargo fmt --all -- --check
+cargo clippy --locked -p orchestrator --lib -- -D warnings
+cargo build --locked -p sample-plugin --target wasm32-wasip2 --release
+cargo test --locked -p orchestrator -p wraith-sdk -p wraith-cli --all-targets</code></pre></div><p>The CI workflow runs on pushes/PRs targeting <code>main</code>. It has formatting/Clippy, guest build/tests, and an x86 musl static-linkage job. A session working branch does not receive the push CI trigger unless the workflow is changed or a qualifying PR is opened. CI configuration is not proof that the current checkout passed CI.</p>
+<p><strong>Verification boundary for this update:</strong> Rust/Cargo was not installed in the documentation workspace, so these Rust commands were not rerun. The work changed documentation and documentation tooling, not runtime source.</p>
+<h2 id="documentation-site">Documentation site <a class="heading-anchor" href="#documentation-site" aria-label="Link to Documentation site">#</a></h2><p>The site is plain HTML/CSS/JavaScript. Markdown guides are compiled into <code>docs/book/</code> by a small Node build script using marked. Fonts and scripts are local; no CDN or orchestrator backend is required.</p>
+<div class="code-block"><button class="copy-code" aria-label="Copy code">Copy</button><pre><code class="language-bash">cd docs
+npm ci
+npm run build
+npm start</code></pre></div><p>Open <code>http://localhost:4173/</code>. The server binds <code>0.0.0.0</code> for container/live-preview compatibility and accepts arbitrary preview hostnames. It serves only the documentation directory, not repository secrets or the runtime API. For a laptop-only bind, use the Python alternative from the repository root:</p>
+<div class="code-block"><button class="copy-code" aria-label="Copy code">Copy</button><pre><code class="language-bash">python3 -m http.server 4173 --bind 127.0.0.1</code></pre></div><p>Then open <code>/docs/</code>. The generated <code>docs/index.html</code> also works as a local file in a modern browser.</p>
+<h3 id="browser-checks">Browser checks <a class="heading-anchor" href="#browser-checks" aria-label="Link to Browser checks">#</a></h3><p>With a Playwright-compatible Chromium available:</p>
+<div class="code-block"><button class="copy-code" aria-label="Copy code">Copy</button><pre><code class="language-bash">cd docs
+npx playwright install chromium
+npm test</code></pre></div><p>Or point to an existing browser:</p>
+<div class="code-block"><button class="copy-code" aria-label="Copy code">Copy</button><pre><code class="language-bash">CHROMIUM_PATH=/path/to/chromium npm test</code></pre></div><p><code>npm test</code> first checks local links/assets/anchors, then runs the browser smoke suite against the running preview server. The browser checks cover guide rendering/search, request stepping and scenarios, concurrency simulation, ARM boot transitions, benchmark scale switching, keyboard/accessibility basics, mobile overflow, and browser console errors. Run <code>npm run test:links</code> for the server-free link check alone. These checks do not test the Rust runtime.</p>
+<h2 id="sourcedocumentation-consistency-checklist">Source/documentation consistency checklist <a class="heading-anchor" href="#sourcedocumentation-consistency-checklist" aria-label="Link to Source/documentation consistency checklist">#</a></h2><p>When changing behavior, update the corresponding guide and interactive explanation:</p>
+<ul>
+<li>WIT change → <code>plugins.md</code>, sample guests, architecture host bridges.</li>
+<li>Config field/default → <code>configuration.md</code> and quick start/appliance examples.</li>
+<li>Route/status/header → <code>api.md</code>, SDK/CLI docs if affected.</li>
+<li>Timer/counter semantics → <code>benchmarks.md</code> and benchmark lab labels.</li>
+<li>Auth/capability/socket/event scope → <code>security.md</code> and architecture.</li>
+<li>Boot script/partition/update change → <code>wraithos.md</code> and A/B lab.</li>
+<li>New/removed tracked file → regenerate/update <code>source-map.md</code>.</li>
+</ul>
+<p>Historical <code>HANDOFF.md</code> and <code>TODO.md</code> are translated into English and clearly marked as archives; links to the original mixed-language baseline files are included. Do not use their feature status as current truth without checking source.</p>
+<h2 id="contributing-a-behavior-change">Contributing a behavior change <a class="heading-anchor" href="#contributing-a-behavior-change" aria-label="Link to Contributing a behavior change">#</a></h2><ol>
+<li>Describe the user-visible problem and the trust boundary affected.</li>
+<li>Add a focused failing test where practical.</li>
+<li>Keep host/guest contract changes coordinated.</li>
+<li>Run formatting, Clippy, tests, and a relevant manual smoke test.</li>
+<li>Update English documentation and examples in the same change.</li>
+<li>Report what was actually run; do not convert a planned test into a claimed pass.</li>
+<li>For performance claims, preserve raw data and methodology alongside derived figures.</li>
+</ol>
+<h2 id="release-verification">Release verification <a class="heading-anchor" href="#release-verification" aria-label="Link to Release verification">#</a></h2><p>Use the <a href="operations.html#pre-release-operational-checklist">operations checklist</a>. Security-sensitive changes additionally need negative tests for authorization, tenant data visibility, signature persistence, source extraction, resource exhaustion, and shutdown/update failure paths. The current test count alone is not a security certification.</p>
+<div class="book-bottom"><a href="benchmarks.html">← Benchmarks</a><a href="source-map.html">Source map →</a></div></main><aside class="book-toc" aria-label="On this page"><span class="eyebrow">ON THIS PAGE</span><a href="#what-the-rust-suite-contains">What the Rust suite contains</a><a href="#run-the-source-checks">Run the source checks</a><a href="#documentation-site">Documentation site</a><a href="#sourcedocumentation-consistency-checklist">Source/documentation consistency checklist</a><a href="#contributing-a-behavior-change">Contributing a behavior change</a><a href="#release-verification">Release verification</a></aside></div><dialog id="search-dialog" aria-label="Search documentation"><div class="search-box"><div class="search-input-row"><span>⌕</span><input id="search-input" type="search" placeholder="Search routes, boot slots, quotas…" autocomplete="off" aria-label="Search documentation"><button data-search-close aria-label="Close search">Esc</button></div><div id="search-results" class="search-results"></div><div class="search-footer">↑ ↓ to navigate · Enter to open · Esc to close</div></div></dialog></body></html>
