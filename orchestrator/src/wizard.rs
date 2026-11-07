@@ -392,6 +392,18 @@ mod tests {
     }
 }
 
+/// Write file with fsync, so the data survives hypervisor kill or power
+/// loss during first-boot provisioning. The wizard writes hostname,
+/// password hash, network config, and the completion marker — losing any
+/// of these to page-cache eviction leaves the appliance in a broken state.
+fn write_sync(path: &std::path::Path, data: &[u8]) -> std::io::Result<()> {
+    use std::io::Write;
+    let mut f = std::fs::File::create(path)?;
+    f.write_all(data)?;
+    f.sync_all()?;
+    Ok(())
+}
+
 async fn finish_handler(State(s): State<ApiState>) -> Response {
     let mut w = s.wizard.data.lock().await;
     if w.completed {
@@ -416,11 +428,23 @@ async fn finish_handler(State(s): State<ApiState>) -> Response {
         return err_response(StatusCode::INTERNAL_SERVER_ERROR, "mkdir failed");
     }
 
-    let _ = std::fs::write(wraith_dir.join("hostname.txt"), format!("{hostname}\n"));
-    let _ = std::fs::write(
-        wraith_dir.join("admin.password.argon2"),
-        format!("{password_hash}\n"),
-    );
+    if let Err(e) = write_sync(
+        &wraith_dir.join("hostname.txt"),
+        format!("{hostname}\n").as_bytes(),
+    ) {
+        warn!(err = %e, "wizard: write hostname failed");
+        return err_response(StatusCode::INTERNAL_SERVER_ERROR, "hostname write failed");
+    }
+    if let Err(e) = write_sync(
+        &wraith_dir.join("admin.password.argon2"),
+        format!("{password_hash}\n").as_bytes(),
+    ) {
+        warn!(err = %e, "wizard: write password hash failed");
+        return err_response(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "password hash write failed",
+        );
+    }
 
     let net = format!(
         "mode = \"{}\"\n{}",
@@ -435,7 +459,10 @@ async fn finish_handler(State(s): State<ApiState>) -> Response {
             _ => String::new(),
         }
     );
-    let _ = std::fs::write(wraith_dir.join("network.toml"), net);
+    if let Err(e) = write_sync(&wraith_dir.join("network.toml"), net.as_bytes()) {
+        warn!(err = %e, "wizard: write network.toml failed");
+        return err_response(StatusCode::INTERNAL_SERVER_ERROR, "network write failed");
+    }
     if let Some(luks_pwd) = w.encryption_password.clone() {
         match setup_luks(&luks_pwd, &s.data_dir) {
             Ok(()) => {
@@ -451,7 +478,7 @@ async fn finish_handler(State(s): State<ApiState>) -> Response {
     }
 
     let marker = s.data_dir.join(COMPLETE_MARKER);
-    if let Err(e) = std::fs::write(&marker, "completed\n") {
+    if let Err(e) = write_sync(&marker, b"completed\n") {
         warn!(err = %e, "wizard: write marker failed");
         return err_response(StatusCode::INTERNAL_SERVER_ERROR, "marker write failed");
     }

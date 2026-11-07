@@ -2,7 +2,7 @@
 # Non-blocking DHCP for en* interfaces (3s timeout)
 case "$1" in
     start)
-        for d in /sys/class/net/en*; do
+        for d in /sys/class/net/en* /sys/class/net/eth*; do
             [ -d "$d" ] || continue
             iface=$(basename "$d")
             echo -n "Starting network ($iface, best effort): "
