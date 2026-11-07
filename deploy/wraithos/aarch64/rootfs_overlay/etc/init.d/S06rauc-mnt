@@ -1,0 +1,20 @@
+#!/bin/sh
+# RAUC needs writable /mnt to mount bundle, and /run/rauc for status.
+# Rootfs is squashfs read-only, so we mount tmpfs at boot.
+case "$1" in
+    start)
+        echo -n "Setting up RAUC runtime: "
+        mkdir -p /run/rauc /run/wraith /mnt/rauc
+        grep -q ' /mnt ' /proc/mounts || \
+            mount -t tmpfs -o mode=0755,size=32M tmpfs /mnt 2>/dev/null
+        mkdir -p /mnt/rauc
+        grep -q ' /run/rauc ' /proc/mounts || \
+            mount -t tmpfs -o mode=0755,size=8M tmpfs /run/rauc 2>/dev/null
+        if grep -q ' /mnt ' /proc/mounts; then
+            echo "OK"
+        else
+            echo "FAIL (cannot mount /mnt)"
+            exit 1
+        fi
+        ;;
+esac
