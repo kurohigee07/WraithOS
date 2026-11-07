@@ -34,6 +34,11 @@ ENVFILE="${BIN_DIR}/grub/grubenv"
     printf 'seq=0\n'
     printf 'booted=A\n'
     printf 'lkg=A\n'
+    printf 'A_OK=1\n'
+    printf 'B_OK=1\n'
+    printf 'A_TRY=0\n'
+    printf 'B_TRY=0\n'
+    printf 'ORDER=A B\n'
 } > "$ENVFILE"
 N=$((1024 - $(wc -c < "$ENVFILE")))
 printf '%*s' "$N" '' | tr ' ' '#' >> "$ENVFILE"

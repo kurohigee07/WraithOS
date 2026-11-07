@@ -38,7 +38,26 @@ mkdir -p "$BOOT_STAGE/grub/i386-pc"
 cp "${BIN_DIR}/bzImage" "$BOOT_STAGE/bzImage"
 cp "${BOARD_DIR}/grub.cfg" "$BOOT_STAGE/grub/grub.cfg"
 
-# grubenv with default ORDER=A B
+# grubenv: 1024-byte GRUB env block, slot=A starts
+GRUBENV="$BOOT_STAGE/grub/grubenv"
+{
+    printf '# GRUB Environment Block\n'
+    printf 'slot=A\n'
+    printf 'tries=0\n'
+    printf 'good=1\n'
+    printf 'seq=0\n'
+    printf 'booted=A\n'
+    printf 'lkg=A\n'
+    printf 'A_OK=1\n'
+    printf 'B_OK=1\n'
+    printf 'A_TRY=0\n'
+    printf 'B_TRY=0\n'
+    printf 'ORDER=A B\n'
+} > "$GRUBENV"
+N=$((1024 - $(wc -c < "$GRUBENV")))
+printf '%*s' "$N" '' | tr ' ' '#' >> "$GRUBENV"
+chmod 0644 "$GRUBENV"
+echo "  grubenv: $(stat -c%s "$GRUBENV") bytes"
 
 # GRUB modules
 cp "$GRUB_CORE_DIR"/*.mod "$BOOT_STAGE/grub/i386-pc/" 2>/dev/null || true
@@ -54,7 +73,7 @@ rm -f "$CORE_IMG"
     -O i386-pc \
     -o "$CORE_IMG" \
     -p "(hd0,msdos1)/grub" \
-    biosdisk part_msdos fat normal configfile linux test
+    biosdisk part_msdos fat normal configfile linux test loadenv extcmd search
 echo "  core.img: $(stat -c%s "$CORE_IMG") bytes"
 
 # ─── [3/6] Rootfs slots (direct reference, no cp) ──────────────────
