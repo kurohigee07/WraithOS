@@ -1,6 +1,6 @@
 # Complete source map
 
-All **154 files tracked at baseline commit `20cb378`**, indexed individually. Links point to that immutable commit. Documentation added in this update is listed separately.
+All **files tracked at baseline commit `20cb378`**, indexed individually. Links below point at that immutable baseline for stability; current development continues on `main`. Documentation added after that baseline is listed separately.
 
 Source, configuration and scripts were inspected for behavior. Lockfiles, minified vendor code and executables were identified as generated/artifact files rather than misrepresented as newly authored source. Credential contents are not reproduced.
 
