@@ -23,7 +23,15 @@ case "$1" in
 
         # IMPORTANT: create target dirs BEFORE bind mount
         # (/var/lib is tmpfs now, so /var/lib/orchestrator needs re-creation)
-        mkdir -p /var/lib/orchestrator /modules /etc/wraith
+        mkdir -p /var/lib/orchestrator /modules
+
+        # /etc/wraith needs to exist for bind mount. If missing from RO
+        # rootfs (overlay bug), fall back to tmpfs. Without this, wizard
+        # config never lands and orchestrator has no config to load.
+        if ! mkdir -p /etc/wraith 2>/dev/null; then
+            echo -n "(tmpfs-fallback /etc/wraith) "
+            mount -t tmpfs -o mode=0755,size=4M tmpfs /etc/wraith 2>/dev/null || true
+        fi
 
         # Bind mounts from /data
         grep -q ' /var/lib/orchestrator ' /proc/mounts || \
@@ -34,7 +42,7 @@ case "$1" in
             mount --bind /data/wraith /etc/wraith
 
         # Seed config on first boot
-        if [ ! -f /etc/wraith/orchestrator.toml ]; then
+        if [ ! -s /etc/wraith/orchestrator.toml ]; then
             cp /etc/wraith.default/orchestrator.toml /etc/wraith/orchestrator.toml
             echo "OK (first boot)"
         else
