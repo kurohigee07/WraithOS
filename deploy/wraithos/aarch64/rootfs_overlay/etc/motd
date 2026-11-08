@@ -1,0 +1,13 @@
+
+    Welcome to WraithOS
+    ───────────────────
+    Slot:         dual-slot A/B (RAUC-compatible)
+    Orchestrator: http://127.0.0.1:9090/healthz
+    Modules:      /modules  (persistent via /data)
+    Config:       /etc/wraith/orchestrator.toml
+    Logs:         /var/lib/orchestrator/wraith.log
+    Watchdog:     /dev/watchdog  (nowayout=1, soft_margin=15)
+
+    Update:       wraith-update /path/to/rootfs.squashfs
+    Rollback:     rm /boot/boot_b && reboot
+
