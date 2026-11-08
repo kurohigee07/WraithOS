@@ -1,11 +1,12 @@
 
-  Welcome to WraithOS
-  ───────────────────
-  Orchestrator: http://127.0.0.1:9090/healthz
-  Modules:      /modules  (persistent via /data)
-  Config:       /etc/wraith/orchestrator.toml
-  Logs:         /var/lib/orchestrator/wraith.log
+    [38;5;179mWraithOS[0m [38;5;66m· Wasm Appliance · dual-slot A/B[0m
+    [38;5;66m──────────────────────────────────────────────[0m
+    [38;5;243mOrchestrator[0m  [38;5;252mhttp://127.0.0.1:9090/healthz[0m
+    [38;5;243mModules     [0m  [38;5;252m/modules  (persistent via /data)[0m
+    [38;5;243mConfig      [0m  [38;5;252m/etc/wraith/orchestrator.toml[0m
+    [38;5;243mLogs        [0m  [38;5;252m/var/lib/orchestrator/wraith.log[0m
+    [38;5;243mWatchdog    [0m  [38;5;252m/dev/watchdog  (nowayout=1, soft_margin=15)[0m
 
-  Update:       wraith-update /path/to/rootfs.squashfs
-  Rollback:     rm /boot/boot_b && reboot
+    [38;5;243mUpdate      [0m  [38;5;252mwraith-update /path/to/rootfs.squashfs[0m
+    [38;5;243mRollback    [0m  [38;5;252mrm /boot/boot_b && reboot[0m
 
