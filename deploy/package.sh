@@ -2,7 +2,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-VERSION="v0.18.0"
+VERSION="v0.41.0"
 DIST_DIR="dist"
 mkdir -p "$DIST_DIR"
 rm -rf "$DIST_DIR"/*
@@ -23,9 +23,11 @@ package_target() {
     # Copy binary
     cp "target/${TARGET}/release/orchestrator" "${STAGE_DIR}/orchestrator"
     
-    # Copy config & deploy files
+    # Copy config, docs, licenses
     cp orchestrator.toml "${STAGE_DIR}/"
     cp README.md "${STAGE_DIR}/"
+    cp CHANGELOG.md "${STAGE_DIR}/"
+    cp LICENSE-MIT LICENSE-APACHE "${STAGE_DIR}/"
     cp deploy/orchestrator.service "${STAGE_DIR}/deploy/"
     cp deploy/logrotate.conf "${STAGE_DIR}/deploy/"
     cp deploy/orchestrator-backup.service "${STAGE_DIR}/deploy/"
