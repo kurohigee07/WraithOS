@@ -433,3 +433,196 @@ async fn no_caps_header_falls_back_to_global() {
         .unwrap();
     assert_eq!(resp.status(), StatusCode::OK);
 }
+
+// ── M4: multi-tenant middleware isolation ─────────────────────────────
+//
+// auth_middleware used to hardcode `default_name()` when verifying
+// Bearer tokens, so any /t/{tenant}/... route would reject legitimate
+// tenant tokens before the handler ran. Now it extracts the tenant
+// from the path (extract_tenant_from_path) and verifies against that
+// tenant's token. These tests pin the fix.
+
+async fn state_with_multi_tenant() -> (ApiState, tempfile::TempDir) {
+    let tmp = tempfile::tempdir().unwrap();
+    let cfg = AppContextConfig {
+        db_path: tmp.path().join("t.db"),
+        http_timeout: Duration::from_secs(5),
+        max_db_connections: 1,
+        max_sockets: 16,
+        max_concurrent_wasm: 2,
+        wasm_acquire_timeout: Duration::from_secs(2),
+        wasm_memory_limit_mb: 128,
+    };
+    let caps = CapabilitySet::from_capabilities(&[Capability::Log]);
+    let bus = EventBus::new(16);
+    let ctx = Arc::new(AppContext::build(cfg, caps, bus).await.unwrap());
+    let reg = Arc::new(ModuleRegistry::new(
+        build_engine().unwrap(),
+        vec![],
+        ModuleQuota::default(),
+        128,
+        Duration::from_secs(2),
+    ));
+    let mut tmap = std::collections::HashMap::new();
+    for (name, token) in [
+        ("default", "default-token"),
+        ("alice", "alice-token"),
+        ("bob", "bob-token"),
+    ] {
+        tmap.insert(
+            name.to_string(),
+            orchestrator::config::TenantConfig {
+                token_hash: None,
+                token_plain: Some(token.to_string()),
+                max_modules: None,
+                max_concurrent_wasm: None,
+                rate_limit_per_sec: None,
+            },
+        );
+    }
+    let tenants = Arc::new(
+        TenantRegistry::from_config(tmap, "default".into(), Duration::from_secs(2)).unwrap(),
+    );
+    let prom = metrics_exporter_prometheus::PrometheusBuilder::new()
+        .build_recorder()
+        .handle();
+    let s = ApiState {
+        prom,
+        ctx,
+        registry: reg,
+        started_at: std::time::Instant::now(),
+        modules_dir: tmp.path().to_path_buf(),
+        tenants,
+        build_semaphore: Arc::new(tokio::sync::Semaphore::new(1)),
+        cargo_home: std::path::PathBuf::from("/nonexistent"),
+        require_auth: true,
+        enable_build: false,
+        enable_build_network: false,
+        data_dir: tmp.path().to_path_buf(),
+        wizard: orchestrator::wizard::WizardState::new(tmp.path().to_path_buf()),
+    };
+    (s, tmp)
+}
+
+#[tokio::test]
+async fn m4_tenant_alice_200_with_alice_token() {
+    let (s, _tmp) = state_with_multi_tenant().await;
+    let app = telemetry::build_router(s);
+
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .uri("/t/alice/modules")
+                .header("authorization", "Bearer alice-token")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+}
+
+#[tokio::test]
+async fn m4_tenant_alice_401_with_default_token() {
+    let (s, _tmp) = state_with_multi_tenant().await;
+    let app = telemetry::build_router(s);
+
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .uri("/t/alice/modules")
+                .header("authorization", "Bearer default-token")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn m4_tenant_alice_401_with_bob_token() {
+    let (s, _tmp) = state_with_multi_tenant().await;
+    let app = telemetry::build_router(s);
+
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .uri("/t/alice/modules")
+                .header("authorization", "Bearer bob-token")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn m4_tenant_unknown_path_401() {
+    let (s, _tmp) = state_with_multi_tenant().await;
+    let app = telemetry::build_router(s);
+
+    // Unknown tenant in path: verify() returns UnknownTenant -> 401.
+    // Security-wise we deliberately return 401 (not 404) so callers
+    // cannot enumerate which tenant names exist.
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .uri("/t/charlie/modules")
+                .header("authorization", "Bearer alice-token")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn m4_healthz_public_in_multi_tenant() {
+    let (s, _tmp) = state_with_multi_tenant().await;
+    let app = telemetry::build_router(s);
+
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .uri("/healthz")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+}
+
+#[tokio::test]
+async fn m4_default_route_still_uses_default_token() {
+    let (s, _tmp) = state_with_multi_tenant().await;
+    let app = telemetry::build_router(s);
+
+    // /modules (no /t/ prefix) must still verify against default tenant
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .uri("/modules")
+                .header("authorization", "Bearer alice-token")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+
+    let resp = telemetry::build_router(state_with_multi_tenant().await.0)
+        .oneshot(
+            Request::builder()
+                .uri("/modules")
+                .header("authorization", "Bearer default-token")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+}
