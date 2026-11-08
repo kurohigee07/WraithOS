@@ -1,0 +1,38 @@
+#!/bin/sh
+case "$1" in
+    start)
+        echo -n "Setting up /data: "
+        mkdir -p /data
+        if [ -b /dev/vda4 ]; then
+            if cryptsetup isLuks /dev/vda4 2>/dev/null; then
+                echo -n "Unlocking /dev/vda4 (LUKS): "
+                if cryptsetup luksOpen /dev/vda4 wraith-data; then
+                    mount -t ext4 /dev/mapper/wraith-data /data 2>/dev/null
+                else
+                    echo "LUKS unlock failed - /data stays unmounted"
+                fi
+            else
+                mount -t ext4 /dev/vda4 /data 2>/dev/null
+            fi
+        fi
+        if grep -q ' /data ' /proc/mounts 2>/dev/null; then
+            mkdir -p /data/orchestrator /data/modules /data/wraith
+            mkdir -p /var/lib/orchestrator /modules /etc/wraith
+            grep -q ' /var/lib/orchestrator ' /proc/mounts || \
+                mount --bind /data/orchestrator /var/lib/orchestrator
+            grep -q ' /modules ' /proc/mounts || \
+                mount --bind /data/modules /modules
+            grep -q ' /etc/wraith ' /proc/mounts || \
+                mount --bind /data/wraith /etc/wraith
+            if [ ! -s /etc/wraith/orchestrator.toml ]; then
+                cp /etc/wraith.default/orchestrator.toml /etc/wraith/orchestrator.toml
+                echo "OK (A/B, first boot)"
+            else
+                echo "OK (A/B)"
+            fi
+        else
+            mkdir -p /var/lib/orchestrator /modules /etc/wraith
+            echo "OK (single-rootfs fallback)"
+        fi
+        ;;
+esac

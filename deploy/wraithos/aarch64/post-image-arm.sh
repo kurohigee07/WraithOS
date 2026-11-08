@@ -4,6 +4,7 @@ BOARD_DIR="$(dirname "$0")"
 BIN_DIR="${BINARIES_DIR:-${BASE_DIR}/images}"
 BUILD_D="${BUILD_DIR:-${BASE_DIR}/build}"
 HOST_D="${HOST_DIR:-${BASE_DIR}/host}"
+export PATH="${HOST_D}/bin:${PATH}"
 
 GRUB_CORE_DIR="${BUILD_D}/grub2-2.12/build-arm64-efi/grub-core"
 if [ ! -d "$GRUB_CORE_DIR" ]; then
