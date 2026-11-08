@@ -28,3 +28,4 @@ dist/
 data/
 wraithos/aarch64-br2-ext/board/wraithos/rootfs_overlay/etc/shadow
 tests/fixtures/*/target/
+tests/fixtures/*/Cargo.lock
