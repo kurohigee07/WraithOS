@@ -210,3 +210,32 @@ Confirm that fingerprint through a trusted maintainer channel, not only this rep
 - [ ] Verify release signatures using an independently trusted fingerprint.
 - [ ] For appliance releases, test both slots, failed updates, persistent data, and device-specific wizard paths.
 - [ ] Document actual binary/image sizes and benchmark environment; do not reuse stale headline numbers.
+
+## Verified drill (2026-11-08)
+
+Full backup + restore drill against oci:wraith-bucket/daily.
+
+Backup: bash deploy/backup.sh uploaded orchestrator-20261108-093713.tar.gz
+(78 KiB, 120 entries). Retention kept 7. Contents: orchestrator.db via
+sqlite3 .backup snapshot, orchestrator.toml, modules/, deploy/,
+orchestrator.service.
+
+Archive inspection: PRAGMA integrity_check on extracted DB = ok. Table
+execution_logs matches docs/architecture.md. All 8 module files sha256
+identical to pre-backup. orchestrator.toml sha256 identical to pre-backup.
+
+Restore: state modified (added drill-test.wasm, set log_level debug),
+then bash deploy/restore.sh orchestrator-20261108-093713.tar.gz
+completed with healthz OK in about 3 seconds.
+
+Post-restore: drill-test.wasm removed (not in archive). log_level
+reverted to info. 8 module files sha256 identical to pre-modify. DB
+integrity ok, execution_logs 95 rows. deploy/ tree byte-identical to
+git HEAD.
+
+Caveats: DB file sha256 differs pre-backup vs post-restore because
+sqlite3 .backup flushes WAL deterministically; logical content is
+identical. Do not compare raw DB file hashes across backup boundaries.
+Stale -wal/-shm warning still applies if service not stopped cleanly
+before restore. Drill in a clean environment still recommended before
+relying on this for real DR.
