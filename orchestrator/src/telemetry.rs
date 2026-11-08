@@ -67,11 +67,17 @@ pub async fn auth_middleware(
             .into_response();
     }
 
+    // Tenant routes: /t/{tenant}/... must be verified against that
+    // tenant's token, not the default tenant's. Otherwise legitimate
+    // /t/alice requests with alice-token would be rejected here before
+    // the handler's per-tenant verify_tenant even runs.
+    let tenant_for_auth = match extract_tenant_from_path(path) {
+        Some(t) => t,
+        None => state.tenants.default_name(),
+    };
+
     let auth = request.headers().get("authorization").cloned();
-    match state
-        .tenants
-        .verify(state.tenants.default_name(), auth.as_ref())
-    {
+    match state.tenants.verify(tenant_for_auth, auth.as_ref()) {
         Ok(()) => next.run(request).await,
         Err(_) => (
             axum::http::StatusCode::UNAUTHORIZED,
@@ -79,6 +85,17 @@ pub async fn auth_middleware(
         )
             .into_response(),
     }
+}
+
+/// Extract the tenant segment from /t/{tenant}/... routes.
+/// Returns None for non-tenant routes.
+fn extract_tenant_from_path(path: &str) -> Option<&str> {
+    let rest = path.strip_prefix("/t/")?;
+    let end = rest.find('/').unwrap_or(rest.len());
+    if end == 0 {
+        return None;
+    }
+    Some(&rest[..end])
 }
 
 pub fn build_router(state: ApiState) -> Router {
