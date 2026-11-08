@@ -12,7 +12,7 @@
 
 </div>
 
-> **Read this first.** Wraith is an ambitious, working engineering project, not a claim of independently audited production security. This documentation follows the source at commit `20cb378`, distinguishes measurements from simulations, and calls out unfinished integration paths. Start locally; read [Security](docs/security.md) before exposing an instance to other people.
+> **Read this first.** Wraith is an ambitious, working engineering project, not a claim of independently audited production security. This documentation follows the source at commit `f71294a`, distinguishes measurements from simulations, and calls out unfinished integration paths. Start locally; read [Security](docs/security.md) before exposing an instance to other people.
 
 ## What is Wraith?
 
@@ -86,19 +86,21 @@ The site includes:
 
 ## Measured snapshot — not a universal speed claim
 
-The maintainer supplied the following benchmark for **v0.27.1 on 2026-11-04 UTC**:
+The following is a re-run of the original benchmark, executed on the same host on **2026-11-08 UTC** against the current tree (post-M11 hardening):
 
 | Measurement | Result | Scope |
 |---|---:|---|
-| Mean recorded Wasm execution | **180.9 µs** | 23 executions, including 3 warmups; empty guest returning `{}` |
-| Mean global-pool wait | **1.45 µs** | Same 23 executions; sequential requests |
-| Client wall time per request | **6.10 ms** | 20 sequential curl invocations; new connection and process each time |
-| Successful executions | **23 / 23** | Reported counter and audit verification |
-| Cold source build | **8,988 ms** | Fresh temporary directory; not execution latency |
+| Mean recorded Wasm execution | **183.5 µs** | 20 executions after 3 warmups; empty guest returning `{}` |
+| Mean global-pool wait | **1.66 µs** | Same 23 executions; sequential requests |
+| Client wall time per request | **1.66 ms** | 20 sequential curl invocations on this host |
+| Successful executions | **23 / 23** | Audit log verified |
+| Cold source build | **not re-run** | Covered by CI pipeline instead |
 
-The execution timer covers `Store::new`, asynchronous instantiation, `call_run`, and JSON result parsing. It excludes HTTP handling, module lookup, quota acquisition, and audit persistence. Pool wait is a separate timer. The 6.10 ms wall time must not be presented as pure runtime overhead or inverted into a throughput guarantee.
+Original v0.27.1 measurement for comparison (2026-11-04 UTC): execution 180.9 µs, pool wait 1.45 µs, wall 6.10 ms. Execution and pool-wait values are within run-to-run noise (a few percent). Wall time differs because the 2026-11-04 number was collected on a different machine under different load; it is not a regression and not a speedup — it is simply a different host.
 
-**Important:** the benchmark reports v0.27.1, while the crate manifests in this checkout declare `0.1.0`. The benchmark guest `empty3` is not the checked-in `sample.wasm`. These results are preserved as supplied, not independently rerun during this documentation update.
+The execution timer covers `Store::new`, asynchronous instantiation, `call_run`, and JSON result parsing. It excludes HTTP handling, module lookup, quota acquisition, and audit persistence. Pool wait is a separate timer. Neither number should be inverted into a throughput guarantee.
+
+**About versioning:** the crate manifests declare `0.1.0`; releases are tracked by git tags (`v0.38.0` at the time of this run). The benchmark guest is `tests/fixtures/empty/`, checked in for reproducibility.
 
 [Read the method, raw values, limitations, and reproduction procedure →](docs/benchmarks.md)
 
