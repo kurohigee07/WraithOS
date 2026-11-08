@@ -239,3 +239,53 @@ identical. Do not compare raw DB file hashes across backup boundaries.
 Stale -wal/-shm warning still applies if service not stopped cleanly
 before restore. Drill in a clean environment still recommended before
 relying on this for real DR.
+
+## Metrics cardinality (2026-11-08)
+
+Prometheus exposition in this project is process-scoped:
+`metrics-exporter-prometheus` 0.17.2. Counter, gauge, and histogram
+label sets are registered once per label combination and persist for
+the lifetime of the process. Deleting a module or tenant via the API
+does not remove its series from /metrics until restart.
+
+This is standard Prometheus client behavior, not a custom eviction
+policy. Operators with high upload/delete churn should plan for one
+of:
+
+- Periodic orchestrator restart (weekly cron, or restart after a
+  deployment churn event).
+- Per-tenant `max_modules` cap in `orchestrator.toml` to bound the
+  worst-case label cardinality.
+- Downstream Prometheus `metric_relabel_configs` drop rules, or
+  scrape-level filtering (drops are applied at scrape time, not at
+  exporter).
+
+### Measured
+
+Baseline (empty state, 2 modules): 546 bytes, 10 series.
+
+Load test (20 modules across 3 tenants, each module executed once):
+
+| Metric | Baseline | After load | Delta |
+|---|---:|---:|---:|
+| /metrics bytes | 546 | 36,020 | +35,474 |
+| /metrics series | 10 | 391 | +381 |
+| wasm_executions_total series | 0 | 20 | +20 |
+| scrape time (5 runs) | <10 ms | <10 ms | flat |
+
+Marginal cost per module: ~1.8 KB / ~19 series (1 counter series +
+2 histograms × ~7 quantile series + summary sum/count + shared pool
+series). Linear with module count; no super-linear growth observed.
+
+Restart clears the registry (wasm_executions_total drops from 20 to 0
+in the same 546-byte baseline payload), confirming process-scoped
+semantics.
+
+### Deferred
+
+- Not implemented: label eviction on module/tenant delete. Would
+  require wrapping the metrics crate with a dynamic label set or
+  moving to OpenTelemetry metrics SDK with cardinality limits.
+- Not measured: behavior beyond 20 modules. Production guidance is
+  to keep per-instance module count low (tens, not thousands) and
+  rely on the max_modules tenant cap as the primary bound.
