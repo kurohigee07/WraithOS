@@ -111,7 +111,12 @@ pub fn build_router(state: ApiState) -> Router {
     router
         .layer(TimeoutLayer::with_status_code(
             axum::http::StatusCode::REQUEST_TIMEOUT,
-            Duration::from_secs(60),
+            // Outer HTTP timeout must be strictly larger than the Wasm
+            // epoch deadline (60 s = 600 ticks x 100 ms) so a spinning
+            // guest hits the epoch trap and returns a clean 500 with
+            // trap body, rather than racing the outer layer and
+            // returning a bodyless 408.
+            Duration::from_secs(65),
         ))
         .with_state(state)
 }
