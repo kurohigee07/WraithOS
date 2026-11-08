@@ -369,29 +369,6 @@ fn setup_luks(pwd: &str, data_dir: &std::path::Path) -> LuksResult<()> {
     Ok(())
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[tokio::test]
-    async fn markers_survive_restart() {
-        let tmp = tempfile::tempdir().unwrap();
-        std::fs::write(tmp.path().join(COMPLETE_MARKER), "completed\n").unwrap();
-        std::fs::write(tmp.path().join(LUKS_MARKER), "luks2\n").unwrap();
-        let s = WizardState::new(tmp.path().to_path_buf());
-        assert!(s.is_completed().await);
-        assert!(s.data.lock().await.luks_enabled);
-    }
-
-    #[tokio::test]
-    async fn fresh_state_is_incomplete() {
-        let tmp = tempfile::tempdir().unwrap();
-        let s = WizardState::new(tmp.path().to_path_buf());
-        assert!(!s.is_completed().await);
-        assert!(!s.data.lock().await.luks_enabled);
-    }
-}
-
 /// Write file with fsync, so the data survives hypervisor kill or power
 /// loss during first-boot provisioning. The wizard writes hostname,
 /// password hash, network config, and the completion marker — losing any
@@ -499,4 +476,27 @@ pub fn router() -> Router<ApiState> {
         .route("/wizard/step1", post(step1_handler))
         .route("/wizard/step2", post(step2_handler))
         .route("/wizard/finish", post(finish_handler))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn markers_survive_restart() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(tmp.path().join(COMPLETE_MARKER), "completed\n").unwrap();
+        std::fs::write(tmp.path().join(LUKS_MARKER), "luks2\n").unwrap();
+        let s = WizardState::new(tmp.path().to_path_buf());
+        assert!(s.is_completed().await);
+        assert!(s.data.lock().await.luks_enabled);
+    }
+
+    #[tokio::test]
+    async fn fresh_state_is_incomplete() {
+        let tmp = tempfile::tempdir().unwrap();
+        let s = WizardState::new(tmp.path().to_path_buf());
+        assert!(!s.is_completed().await);
+        assert!(!s.data.lock().await.luks_enabled);
+    }
 }
