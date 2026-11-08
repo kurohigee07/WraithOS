@@ -260,13 +260,21 @@ async fn main() -> anyhow::Result<()> {
     wait_for_shutdown_signal().await?;
 
     let _ = shutdown_tx.send(());
-    drop(bus);
 
     match worker_handle.await {
         Ok(Ok(())) => info!("rhai worker exited cleanly"),
         Ok(Err(e)) => warn!(err = %e, "rhai worker returned error"),
         Err(j) => warn!(err = %j, "rhai worker join failed"),
     }
+
+    // derived_handle loops on event_bus.recv(). The EventBus is held
+    // alive by ApiState (Arc<AppContext>.event_bus), which the metrics
+    // server owns until we shut it down below. derived_rx would never
+    // observe RecvError::Closed while metrics is still running, so an
+    // .await here deadlocks until systemd's TimeoutStopSec sends
+    // SIGKILL. Abort explicitly; this task is a demo log subscriber
+    // and has no cleanup to run.
+    derived_handle.abort();
     let _ = derived_handle.await;
 
     if let Some((m_handle, m_tx)) = metrics_server {
