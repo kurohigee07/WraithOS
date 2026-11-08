@@ -10,6 +10,7 @@ BOARD_DIR="$(dirname "$0")"
 BIN_DIR="${BINARIES_DIR:-${BASE_DIR}/images}"
 BUILD_D="${BUILD_DIR:-${BASE_DIR}/build}"
 HOST_D="${HOST_DIR:-${BASE_DIR}/host}"
+export PATH="${HOST_D}/bin:${PATH}"
 
 # GRUB core dir (build tree → fallback backup)
 GRUB_CORE_DIR="${BUILD_D}/grub2-2.12/build-i386-pc/grub-core"
