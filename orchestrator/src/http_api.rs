@@ -169,34 +169,45 @@ async fn upload_shared(
         .map_err(|e| ApiError::BadRequest(format!("quota: {e}")))?;
     let module = load_module(s, tenant, &id, &body, &quota, quota_state, headers)?;
 
-    let tenant_dir = s.modules_dir.join(tenant);
-    let path = tenant_dir.join(format!("{id}.wasm"));
-    crate::fs_util::atomic_write(&path, &body)
-        .map_err(|e| ApiError::Internal(format!("disk: {e}")))?;
-    if let Some(sig) = &sig_bytes {
-        if let Err(e) = crate::module_registry::write_sig_sidecar(&tenant_dir, &id, sig) {
-            let _ = std::fs::remove_file(&path);
-            return Err(ApiError::Internal(format!("sig sidecar: {e}")));
-        }
-    }
-    write_quota_sidecar(&tenant_dir, &id, &quota)
-        .map_err(|e| ApiError::Internal(format!("sidecar: {e}")))?;
-    crate::module_registry::write_capabilities_sidecar(
-        &tenant_dir,
-        &id,
-        &module.manifest().capabilities,
-    )
-    .map_err(|e| ApiError::Internal(format!("caps sidecar: {e}")))?;
+    let module_arc = Arc::new(module);
 
+    // Reserve slot in registry BEFORE disk writes. Only the winner
+    // proceeds; concurrent losers get 409 without touching any file.
+    // Fixes a race where 49 losers each removed the winner's .wasm
+    // after their own insert_if_absent failed, leaving a registry
+    // entry with no backing file and orphan sidecars.
     if s.registry
-        .insert_if_absent(tenant, &id, Arc::new(module))
+        .insert_if_absent(tenant, &id, module_arc.clone())
         .is_err()
     {
-        let _ = std::fs::remove_file(&path);
-        let _ = std::fs::remove_file(tenant_dir.join(format!("{id}.wasm.sig")));
         return Err(ApiError::Conflict(format!(
             "module '{id}' already exists (race)"
         )));
+    }
+
+    let tenant_dir = s.modules_dir.join(tenant);
+    let path = tenant_dir.join(format!("{id}.wasm"));
+    let caps = module_arc.manifest().capabilities.clone();
+
+    let write_result: std::result::Result<(), String> = (|| {
+        crate::fs_util::atomic_write(&path, &body).map_err(|e| format!("disk: {e}"))?;
+        if let Some(sig) = &sig_bytes {
+            crate::module_registry::write_sig_sidecar(&tenant_dir, &id, sig)
+                .map_err(|e| format!("sig sidecar: {e}"))?;
+        }
+        write_quota_sidecar(&tenant_dir, &id, &quota).map_err(|e| format!("sidecar: {e}"))?;
+        crate::module_registry::write_capabilities_sidecar(&tenant_dir, &id, &caps)
+            .map_err(|e| format!("caps sidecar: {e}"))?;
+        Ok(())
+    })();
+
+    if let Err(e) = write_result {
+        s.registry.remove(tenant, &id);
+        let _ = std::fs::remove_file(&path);
+        let _ = std::fs::remove_file(tenant_dir.join(format!("{id}.wasm.sig")));
+        let _ = std::fs::remove_file(tenant_dir.join(format!("{id}.wasm.quota.json")));
+        let _ = std::fs::remove_file(tenant_dir.join(format!("{id}.wasm.capabilities.json")));
+        return Err(ApiError::Internal(e));
     }
 
     info!(tenant = %tenant, id = %id, bytes = body.len(), "module uploaded");
