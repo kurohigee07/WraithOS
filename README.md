@@ -255,7 +255,7 @@ wraith-sdk/         Async Rust HTTP client
 wraith-cli/         `wraith` command-line application
 modules/default/    Checked-in sample component and quota sidecar
 deploy/             systemd, backup/restore, packaging, signing, smoke helpers
-wraithos/           x86 and ARM Buildroot trees, boot scripts, Termux helpers
+deploy/wraithos/    x86 and ARM Buildroot trees, boot scripts, Termux helpers
 docs/               English guides, benchmark evidence, interactive documentation
 HANDOFF.md          Historical development notes; not the current source of truth
 TODO.md             Historical planning list; verify against source before using

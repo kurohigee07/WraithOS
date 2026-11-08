@@ -17,15 +17,16 @@ modules/**/*.wasm
 .DS_Store
 logs/
 core.*
-wraithos/termux-package/orchestrator
-wraithos/termux-package/*.db*
-wraithos/termux-package/logs/
 modules/**/*.wasm.quota.json
 modules/**/*.wasm.sig
 orchestrator.toml.bak
 modules/**/*.wasm.capabilities.json
 dist/
 data/
-wraithos/aarch64-br2-ext/board/wraithos/rootfs_overlay/etc/shadow
 tests/fixtures/*/target/
 tests/fixtures/*/Cargo.lock
+
+# Termux package (moved from wraithos/termux-package/)
+deploy/wraithos/termux-package/orchestrator
+deploy/wraithos/termux-package/*.db*
+deploy/wraithos/termux-package/logs/
