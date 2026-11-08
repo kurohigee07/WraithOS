@@ -356,6 +356,7 @@ async fn per_module_capability_denies_wrong_host() {
 }
 
 #[tokio::test]
+#[ignore = "requires network: guest calls GET https://example.com and TCP :80; offline CI would return http/tcp errors and the success assertion would fail"]
 async fn per_module_capability_allows_matching_host() {
     let (s, _tmp) = state().await;
     let app = telemetry::build_router(s);
