@@ -42,10 +42,15 @@ jobs:
           shared-key: test
       - name: build sample-plugin (wasm32-wasip2)
         run: cargo build --locked -p sample-plugin --target wasm32-wasip2 --release
-      - name: unit tests + integration tests (offline-safe subset)
-        # per_module_capability_allows_matching_host is #[ignore] because
-        # the guest calls https://example.com and TCP :80. It requires a
-        # network-enabled runner. Offline-safe subset is the CI gate.
+      - name: unit tests + integration tests
+        # per_module_capability_allows_matching_host is #[ignore] with
+        # reason "requires network". The guest calls GET
+        # https://example.com and TCP :80. GitHub-hosted runners have
+        # outbound internet, so 16/16 pass here with --include-ignored.
+        # Self-hosted runners without egress skip the ignored test and
+        # still gate on the remaining 15. Loopback-only tests
+        # (socket_ownership_isolation, socket_cap_fail_closed) pass in
+        # both environments; they do not require outbound network.
         run: cargo test --locked -p orchestrator -p wraith-sdk -p wraith-cli --all-targets
 
   build-musl-x86_64:
