@@ -1,28 +1,31 @@
-# WraithOS — shell lockdown (defense-in-depth)
-# Rootfs read-only, no persistent history, restricted environment.
+# WraithOS — shell lockdown + Spectral prompt
 
-# ── No history persistence (leak protection)
+INPUTRC=/etc/inputrc
+TMOUT=600
+export INPUTRC TMOUT
+readonly INPUTRC TMOUT
+
 export HISTFILE=/dev/null
 export HISTSIZE=0
 export HISTFILESIZE=0
-set +H 2>/dev/null   # disable history expansion (!cmd)
+set +H 2>/dev/null
 
-# ── No overwrite via > redirect; use >| to force
 set -o noclobber
 
-# ── Restricted PATH (readonly to prevent override)
 export PATH=/usr/sbin:/usr/bin:/sbin:/bin
 readonly PATH
 
-# ── Umask: group/other have no write
 umask 022
+ulimit -c 0
 
-# ── Prompt with slot indicator
+# Terminal palette (belt+braces with /etc/issue)
+printf '\033]11;#1C1C1C\033\\'
+printf '\033]10;#D0D0D0\033\\'
+
 __slot() { sed -n 's/.*slot=\([AB]\).*/\1/p' /proc/cmdline 2>/dev/null | head -1; }
 __s=$(__slot)
-PS1='\[\e[0;37m\]\u@\h\[\e[0m\][\[\e[1;33m\]${__s:-?}\[\e[0m\]]:\[\e[1;37m\]\w\[\e[0m\]\$ '
+PS1='\[\e[38;5;179m\]\u@\h\[\e[0m\][\[\e[38;5;66m\]${__s:-?}\[\e[0m\]]:\[\e[38;5;252m\]\w\[\e[0m\] \[\e[38;5;179m\]\$ \[\e[0m\]'
 
-# ── Safe aliases (confirmation on destructive ops)
 alias rm='rm -i'
 alias cp='cp -i'
 alias mv='mv -i'
@@ -31,5 +34,5 @@ alias ll='ls -lah'
 alias la='ls -A'
 alias grep='grep --color=auto'
 
-# ── Bracketed paste (Termius/Termux wrap)
+[ -f /etc/inputrc ] && bind -f /etc/inputrc 2>/dev/null || true
 bind 'set enable-bracketed-paste on' 2>/dev/null || true
