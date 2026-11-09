@@ -30,3 +30,9 @@ tests/fixtures/*/Cargo.lock
 deploy/wraithos/termux-package/orchestrator
 deploy/wraithos/termux-package/*.db*
 deploy/wraithos/termux-package/logs/
+
+# RAUC CA private material — must never be committed
+deploy/wraithos/rauc-ca/*.key
+deploy/wraithos/rauc-ca/*.csr
+deploy/wraithos/rauc-ca/*.srl
+deploy/wraithos/rauc-ca/dev.cert.pem
