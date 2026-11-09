@@ -14,6 +14,13 @@
 
 > **Read this first.** Wraith is an ambitious, working engineering project, not a claim of independently audited production security. This documentation follows the source at commit `f71294a`, distinguishes measurements from simulations, and calls out unfinished integration paths. Start locally; read [Security](docs/security.md) before exposing an instance to other people.
 
+> **Default root credential.** WraithOS ships with root password
+> `wraithos-admin-change-me` for serial console login (ttyS0 on x86,
+> ttyAMA0 on ARM). Change it before exposing the device. Rootfs is a
+> read-only squashfs, so password rotation happens at build time by
+> editing `/etc/shadow` in the board overlay — see
+> [Security](docs/security.md) for the full first-boot checklist.
+
 ## What is Wraith?
 
 Imagine deploying a small piece of business logic without shipping an entire container image or giving that code unrestricted access to your server.

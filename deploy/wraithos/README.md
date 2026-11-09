@@ -81,3 +81,26 @@ Setiap rebuild orchestrator (patch, config fix, dll.) — jalankan sync sebelum 
       BR2_TARGET_GRUB2_I386_PC=y (bukan _X86_64_BIOS, deprecated)
     - Kernel fragment harus x86-compatible (CONFIG_WATCHDOG, CONFIG_BPF, dst.)
       — jangan pakai fragment ARM ke build x86
+
+## Before deployment
+
+WraithOS ships with a documented root password. Read
+[Security](../../docs/security.md#default-credentials) for the full
+policy. At minimum:
+
+- [ ] Change the root hash in `{x86_64,aarch64}/rootfs_overlay/etc/shadow`
+      before building the production image
+      (`openssl passwd -6 '<new-password>'`)
+- [ ] Set `trusted_signer_keys` in `/etc/wraith/orchestrator.toml` and
+      sign every module in `modules/{tenant}/` with a matching
+      `.wasm.sig`
+- [ ] Set `require_auth = true` and configure at least one tenant
+- [ ] Confirm `metrics_bind` is `127.0.0.1:9090` (the default) or
+      behind a reverse proxy
+- [ ] Boot the image with serial console, verify `wraithos login:`
+      accepts the new password, verify `/healthz`, `/readyz`,
+      `/ui`
+- [ ] Exercise `wraith-update` and A/B rollback on a scratch device
+
+The image is a development default. Production deployments must not
+ship the default credential.
