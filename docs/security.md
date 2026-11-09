@@ -182,3 +182,71 @@ This is a documentation-derived recommendation, not a claim that these changes w
 8. Validate ARM boot/update/encryption through power-loss and failed-boot drills; sign update artifacts.
 
 No security audit or penetration test was performed for this documentation update.
+
+## Default credentials
+
+WraithOS ships with a documented root password for serial console
+login: `wraithos-admin-change-me`. It is set as a SHA512-crypt hash in
+each board overlay's `etc/shadow` (x86 at
+`deploy/wraithos/x86_64/rootfs_overlay/etc/shadow`, ARM at
+`deploy/wraithos/aarch64/rootfs_overlay/etc/shadow`). Busybox `login`
+verifies it against the hash at each console login.
+
+Why a documented default instead of per-device random generation:
+
+- The rootfs is a read-only squashfs. `/etc/shadow` cannot be modified
+  at runtime by `passwd` (returns "Read-only file system"). Any
+  per-boot random generation would need a writable bind mount over
+  `/etc/shadow` from the persistent `/data` partition; the
+  implementation was attempted and dropped after repeated
+  instability (bind mount on read-only squashfs, inode replacement
+  semantics).
+- The console is physically isolated: `getty` binds only to the
+  serial port (`ttyS0` on x86, `ttyAMA0` on ARM). There is no
+  network-facing login (no sshd in the image).
+- Every commercial appliance OS ships a documented default
+  (OpenWrt `root`/no password by default, Ubiquiti `ubnt`/`ubnt`,
+  pfSense `admin`/`pfsense`). Operators are expected to change it
+  before deployment.
+
+### First-boot checklist
+
+Before exposing a WraithOS device to any network:
+
+1. Boot once with serial console access. Log in as `root` with
+   `wraithos-admin-change-me` to confirm the image works.
+2. Edit `deploy/wraithos/{x86_64,aarch64}/rootfs_overlay/etc/shadow`
+   in your checkout, replacing the root hash with your own. Generate
+   a hash with:
+
+       openssl passwd -6 '<your-password>'
+
+   Busybox `login` accepts SHA512-crypt (`$6$...`), SHA256-crypt
+   (`$5$...`), MD5-crypt (`$1$...`), and DES crypt. SHA512 is
+   recommended.
+3. Rebuild the image (`bash deploy/wraithos/...` pipeline) or patch
+   the rootfs squashfs directly.
+4. After boot, verify only the serial console is exposed. Keep
+   `/healthz` and `/readyz` behind whatever network policy you
+   apply — they are public by default but bind to
+   `127.0.0.1:9090` unless you changed `metrics_bind`.
+5. Set `trusted_signer_keys` and `require_auth` in
+   `/etc/wraith/orchestrator.toml` (see the tenant and signing
+   sections above) before accepting external traffic.
+
+### What is NOT defended by default
+
+- The console is password-protected (`wraithos-admin-change-me`) but
+  the string is public. Physical access without a changed password
+  gives root.
+- The orchestrator HTTP API is unauthenticated by default
+  (`require_auth = false`, `trusted_signer_keys = []`). Any network
+  reachable to `metrics_bind` can POST modules and execute them.
+- The signed-module enforcement is off by default
+  (`trusted_signer_keys = []`). Enabling it requires signing every
+  module in `modules/{tenant}/` (matching `.wasm.sig` siblings), or
+  the loader skips them on startup.
+
+Operators who need a stronger default should fork the board overlay
+and set their own root hash before building; the image build is
+reproducible from `deploy/wraithos/`.
