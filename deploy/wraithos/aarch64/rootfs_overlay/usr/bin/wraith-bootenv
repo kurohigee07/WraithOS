@@ -21,17 +21,18 @@ env_write() {
     q=$4
     b=$5
     l=$6
-    # Preserve any keys we do not own (e.g. RAUC A_OK, B_OK, ORDER)
-    old_slot=$(env_get slot)
-    old_tries=$(env_get tries)
-    old_good=$(env_get good)
-    old_seq=$(env_get seq)
-    old_booted=$(env_get booted)
-    old_lkg=$(env_get lkg)
+    order=$7
+    # Preserve keys we do not own (e.g. RAUC A_OK, B_OK). ORDER is
+    # owned by us: caller passes it as $7, or we keep the old value.
+    # grub.cfg reads ORDER first, falls back to slot only if ORDER
+    # absent. Without ORDER sync here, demote/trial would leave ORDER
+    # pointing at the other slot — grub.cfg ignores the slot change
+    # and boots the same (failing) slot — boot loop.
+    old_order=$(env_get ORDER)
     extra=""
     if [ -f "$ENV_FILE" ]; then
         extra=$(sed 's/#.*//' "$ENV_FILE" 2>/dev/null | grep '=' | \
-            grep -vE '^(slot|tries|good|seq|booted|lkg)=' || true)
+            grep -vE '^(slot|tries|good|seq|booted|lkg|ORDER)=' || true)
     fi
     {
         printf '# GRUB Environment Block\n'
@@ -41,6 +42,11 @@ env_write() {
         printf 'seq=%s\n' "$q"
         printf 'booted=%s\n' "$b"
         printf 'lkg=%s\n' "$l"
+        if [ -n "$order" ]; then
+            printf 'ORDER=%s\n' "$order"
+        elif [ -n "$old_order" ]; then
+            printf 'ORDER=%s\n' "$old_order"
+        fi
         if [ -n "$extra" ]; then
             printf '%s\n' "$extra"
         fi
@@ -78,27 +84,29 @@ case "$1" in
         env_get "$2"
         ;;
     show)
-        for k in slot tries good seq booted lkg; do
+        for k in slot tries good seq booted lkg ORDER; do
             printf '%s=%s\n' "$k" "$(env_get "$k")"
         done
         ;;
     commit)
         s=$(slot_now)
         [ -n "$s" ] || exit 1
-        env_write "$s" 0 1 "$(seq_next)" "$s" "$s"
+        o=$(other_of "$s")
+        env_write "$s" 0 1 "$(seq_next)" "$s" "$s" "$s $o"
         ;;
     trial)
         n=$2
         [ "$n" = A ] || [ "$n" = B ] || exit 1
         c=$(slot_now)
         [ -n "$c" ] || c=A
-        env_write "$n" 3 0 "$(seq_next)" "$n" "$c"
+        o=$(other_of "$n")
+        env_write "$n" 3 0 "$(seq_next)" "$n" "$c" "$n $o"
         ;;
     demote)
         c=$(slot_now)
         [ -n "$c" ] || c=A
         o=$(other_of "$c")
-        env_write "$o" 3 0 "$(seq_next)" "$o" "$c"
+        env_write "$o" 3 0 "$(seq_next)" "$o" "$c" "$o $c"
         ;;
     *)
         echo "usage: wraith-bootenv get|show|commit|trial|demote"
