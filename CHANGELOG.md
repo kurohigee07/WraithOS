@@ -8,6 +8,47 @@ describes the change theme. `v0.30` was not released.
 Crate manifests declare `0.1.0`; the tags are the release units.
 Releases before `v0.24.0` are not itemized here; see commit history.
 
+## [v0.42.1-rauc-ca-prod] - 2026-11-09
+
+### Fixed
+- RAUC bundles could not be verified on device. The CA was present in
+  the overlay source but never reached `output/target` because the
+  build did not re-apply `BR2_ROOTFS_OVERLAY`, and `make-bundle.sh`
+  fell back to a randomly generated self-signed CA when the
+  repo-local path was empty.
+- `make-bundle.sh` now reads `$CA_PROD` (default
+  `~/backups-b/rauc-ca-prod`, overridable) and aborts on fingerprint
+  mismatch. Removed the self-signed fallback and a dead `docker run`
+  masked by `|| true`.
+- Dev signing cert regenerated with
+  `extendedKeyUsage=critical,codeSigning,emailProtection`. The
+  previous cert only had `codeSigning`, which OpenSSL 3.x CMS
+  rejects with "unsuitable certificate purpose".
+- `wraithos_aarch64_defconfig` now pins the squashfs compression
+  options (`SQUASHFS4_GZIP`, `BS="128K"`, `BS_128K`, `PAD`) that
+  previously existed only in the generated `.config`. A fresh
+  defconfig now produces the layout genimage expects.
+
+### Added
+- `deploy/wraithos/{x86_64,aarch64}/rootfs_overlay/etc/rauc/ca.cert.pem`:
+  per-arch overlay copies of the production CA (SHA256
+  `5C:75:AC:3B:...:FD:38`), tracked so a clean checkout reproduces
+  the image.
+- `.gitignore`: block `*.key`, `*.csr`, `*.srl`, `dev.cert.pem` under
+  `deploy/wraithos/rauc-ca/`.
+
+### Changed
+- Production CA rotated. Replaces the previous release CA
+  (`A9:CB:1C:42:...:C9:A1`).
+
+### Notes
+- Supersedes `v0.42.0-credentials-rauc-fix`. v0.42.0 tag stays, but
+  its image artifact did not contain the CA or P0 #2 / P0 #3 fixes.
+- ARM image fully rebuilt on 2026-11-09; `output-arm-m31/{build,host,
+  target}` were missing.
+- Bundles built locally, verified via `rauc info --keyring`, attached
+  to the GitHub release. Not committed (`dist/` ignored).
+
 ## [v0.38.0-m10-metrics-cardinality] - 2026-11-08
 
 ### Documented
