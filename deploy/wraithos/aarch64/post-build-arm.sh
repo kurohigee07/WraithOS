@@ -19,16 +19,14 @@ rm -rf "${TARGET_DIR}/usr/share/info"
 rm -rf "${TARGET_DIR}/usr/share/man"
 rm -rf "${TARGET_DIR}/usr/share/doc"
 
-echo "[post-build] Drop stale GLib (config removed, files stayed)"
-rm -f  "${TARGET_DIR}/usr/lib/libgio"*     2>/dev/null || true
-rm -f  "${TARGET_DIR}/usr/lib/libglib"*    2>/dev/null || true
-rm -f  "${TARGET_DIR}/usr/lib/libgobject"* 2>/dev/null || true
-rm -f  "${TARGET_DIR}/usr/lib/libgmodule"* 2>/dev/null || true
+# GLib libs KEPT — RAUC needs libglib/libgio/libgobject/libgmodule at runtime.
+# Removed in a previous revision on the assumption "config removed, files
+# stayed"; that was wrong: BR2_PACKAGE_RAUC depends on libglib2.
 
 echo "[post-build] Drop OpenSSL libs (orchestrator static musl + rustls-ring)"
 # KEPT (cryptsetup needs libcrypto.so.3): rm -f  "${TARGET_DIR}/usr/lib/libcrypto"* 2>/dev/null || true
 # KEPT: rm -f  "${TARGET_DIR}/usr/lib/libssl"*    2>/dev/null || true
-rm -f  "${TARGET_DIR}/usr/bin/openssl"    2>/dev/null || true
+# openssl CLI KEPT — useful for RAUC CA/cert inspection (~1MB)
 
 echo "[post-build] Drop SQLite shared (bundled in orchestrator)"
 rm -f  "${TARGET_DIR}/usr/lib/libsqlite3"* 2>/dev/null || true
