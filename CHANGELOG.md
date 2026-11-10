@@ -8,6 +8,24 @@ describes the change theme. `v0.30` was not released.
 Crate manifests declare `0.1.0`; the tags are the release units.
 Releases before `v0.24.0` are not itemized here; see commit history.
 
+## [v0.42.2-arm-rauc-glib-fix] - 2026-11-10
+
+### Fixed
+- ARM image shipped a `rauc` binary that aborted at startup with
+  `libglib-2.0.so.0: No such file or directory`. `post-build-arm.sh`
+  removed libglib/libgio/libgobject/libgmodule after install on the
+  assumption they were stale, but RAUC links against them. Image
+  booted fine and `rauc status` never ran, so the regression was
+  invisible until `rauc install` was attempted on ARM.
+- Stopped removing the openssl CLI. It is ~1 MB, useful for
+  inspecting bundles and CA certs on device, and not a dependency
+  of anything removed by the same cleanup.
+
+### Notes
+- Rebuilds and re-releases the ARM image and bundle from v0.42.1.
+  v0.42.1 assets remain but the ARM `.raucb` should be considered
+  superseded.
+
 ## [v0.42.1-rauc-ca-prod] - 2026-11-09
 
 ### Fixed
