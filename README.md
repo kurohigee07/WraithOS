@@ -8,7 +8,7 @@
 
 [Interactive documentation](docs/index.html) · [Quick start](docs/quickstart.md) · [Architecture](docs/architecture.md) · [API](docs/api.md) · [Security boundaries](docs/security.md)
 
-`Rust 1.85+` · `Wasmtime 48` · `WASI Preview 2` · `Axum` · `SQLite` · `MIT OR Apache-2.0`
+`Rust 1.85+` · `Wasmtime 48` · `WASI Preview 2` · `Axum` · `SQLite` · `AGPL-3.0-or-later`
 
 </div>
 
@@ -368,8 +368,6 @@ modules/default/    Checked-in sample component and quota sidecar
 deploy/             systemd, backup/restore, packaging, signing, smoke helpers
 deploy/wraithos/    x86 and ARM Buildroot trees, boot scripts, RAUC wrappers, Termux helpers
 docs/               English guides, benchmark evidence, interactive documentation
-HANDOFF.md          Historical development notes; not the current source of truth
-TODO.md             Historical planning list; verify against source before using
 ```
 
 The [source map](docs/source-map.md) covers every file tracked at the documented baseline, including boot overlays, legacy backups, binary artifacts, and generated/vendor files.
@@ -401,4 +399,14 @@ See [Testing](docs/testing.md) for the Rust CI commands, documentation browser c
 
 Copyright (c) 2026 kurohigee07.
 
-Licensed under either [MIT](LICENSE-MIT) or [Apache License 2.0](LICENSE-APACHE), at your option. Third-party components retain their own licenses; the documentation fonts include their license files in `docs/assets/fonts/`.
+Wraith is dual-licensed:
+
+- **Open source:** [GNU Affero General Public License v3.0 or later](LICENSE).
+  AGPLv3 requires that modified versions served over a network make
+  the complete source available to users of that service.
+- **Commercial:** a separate proprietary license for embedding,
+  closed-source SaaS, or warranty/support terms that AGPLv3 does not
+  provide. See [LICENSE-COMMERCIAL.md](LICENSE-COMMERCIAL.md).
+
+Third-party components retain their own licenses; the documentation
+fonts include their license files in `docs/assets/fonts/`.

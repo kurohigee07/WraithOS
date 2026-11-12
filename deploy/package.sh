@@ -27,7 +27,7 @@ package_target() {
     cp orchestrator.toml "${STAGE_DIR}/"
     cp README.md "${STAGE_DIR}/"
     cp CHANGELOG.md "${STAGE_DIR}/"
-    cp LICENSE-MIT LICENSE-APACHE "${STAGE_DIR}/"
+    cp LICENSE LICENSE-COMMERCIAL.md "${STAGE_DIR}/"
     cp deploy/orchestrator.service "${STAGE_DIR}/deploy/"
     cp deploy/logrotate.conf "${STAGE_DIR}/deploy/"
     cp deploy/orchestrator-backup.service "${STAGE_DIR}/deploy/"
