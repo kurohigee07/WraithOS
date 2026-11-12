@@ -1,3 +1,11 @@
 export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 export HOME=/root
 export TERM=${TERM:-linux}
+
+# Source drop-in scripts (default-password warning, future additions)
+if [ -d /etc/profile.d ]; then
+    for _p in /etc/profile.d/*.sh; do
+        [ -r "$_p" ] && . "$_p"
+    done
+    unset _p
+fi

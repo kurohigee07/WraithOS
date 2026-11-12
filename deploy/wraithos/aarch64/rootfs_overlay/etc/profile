@@ -13,3 +13,11 @@ export PATH BASH_ENV ENV HISTFILE HISTSIZE HISTFILESIZE INPUTRC TMOUT COLORTERM
 unset PROMPT_COMMAND
 umask 0077
 ulimit -c 0
+
+# Source drop-in scripts (default-password warning, future additions)
+if [ -d /etc/profile.d ]; then
+    for _p in /etc/profile.d/*.sh; do
+        [ -r "$_p" ] && . "$_p"
+    done
+    unset _p
+fi
