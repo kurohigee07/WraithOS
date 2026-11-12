@@ -8,6 +8,64 @@ describes the change theme. `v0.30` was not released.
 Crate manifests declare `0.1.0`; the tags are the release units.
 Releases before `v0.24.0` are not itemized here; see commit history.
 
+## [v0.48.0-audit-batching] - 2026-11-12
+
+### Changed
+- Audit-log writes are now batched. `orchestrator/src/audit.rs` adds a
+  bounded `tokio::sync::mpsc` channel (capacity 10,000) and a dedicated
+  writer task that coalesces rows into one multi-row `INSERT` per 50 ms
+  or 100 rows. `WasmModule::execute_quota` sends an `AuditEntry` instead
+  of awaiting a per-request INSERT; `AppContext::shutdown` drains the
+  writer before closing the pool. Bounded capacity means backpressure,
+  not data loss, under extreme load.
+- Trade-off: a row is visible in `execution_logs` within 50 ms of the
+  execute response, not immediately. The write path no longer pays an
+  fsync-bound commit per request.
+
+### Results
+
+Benchmark measured on QEMU x86_64 on the same host, same `hey` client,
+before vs after. Full methodology, raw `hey` output, per-run metric
+snapshots and the aggregation JSON are checked in under
+`docs/evidence/benchmarks-v0.47.0/`; the write-up is
+`docs/benchmarks-v0.47.0.md`.
+
+Empty guest (`tests/fixtures/empty/`):
+
+| concurrency | before (req/s) | after (req/s) | boost |
+|---:|---:|---:|---:|
+| 1 | 917 | 5,374 | 5.9x |
+| 5 | 959 | 9,924 | 10.3x |
+| 10 | 933 | 9,813 | 10.5x |
+| 50 | 984 | 9,309 | 9.5x |
+
+Sustained 30 s at c=50: 292,967 requests, 0 errors, 9,764 req/s.
+
+CPU-bound guest (`cpu_heavy`, 10,000 iterations):
+
+| concurrency | before (req/s) | after (req/s) | boost |
+|---:|---:|---:|---:|
+| 1 | 798 | 3,149 | 3.9x |
+| 5 | 825 | 5,592 | 6.8x |
+| 10 | -- | 5,611 | -- |
+
+Audit table count matched the requested execution count within the
+50 ms flush window; no `audit batch insert failed` warnings in the
+orchestrator log.
+
+### Notes
+- The bottleneck was never Wasm. `/healthz` reached 81,657 req/s and
+  `/modules` (read-only) 66,212 req/s on the same host; `/execute`
+  was the only path under 1,000 req/s. The per-request synchronous
+  INSERT serialised on SQLite's single writer.
+- Pool-wait still grows linearly above c=25 because `max_concurrent_wasm`
+  is 2. Raising it was not attempted; a conservative default keeps tokio
+  workers available for HTTP, metrics and signal handling when a guest
+  is CPU-bound until the epoch trap.
+- The audit table is not pruned. Long-running deployments accumulate
+  rows and will eventually need retention or archival; not addressed
+  here.
+
 ## [v0.47.0-x86-luks-fixes] - 2026-11-12
 
 ### Fixed

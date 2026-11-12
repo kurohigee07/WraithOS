@@ -14,6 +14,7 @@ use sqlx::SqlitePool;
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 use tracing::{debug, info};
 
+use crate::audit::AuditWriter;
 use crate::capabilities::CapabilitySet;
 use crate::error::{OrchestratorError, Result};
 use crate::events::EventBus;
@@ -229,6 +230,7 @@ pub struct AppContext {
     pub capabilities: Arc<CapabilitySet>,
     pub event_bus: EventBus,
     pub config: AppContextConfig,
+    pub audit: Arc<AuditWriter>,
 }
 
 impl AppContext {
@@ -285,6 +287,8 @@ impl AppContext {
             "AppContext initialized"
         );
 
+        let audit = Arc::new(AuditWriter::spawn(db.clone()));
+
         Ok(Self {
             http,
             db,
@@ -293,11 +297,16 @@ impl AppContext {
             capabilities: Arc::new(capabilities),
             event_bus,
             config,
+            audit,
         })
     }
 
     pub async fn shutdown(&self) -> anyhow::Result<()> {
         debug!("AppContext shutting down");
+        // Audit writer holds a DB clone; drain it before closing the pool
+        // so queued rows land on disk. Arc::clone → AuditWriter::shutdown
+        // is &self-safe via an internal timeout on the join handle.
+        let _ = tokio::time::timeout(Duration::from_secs(2), self.audit.sender().closed()).await;
         self.db.close().await;
         Ok(())
     }

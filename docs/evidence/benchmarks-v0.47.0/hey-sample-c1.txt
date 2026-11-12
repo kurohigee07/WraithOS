@@ -1,0 +1,47 @@
+
+Summary:
+  Total:	107.4013 secs
+  Slowest:	1.5353 secs
+  Fastest:	0.0305 secs
+  Average:	0.0675 secs
+  Requests/sec:	9.3109
+  
+  Total data:	280438 bytes
+  Size/request:	281 bytes
+
+Response time histogram:
+  0.031 [1]	|
+  0.181 [985]	|■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
+  0.331 [9]	|
+  0.482 [0]	|
+  0.632 [0]	|
+  0.783 [1]	|
+  0.933 [0]	|
+  1.084 [0]	|
+  1.234 [1]	|
+  1.385 [0]	|
+  1.535 [1]	|
+
+
+Latency distribution:
+  10%% in 0.0417 secs
+  25%% in 0.0463 secs
+  50%% in 0.0536 secs
+  75%% in 0.0839 secs
+  90%% in 0.0954 secs
+  95%% in 0.1030 secs
+  99%% in 0.2677 secs
+
+Details (average, fastest, slowest):
+  DNS+dialup:	0.0000 secs, 0.0000 secs, 0.0002 secs
+  DNS-lookup:	0.0000 secs, 0.0000 secs, 0.0000 secs
+  req write:	0.0000 secs, 0.0000 secs, 0.0003 secs
+  resp wait:	0.0674 secs, 0.0304 secs, 1.5352 secs
+  resp read:	0.0001 secs, 0.0000 secs, 0.0001 secs
+
+Status code distribution:
+  [200]	998 responses
+
+Error distribution:
+  [2]	Post "http://127.0.0.1:9090/modules/sample/execute": context deadline exceeded (Client.Timeout exceeded while awaiting headers)
+

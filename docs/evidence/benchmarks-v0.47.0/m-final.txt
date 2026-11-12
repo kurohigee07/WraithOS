@@ -1,0 +1,104 @@
+# TYPE wasm_executions_total counter
+wasm_executions_total{module="empty",tenant="default",result="ok"} 69798
+wasm_executions_total{module="sample",result="error"} 23
+wasm_executions_total{module="cpu_heavy",tenant="default",result="ok"} 64409
+wasm_executions_total{module="json_heavy",tenant="default",result="ok"} 6001
+wasm_executions_total{module="sample",tenant="default",result="ok"} 5973
+
+# TYPE rhai_events_processed_total counter
+rhai_events_processed_total{source="smoke"} 1
+rhai_events_processed_total{source="sample"} 5973
+
+# TYPE wasm_pool_in_flight gauge
+wasm_pool_in_flight 0
+
+# TYPE socket_registry_active gauge
+socket_registry_active 0
+
+# TYPE rhai_script_duration_seconds summary
+rhai_script_duration_seconds{quantile="0"} 0
+rhai_script_duration_seconds{quantile="0.5"} 0
+rhai_script_duration_seconds{quantile="0.9"} 0
+rhai_script_duration_seconds{quantile="0.95"} 0
+rhai_script_duration_seconds{quantile="0.99"} 0
+rhai_script_duration_seconds{quantile="0.999"} 0
+rhai_script_duration_seconds{quantile="1"} 0
+rhai_script_duration_seconds_sum 2.767992237
+rhai_script_duration_seconds_count 5974
+
+# TYPE wasm_pool_wait_seconds summary
+wasm_pool_wait_seconds{module="sample",tenant="default",quantile="0"} 0
+wasm_pool_wait_seconds{module="sample",tenant="default",quantile="0.5"} 0
+wasm_pool_wait_seconds{module="sample",tenant="default",quantile="0.9"} 0
+wasm_pool_wait_seconds{module="sample",tenant="default",quantile="0.95"} 0
+wasm_pool_wait_seconds{module="sample",tenant="default",quantile="0.99"} 0
+wasm_pool_wait_seconds{module="sample",tenant="default",quantile="0.999"} 0
+wasm_pool_wait_seconds{module="sample",tenant="default",quantile="1"} 0
+wasm_pool_wait_seconds_sum{module="sample",tenant="default"} 3452.763769578998
+wasm_pool_wait_seconds_count{module="sample",tenant="default"} 5978
+wasm_pool_wait_seconds{module="empty",tenant="default",quantile="0"} 0.042456284
+wasm_pool_wait_seconds{module="empty",tenant="default",quantile="0.5"} 0.043556339609749445
+wasm_pool_wait_seconds{module="empty",tenant="default",quantile="0.9"} 0.0453520447465336
+wasm_pool_wait_seconds{module="empty",tenant="default",quantile="0.95"} 0.04578952090329932
+wasm_pool_wait_seconds{module="empty",tenant="default",quantile="0.99"} 0.04578952090329932
+wasm_pool_wait_seconds{module="empty",tenant="default",quantile="0.999"} 0.04578952090329932
+wasm_pool_wait_seconds{module="empty",tenant="default",quantile="1"} 0.046090055
+wasm_pool_wait_seconds_sum{module="empty",tenant="default"} 1832.0610368090029
+wasm_pool_wait_seconds_count{module="empty",tenant="default"} 69798
+wasm_pool_wait_seconds{module="json_heavy",tenant="default",quantile="0"} 0
+wasm_pool_wait_seconds{module="json_heavy",tenant="default",quantile="0.5"} 0
+wasm_pool_wait_seconds{module="json_heavy",tenant="default",quantile="0.9"} 0
+wasm_pool_wait_seconds{module="json_heavy",tenant="default",quantile="0.95"} 0
+wasm_pool_wait_seconds{module="json_heavy",tenant="default",quantile="0.99"} 0
+wasm_pool_wait_seconds{module="json_heavy",tenant="default",quantile="0.999"} 0
+wasm_pool_wait_seconds{module="json_heavy",tenant="default",quantile="1"} 0
+wasm_pool_wait_seconds_sum{module="json_heavy",tenant="default"} 81.51669810399997
+wasm_pool_wait_seconds_count{module="json_heavy",tenant="default"} 6001
+wasm_pool_wait_seconds{module="cpu_heavy",tenant="default",quantile="0"} 0.007478693
+wasm_pool_wait_seconds{module="cpu_heavy",tenant="default",quantile="0.5"} 0.008353288202333144
+wasm_pool_wait_seconds{module="cpu_heavy",tenant="default",quantile="0.9"} 0.009002076367984311
+wasm_pool_wait_seconds{module="cpu_heavy",tenant="default",quantile="0.95"} 0.009356350011586589
+wasm_pool_wait_seconds{module="cpu_heavy",tenant="default",quantile="0.99"} 0.009457946224084602
+wasm_pool_wait_seconds{module="cpu_heavy",tenant="default",quantile="0.999"} 0.009457946224084602
+wasm_pool_wait_seconds{module="cpu_heavy",tenant="default",quantile="1"} 0.009489912
+wasm_pool_wait_seconds_sum{module="cpu_heavy",tenant="default"} 449.24316848100335
+wasm_pool_wait_seconds_count{module="cpu_heavy",tenant="default"} 64409
+
+# TYPE wasm_execution_duration_seconds summary
+wasm_execution_duration_seconds{module="sample",tenant="default",quantile="0"} 0
+wasm_execution_duration_seconds{module="sample",tenant="default",quantile="0.5"} 0
+wasm_execution_duration_seconds{module="sample",tenant="default",quantile="0.9"} 0
+wasm_execution_duration_seconds{module="sample",tenant="default",quantile="0.95"} 0
+wasm_execution_duration_seconds{module="sample",tenant="default",quantile="0.99"} 0
+wasm_execution_duration_seconds{module="sample",tenant="default",quantile="0.999"} 0
+wasm_execution_duration_seconds{module="sample",tenant="default",quantile="1"} 0
+wasm_execution_duration_seconds_sum{module="sample",tenant="default"} 429.0699948190002
+wasm_execution_duration_seconds_count{module="sample",tenant="default"} 5973
+wasm_execution_duration_seconds{module="empty",tenant="default",quantile="0"} 0.000105573
+wasm_execution_duration_seconds{module="empty",tenant="default",quantile="0.5"} 0.00011176634900723627
+wasm_execution_duration_seconds{module="empty",tenant="default",quantile="0.9"} 0.00012371871024499057
+wasm_execution_duration_seconds{module="empty",tenant="default",quantile="0.95"} 0.00012501209879860753
+wasm_execution_duration_seconds{module="empty",tenant="default",quantile="0.99"} 0.00012501209879860753
+wasm_execution_duration_seconds{module="empty",tenant="default",quantile="0.999"} 0.00012501209879860753
+wasm_execution_duration_seconds{module="empty",tenant="default",quantile="1"} 0.000136018
+wasm_execution_duration_seconds_sum{module="empty",tenant="default"} 7.988299121000048
+wasm_execution_duration_seconds_count{module="empty",tenant="default"} 69798
+wasm_execution_duration_seconds{module="json_heavy",tenant="default",quantile="0"} 0
+wasm_execution_duration_seconds{module="json_heavy",tenant="default",quantile="0.5"} 0
+wasm_execution_duration_seconds{module="json_heavy",tenant="default",quantile="0.9"} 0
+wasm_execution_duration_seconds{module="json_heavy",tenant="default",quantile="0.95"} 0
+wasm_execution_duration_seconds{module="json_heavy",tenant="default",quantile="0.99"} 0
+wasm_execution_duration_seconds{module="json_heavy",tenant="default",quantile="0.999"} 0
+wasm_execution_duration_seconds{module="json_heavy",tenant="default",quantile="1"} 0
+wasm_execution_duration_seconds_sum{module="json_heavy",tenant="default"} 0.7164548810000002
+wasm_execution_duration_seconds_count{module="json_heavy",tenant="default"} 6001
+wasm_execution_duration_seconds{module="cpu_heavy",tenant="default",quantile="0"} 0.000223092
+wasm_execution_duration_seconds{module="cpu_heavy",tenant="default",quantile="0.5"} 0.0002592027374152403
+wasm_execution_duration_seconds{module="cpu_heavy",tenant="default",quantile="0.9"} 0.0002999484198152227
+wasm_execution_duration_seconds{module="cpu_heavy",tenant="default",quantile="0.95"} 0.0003110054779605819
+wasm_execution_duration_seconds{module="cpu_heavy",tenant="default",quantile="0.99"} 0.0003130649027480789
+wasm_execution_duration_seconds{module="cpu_heavy",tenant="default",quantile="0.999"} 0.0003130649027480789
+wasm_execution_duration_seconds{module="cpu_heavy",tenant="default",quantile="1"} 0.000314142
+wasm_execution_duration_seconds_sum{module="cpu_heavy",tenant="default"} 15.852085800999985
+wasm_execution_duration_seconds_count{module="cpu_heavy",tenant="default"} 64409
+
