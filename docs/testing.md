@@ -79,7 +79,6 @@ When changing behavior, update the corresponding guide and interactive explanati
 - Boot script/partition/update change → `wraithos.md` and A/B lab.
 - New/removed tracked file → regenerate/update `source-map.md`.
 
-Historical `HANDOFF.md` and `TODO.md` are translated into English and clearly marked as archives; links to the original mixed-language baseline files are included. Do not use their feature status as current truth without checking source.
 
 ## Contributing a behavior change
 

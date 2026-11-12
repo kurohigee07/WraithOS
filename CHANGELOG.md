@@ -521,7 +521,7 @@ verified in v0.45.0.
 
 ## In progress
 
-Open items from the hardening plan (see `TODO.md`):
+Open items from the hardening plan:
 
 - M1: repository hygiene. Remove the legacy `wraithos/` tree; a
   19 MB binary is currently in git history (repo size ~18 MiB). Plan

@@ -19,11 +19,9 @@ Source, configuration and scripts were inspected for behavior. Lockfiles, minifi
 | [.gitignore](https://github.com/kurohigee07/Orchestrator-/blob/20cb3785d1f17e4b05759b539ffa016eaea50324/.gitignore) | Ignores build/runtime output, databases, sidecars/signatures and distribution artifacts; already tracked files remain tracked. |
 | [Cargo.lock](https://github.com/kurohigee07/Orchestrator-/blob/20cb3785d1f17e4b05759b539ffa016eaea50324/Cargo.lock) | Resolved dependency graph; Wasmtime 48.0.8 and workspace crate versions. |
 | [Cargo.toml](https://github.com/kurohigee07/Orchestrator-/blob/20cb3785d1f17e4b05759b539ffa016eaea50324/Cargo.toml) | Workspace membership, shared dependencies, Rust 1.85 minimum and release profile. |
-| [HANDOFF.md](https://github.com/kurohigee07/Orchestrator-/blob/20cb3785d1f17e4b05759b539ffa016eaea50324/HANDOFF.md) | Historical development notes, translated into English; contains superseded status, not current API truth. |
-| [LICENSE-APACHE](https://github.com/kurohigee07/Orchestrator-/blob/20cb3785d1f17e4b05759b539ffa016eaea50324/LICENSE-APACHE) | Apache-2.0 alternative license. |
-| [LICENSE-MIT](https://github.com/kurohigee07/Orchestrator-/blob/20cb3785d1f17e4b05759b539ffa016eaea50324/LICENSE-MIT) | MIT alternative license; copyright kurohigee07. |
+| [LICENSE](LICENSE) | Full text of the GNU Affero General Public License v3.0 (AGPLv3), the open-source half of the dual license. |
+| [LICENSE-COMMERCIAL.md](LICENSE-COMMERCIAL.md) | Terms for the separate commercial license, when it is required, and how to contact the copyright holder. |
 | [README.md](https://github.com/kurohigee07/Orchestrator-/blob/20cb3785d1f17e4b05759b539ffa016eaea50324/README.md) | Project entry point, rewritten as an English source-guided overview in this update. |
-| [TODO.md](https://github.com/kurohigee07/Orchestrator-/blob/20cb3785d1f17e4b05759b539ffa016eaea50324/TODO.md) | Historical v0.20.8 planning list, translated into English; several entries now have implementations in source. |
 | [orchestrator.toml](https://github.com/kurohigee07/Orchestrator-/blob/20cb3785d1f17e4b05759b539ffa016eaea50324/orchestrator.toml) | Development config: loopback listener, two Wasm permits, 256 MiB memory, build/auth disabled. |
 
 ## Host runtime
