@@ -7,7 +7,7 @@ case "$1" in
 
         if [ -f /etc/wraith/orchestrator.toml ]; then
             /sbin/wraith-init --config /etc/wraith/orchestrator.toml \
-                > /var/lib/orchestrator/wraith.log 2>&1 &
+                >> /var/lib/orchestrator/wraith.log 2>&1 &
             echo "OK"
         else
             echo "SKIPPED (no config)"

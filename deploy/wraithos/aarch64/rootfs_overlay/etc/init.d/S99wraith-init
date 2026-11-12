@@ -1,0 +1,20 @@
+#!/bin/sh
+case "$1" in
+    start)
+        echo -n "Starting Wraith orchestrator: "
+        mkdir -p /var/lib/orchestrator
+        if pidof wraith-init >/dev/null 2>&1; then
+            echo "OK (already running)"
+            exit 0
+        fi
+        if [ -f /etc/wraith/orchestrator.toml ]; then
+            /sbin/wraith-init --config /etc/wraith/orchestrator.toml \
+                >> /var/lib/orchestrator/wraith.log 2>&1 &
+            echo "OK"
+        else
+            echo "SKIPPED (no config at /etc/wraith/orchestrator.toml)"
+        fi
+        ;;
+    stop) killall wraith-init 2>/dev/null ;;
+    restart) $0 stop; sleep 1; $0 start ;;
+esac

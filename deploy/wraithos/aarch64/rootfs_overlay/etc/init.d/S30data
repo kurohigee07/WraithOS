@@ -2,22 +2,26 @@
 case "$1" in
     start)
         echo -n "Setting up /data: "
-        mkdir -p /data
+        mkdir -p /data /boot /var/lib/orchestrator /modules /etc/wraith
+        grep -q ' /boot ' /proc/mounts || \
+            mount -t vfat -o rw /dev/vda1 /boot 2>/dev/null
+        MOUNTED=0
         if [ -b /dev/vda4 ]; then
-            if cryptsetup isLuks /dev/vda4 2>/dev/null; then
-                echo -n "Unlocking /dev/vda4 (LUKS): "
-                if cryptsetup luksOpen /dev/vda4 wraith-data; then
-                    mount -t ext4 /dev/mapper/wraith-data /data 2>/dev/null
-                else
-                    echo "LUKS unlock failed - /data stays unmounted"
+            if command -v cryptsetup >/dev/null 2>&1 && cryptsetup isLuks /dev/vda4 2>/dev/null; then
+                if [ -f /boot/luks.key ]; then
+                    if cryptsetup luksOpen --key-file /boot/luks.key /dev/vda4 wraith-data 2>/dev/null; then
+                        mount -t ext4 /dev/mapper/wraith-data /data 2>/dev/null && MOUNTED=1
+                    fi
+                fi
+                if [ "$MOUNTED" = "0" ]; then
+                    echo -n "LUKS keyfile unlock failed. "
                 fi
             else
-                mount -t ext4 /dev/vda4 /data 2>/dev/null
+                mount -t ext4 /dev/vda4 /data 2>/dev/null && MOUNTED=1
             fi
         fi
-        if grep -q ' /data ' /proc/mounts 2>/dev/null; then
+        if [ "$MOUNTED" = "1" ]; then
             mkdir -p /data/orchestrator /data/modules /data/wraith
-            mkdir -p /var/lib/orchestrator /modules /etc/wraith
             grep -q ' /var/lib/orchestrator ' /proc/mounts || \
                 mount --bind /data/orchestrator /var/lib/orchestrator
             grep -q ' /modules ' /proc/mounts || \
@@ -31,8 +35,18 @@ case "$1" in
                 echo "OK (A/B)"
             fi
         else
-            mkdir -p /var/lib/orchestrator /modules /etc/wraith
-            echo "OK (single-rootfs fallback)"
+            if ! grep -q ' /etc/wraith ' /proc/mounts; then
+                mount -t tmpfs -o mode=0755,size=4M tmpfs /etc/wraith 2>/dev/null || true
+            fi
+            cp /etc/wraith.default/orchestrator.toml /etc/wraith/orchestrator.toml 2>/dev/null || true
+            echo "OK (fallback: wizard accessible, /data unmounted)"
         fi
+        ;;
+    stop)
+        umount /etc/wraith 2>/dev/null || true
+        umount /modules 2>/dev/null || true
+        umount /var/lib/orchestrator 2>/dev/null || true
+        umount /data 2>/dev/null || true
+        cryptsetup luksClose wraith-data 2>/dev/null || true
         ;;
 esac

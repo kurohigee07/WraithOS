@@ -8,6 +8,62 @@ describes the change theme. `v0.30` was not released.
 Crate manifests declare `0.1.0`; the tags are the release units.
 Releases before `v0.24.0` are not itemized here; see commit history.
 
+## [v0.43.0-luks-wizard-ssh] - 2026-11-12
+
+### Added
+- LUKS2 encryption for `/data` via first-boot wizard. `/dev/vda4` is
+  formatted with `aes-xts-plain64`; the keyslot uses a 32-byte keyfile
+  derived from the operator-chosen encryption password via argon2, and
+  the keyfile is written to `/boot/luks.key` for auto-unlock at boot.
+- `POST /wizard/reset-luks`: destructive recovery endpoint. Erases the
+  LUKS header and clears wizard state so a lost or corrupt keyfile does
+  not leave the device unreachable. Guarded by an unmounted `/data`
+  check and a LUKS-device probe.
+- Dropbear SSH on port 22 inside the guest as an emergency backup to
+  serial console. Password authentication only; host keys regenerate
+  each boot. QEMU wrappers forward host ports 2222 (x86_64) and 2223
+  (aarch64).
+- `deploy/run-wraithos.sh` and `deploy/run-wraithos-arm.sh` wrap QEMU
+  with `-no-reboot` and a restart loop. Guest `reboot` under QEMU TCG
+  leaves corrupted serial/tty state; restarting the QEMU process
+  clears it. Reboot from the guest's perspective is unchanged.
+
+### Changed
+- `wizard.rs` / `wizard.html`: `encryption_password` is required at
+  step 1; `luks_recovery_needed` is exposed from `/wizard/status` and
+  drives a banner with a reset button. `setup_luks()` was reworked to
+  use the derived keyfile rather than passing the password on stdin —
+  QEMU serial drops bytes and users were getting locked out after
+  mistyping.
+- `S30data` unified across x86_64 and aarch64. Keyfile auto-unlock,
+  mapper mount, bind mounts for `/data/{orchestrator,modules,wraith}`,
+  and a tmpfs-backed fallback that keeps the wizard reachable when
+  `/data` is unavailable. The previous x86 script had no LUKS path and
+  the previous ARM script blocked forever on a `cryptsetup` passphrase
+  prompt if the operator did not answer within the getty timeout.
+- `genimage` configs: `data` partition no longer ships a preformatted
+  ext4 image. The wizard formats the partition so LUKS can be applied
+  at first boot.
+- `kernel.fragment` (x86_64): add `BLK_DEV_DM`, `DM_CRYPT`,
+  `CRYPTO_XTS`, `CRYPTO_AES`, and the user-space crypto APIs so
+  `cryptsetup` works. The aarch64 fragment already had them.
+- `inittab`: getty timeout raised to 86400 seconds on both arches.
+  The password prompt timeout (60s) is hardcoded in BusyBox
+  `/bin/login` and is not patched.
+- `S41network-optional`: DHCP glob now matches `eth*` in addition to
+  `en*`/`ens*` so virtio-net interfaces come up automatically.
+
+### Notes
+- Buildroot's `package/dropbear/dropbear.mk` is patched outside the
+  repo with `DROPBEAR_CONF_ENV += ac_cv_search_crypt=-lcrypt`. musl's
+  `crypt()` stub causes configure to resolve the symbol from libc and
+  drop `-lcrypt`; without this fix password auth silently fails. The
+  in-repo `S50dropbear` also sets `LD_PRELOAD` as a second guarantee.
+- `libxcrypt` is now a dependency of dropbear on both arches.
+- Images rebuilt and verified on 2026-11-12: wizard LUKS format,
+  keyfile auto-unlock, dropbear password auth, eth0 DHCP, and SSH
+  login all confirmed on QEMU aarch64 and x86_64 (fresh boot).
+
 ## [v0.42.2-arm-rauc-glib-fix] - 2026-11-10
 
 ### Fixed

@@ -1,0 +1,4 @@
+# WraithOS emergency SSH — serial console is primary
+# SSH works if serial login fails (QEMU TCG reboot caveat).
+# Host key ephemeral (regenerated each boot) — SSH purpose = backup access.
+DROPBEAR_ARGS="-R -p 22"

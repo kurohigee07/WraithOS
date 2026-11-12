@@ -1,0 +1,45 @@
+# Orchestrator runtime config. All fields have defaults if omitted.
+
+db_path = "/var/lib/orchestrator/orchestrator.db"
+modules_dir = "/modules"
+data_dir = "/var/lib/orchestrator"
+http_timeout_secs = 30
+max_sockets = 256
+# Limit parallel Wasm execution. Keep below CPU count.
+max_concurrent_wasm = 2
+# Timeout waiting for a Wasm pool slot.
+wasm_acquire_timeout_secs = 10
+# Linear memory limit per Wasm instance.
+wasm_memory_limit_mb = 256
+max_db_connections = 8
+log_level = "info"
+log_format = "pretty"
+# Empty string disables the metrics listener.
+metrics_bind = "127.0.0.1:9090"
+
+[script]
+# Choose one: inline or path.
+inline = '''
+log_info("rhai received: " + event_kind);
+emit_event("rhai.processed", "{\"source\":\"rhai\"}");
+'''
+
+# Ed25519 public keys (hex, 64 chars). If non-empty, every .wasm
+# MUST have a .wasm.sig sibling (64-byte raw Ed25519 signature).
+# Leave empty to skip verification (dev only).
+trusted_signer_keys = []
+
+[[capabilities]]
+type = "emit-event"
+allowed_kinds = ["*"]
+
+[[capabilities]]
+type = "log"
+
+[[capabilities]]
+type = "http-get"
+allowed_hosts = ["example.com"]
+
+[[capabilities]]
+type = "tcp-connect"
+allowed_ports = [443]

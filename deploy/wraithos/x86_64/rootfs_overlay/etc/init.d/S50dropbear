@@ -1,0 +1,28 @@
+#!/bin/sh
+case "$1" in
+    start)
+        test -r /etc/default/dropbear && . /etc/default/dropbear
+        printf "Starting dropbear sshd: "
+        umask 077
+        if [ ! -d /etc/dropbear ]; then
+            mkdir -p /var/run/dropbear 2>/dev/null
+        fi
+        LD_PRELOAD=/usr/lib/libcrypt.so.2 \
+            start-stop-daemon -S -q -p /var/run/dropbear.pid \
+                --exec /usr/sbin/dropbear -- ${DROPBEAR_ARGS:--R -p 22}
+        [ $? = 0 ] && echo "OK" || echo "FAIL"
+        ;;
+    stop)
+        printf "Stopping dropbear sshd: "
+        start-stop-daemon -K -q -p /var/run/dropbear.pid
+        [ $? = 0 ] && echo "OK" || echo "FAIL"
+        ;;
+    restart|reload)
+        $0 stop; $0 start
+        ;;
+    *)
+        echo "Usage: $0 {start|stop|restart}"
+        exit 1
+        ;;
+esac
+exit $?

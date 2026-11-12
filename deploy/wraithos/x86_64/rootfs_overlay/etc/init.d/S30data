@@ -2,76 +2,51 @@
 case "$1" in
     start)
         echo -n "Setting up /data: "
-
-        # Mount /data
-        mkdir -p /data
-        if ! grep -q ' /data ' /proc/mounts 2>/dev/null; then
-            mount -t ext4 /dev/vda4 /data 2>/dev/null
-        fi
-        if ! grep -q ' /data ' /proc/mounts 2>/dev/null; then
-            # Mount failed. Common causes: ext4 journal replay pending,
-            # corrupt primary superblock (ext4 backup superblock still
-            # usable). Attempt fsck -p (safe preen mode). Log to dmesg
-            # so the failure is visible; earlier 2>/dev/null hid it.
-            echo "mount ext4 /dev/vda4 failed, attempting fsck -p" > /dev/kmsg 2>/dev/null || true
-            echo "FAIL (cannot mount /dev/vda4, trying fsck)"
-            if command -v fsck.ext4 >/dev/null 2>&1; then
-                fsck.ext4 -p /dev/vda4 > /dev/kmsg 2>&1 || true
-                mount -t ext4 /dev/vda4 /data 2>/dev/null || true
+        mkdir -p /data /boot /var/lib/orchestrator /modules /etc/wraith
+        grep -q ' /boot ' /proc/mounts || \
+            mount -t vfat -o rw /dev/vda1 /boot 2>/dev/null
+        MOUNTED=0
+        if [ -b /dev/vda4 ]; then
+            if command -v cryptsetup >/dev/null 2>&1 && cryptsetup isLuks /dev/vda4 2>/dev/null; then
+                if [ -f /boot/luks.key ]; then
+                    if cryptsetup luksOpen --key-file /boot/luks.key /dev/vda4 wraith-data 2>/dev/null; then
+                        mount -t ext4 /dev/mapper/wraith-data /data 2>/dev/null && MOUNTED=1
+                    fi
+                fi
+                if [ "$MOUNTED" = "0" ]; then
+                    echo -n "LUKS keyfile unlock failed. "
+                fi
+            else
+                mount -t ext4 /dev/vda4 /data 2>/dev/null && MOUNTED=1
             fi
         fi
-        if ! grep -q ' /data ' /proc/mounts 2>/dev/null; then
-            echo "FAIL (fsck -p did not recover /dev/vda4)"
-            echo "  recovery: fsck.ext4 -fy /dev/vda4 && mount -t ext4 /dev/vda4 /data"
-            echo "            /etc/init.d/S30data start"
-            echo "data mount fail /dev/vda4 unrecoverable" > /dev/kmsg 2>/dev/null || true
-            exit 1
-        fi
-
-        # Create persistent structure on /data
-        mkdir -p /data/orchestrator /data/modules /data/wraith
-
-        # Mount /boot (persistent vfat)
-        mkdir -p /boot
-        grep -q ' /boot ' /proc/mounts || \
-            mount -t vfat /dev/vda1 /boot 2>/dev/null
-
-        # IMPORTANT: create target dirs BEFORE bind mount
-        # (/var/lib is tmpfs now, so /var/lib/orchestrator needs re-creation)
-        mkdir -p /var/lib/orchestrator /modules
-
-        # /etc/wraith needs to exist for bind mount. If missing from RO
-        # rootfs (overlay bug), fall back to tmpfs. Without this, wizard
-        # config never lands and orchestrator has no config to load.
-        if ! mkdir -p /etc/wraith 2>/dev/null; then
-            echo -n "(tmpfs-fallback /etc/wraith) "
-            mount -t tmpfs -o mode=0755,size=4M tmpfs /etc/wraith 2>/dev/null || true
-        fi
-
-        # Bind mounts from /data
-        grep -q ' /var/lib/orchestrator ' /proc/mounts || \
-            mount --bind /data/orchestrator /var/lib/orchestrator
-        grep -q ' /modules ' /proc/mounts || \
-            mount --bind /data/modules /modules
-        grep -q ' /etc/wraith ' /proc/mounts || \
-            mount --bind /data/wraith /etc/wraith
-
-        # Seed config on first boot
-        if [ ! -s /etc/wraith/orchestrator.toml ]; then
-            cp /etc/wraith.default/orchestrator.toml /etc/wraith/orchestrator.toml
-            echo "OK (first boot)"
+        if [ "$MOUNTED" = "1" ]; then
+            mkdir -p /data/orchestrator /data/modules /data/wraith
+            grep -q ' /var/lib/orchestrator ' /proc/mounts || \
+                mount --bind /data/orchestrator /var/lib/orchestrator
+            grep -q ' /modules ' /proc/mounts || \
+                mount --bind /data/modules /modules
+            grep -q ' /etc/wraith ' /proc/mounts || \
+                mount --bind /data/wraith /etc/wraith
+            if [ ! -s /etc/wraith/orchestrator.toml ]; then
+                cp /etc/wraith.default/orchestrator.toml /etc/wraith/orchestrator.toml
+                echo "OK (A/B, first boot)"
+            else
+                echo "OK (A/B)"
+            fi
         else
-            echo "OK"
+            if ! grep -q ' /etc/wraith ' /proc/mounts; then
+                mount -t tmpfs -o mode=0755,size=4M tmpfs /etc/wraith 2>/dev/null || true
+            fi
+            cp /etc/wraith.default/orchestrator.toml /etc/wraith/orchestrator.toml 2>/dev/null || true
+            echo "OK (fallback: wizard accessible, /data unmounted)"
         fi
-        ;;
-    restart)
-        $0 stop 2>/dev/null || true
-        sleep 1
-        $0 start
         ;;
     stop)
         umount /etc/wraith 2>/dev/null || true
         umount /modules 2>/dev/null || true
         umount /var/lib/orchestrator 2>/dev/null || true
+        umount /data 2>/dev/null || true
+        cryptsetup luksClose wraith-data 2>/dev/null || true
         ;;
 esac

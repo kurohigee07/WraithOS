@@ -1,5 +1,5 @@
 #!/bin/sh
-# Non-blocking DHCP for en* interfaces (3s timeout)
+# Non-blocking DHCP for physical (en*) and virtio (eth*) interfaces.
 case "$1" in
     start)
         for d in /sys/class/net/en* /sys/class/net/eth*; do

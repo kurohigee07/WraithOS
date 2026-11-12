@@ -16,10 +16,25 @@
 
 > **Default root credential.** WraithOS ships with root password
 > `wraithos-admin-change-me` for serial console login (ttyS0 on x86,
-> ttyAMA0 on ARM). Change it before exposing the device. Rootfs is a
-> read-only squashfs, so password rotation happens at build time by
+> ttyAMA0 on ARM) and for the emergency SSH backup (dropbear, port 22
+> inside the guest). Change it before exposing the device. Rootfs is
+> a read-only squashfs, so password rotation happens at build time by
 > editing `/etc/shadow` in the board overlay — see
 > [Security](docs/security.md) for the full first-boot checklist.
+>
+> **`/data` encryption.** The first-boot wizard formats `/dev/vda4`
+> with LUKS2 and derives the keyfile from the operator-chosen
+> encryption password. `/boot/luks.key` is written to the ESP so
+> `S30data` can auto-unlock on boot without prompting. If that
+> keyfile is lost or corrupt the recovery path is `POST
+> /wizard/reset-luks`, which destroys the volume and re-runs the
+> wizard — there is no out-of-band recovery key.
+>
+> **QEMU testing.** `deploy/run-wraithos.sh` and
+> `deploy/run-wraithos-arm.sh` run QEMU with `-no-reboot` and a
+> restart loop. Guest `reboot` under QEMU TCG leaves corrupted
+> serial/tty state; restarting the QEMU process clears it. The
+> wrapper hides this from the operator; hardware reboot is unaffected.
 
 ## What is Wraith?
 
@@ -56,6 +71,47 @@ Your application / curl / Wraith CLI
 │ WraithOS: kernel + read-only rootfs A/B + persistent data │
 └──────────────────────────────────────────────────────────────┘
 ```
+
+### Data persistence and encryption
+
+`/data` is the only writable partition. On first boot, before
+`/data` is mounted, `S30data` drops into a fallback mode that mounts
+a tmpfs over `/etc/wraith` and seeds a default `orchestrator.toml`,
+so the wizard is always reachable. Once the operator submits the
+wizard with a data-encryption password, `/dev/vda4` is formatted as
+LUKS2 (aes-xts-plain64) using a keyfile derived from that password
+via argon2, and the keyfile is written to the ESP at
+`/boot/luks.key`. Every subsequent boot unlocks the volume with that
+keyfile, mounts the ext4 filesystem on the mapper device, and bind
+mounts `orchestrator/`, `modules/`, and `wraith/` under `/data`. No
+password prompt appears on the console; the boot log shows
+`Setting up /data: OK (A/B)` when the unlock succeeded and
+`OK (fallback: wizard accessible, /data unmounted)` when it did not.
+
+The wizard also exposes `POST /wizard/reset-luks`, which erases the
+LUKS header and clears wizard state. It is the only recovery path
+and it is destructive by design: without the derived keyfile the
+data on `/dev/vda4` cannot be read.
+
+### Emergency SSH access
+
+Serial console is the primary interface. Dropbear runs on port 22
+inside the guest as a second entry point — useful when the operator
+is working over a remote hypervisor console that occasionally drops
+characters, or when the serial tty is temporarily wedged. Password
+authentication is the only method; host keys are ephemeral and
+regenerated each boot (the rootfs is read-only and `/data` is under
+LUKS, so there is nowhere persistent to store them). The QEMU
+wrappers forward host ports 2222 (x86_64) and 2223 (aarch64) to
+guest port 22, so `ssh -p 2222 root@127.0.0.1` works out of the box.
+
+Dropbear on musl is fragile: the C library ships a `crypt()` stub
+that returns `NULL`, so the linker resolves the symbol from the stub
+and drops `-lcrypt` via `--as-needed`, which silently breaks
+password authentication. Buildroot is patched to force
+`ac_cv_search_crypt=-lcrypt`, and `S50dropbear` exports
+`LD_PRELOAD=/usr/lib/libcrypt.so.2` as a belt-and-braces guarantee
+that the real implementation shadows the stub at runtime.
 
 ### Why this project is interesting
 
