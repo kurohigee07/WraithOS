@@ -124,7 +124,12 @@ fn default_tenant_name() -> String {
     "default".to_string()
 }
 fn default_data_dir() -> PathBuf {
-    PathBuf::from("./data")
+    // Absolute, writable path. A relative default resolves against the
+    // process CWD which is / for init-spawned processes, i.e. /data on
+    // the read-only squashfs root. That would fail the first wizard
+    // write before /data is mounted. /var/lib is a tmpfs from inittab
+    // and is bind-replaced by /data/orchestrator once LUKS is up.
+    PathBuf::from("/var/lib/orchestrator")
 }
 
 impl Default for Config {

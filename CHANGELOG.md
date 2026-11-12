@@ -8,6 +8,44 @@ describes the change theme. `v0.30` was not released.
 Crate manifests declare `0.1.0`; the tags are the release units.
 Releases before `v0.24.0` are not itemized here; see commit history.
 
+## [v0.47.0-x86-luks-fixes] - 2026-11-12
+
+### Fixed
+- x86 data partition table extended past the end of the image. The
+  DOS partition table in `genimage.cfg` did not auto-pad the file to
+  the last partition's end when that partition has no image source
+  (p4 data is raw). genimage stopped writing after p3 content, so the
+  kernel rejected p4 with "partition outside the disk" and `/dev/vda4`
+  never appeared. GPT (ARM) auto-pads, hence the asymmetry. x86
+  `post-image.sh` now runs `truncate -s 640M` after genimage.
+- x86 `orchestrator.toml` default config was missing `data_dir`, so
+  the wizard fell back to `default_data_dir()` = `./data`, resolved
+  against the process CWD (`/`) to `/data` while `/data` was still
+  the read-only squashfs root. The first wizard `mkdir wraith` failed
+  with EROFS and returned 500 before LUKS was even attempted. The
+  x86 default config now carries `data_dir = "/var/lib/orchestrator"`
+  like ARM.
+- `config.rs`: `default_data_dir()` now returns an absolute,
+  writable path (`/var/lib/orchestrator`) instead of `./data`. A
+  relative default is ambiguous for init-spawned processes and was
+  the root cause of the x86 wizard 500.
+
+### Verified on QEMU x86_64 with a broken bundle
+
+Mirrors the ARM test from v0.46.0:
+
+  boot 1: fresh image, wizard LUKS, wraith-install-bundle broken
+          -> marker armed, grubenv ORDER=B A
+  boot 2: slot B, orchestrator fails, healthcheck polls /readyz
+          for 60 s, times out at 70.9 s, mark-bad + demote + reboot
+  boot 3: slot A, grubenv slot=A tries=0 good=1 lkg=A B_OK=0,
+          rauc status reports rootfs.1 bad and rootfs.0 booted good,
+          /data/orchestrator/healthcheck.log contains the trail,
+          /readyz 200
+
+Both arches now pass the end-to-end health-gated rollback test
+with an intentionally broken bundle.
+
 ## [v0.46.0-health-rollback-fixes] - 2026-11-12
 
 ### Fixed
