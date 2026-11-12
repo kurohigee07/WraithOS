@@ -178,7 +178,26 @@ The site includes:
 
 ## Measured snapshot — not a universal speed claim
 
-The following is a re-run of the original benchmark, executed on the same host on **2026-11-08 UTC** against the current tree (post-M11 hardening):
+### v0.48.0: batched audit writer (2026-11-12)
+
+Batched audit writes raised `/execute` throughput on the same host and client from **~950 req/s to ~9,800 req/s** at concurrency 5-10. The bottleneck was never Wasm execution; it was the fsync-bound per-request `INSERT` into `execution_logs`, which serialised on SQLite's single writer.
+
+| Measurement | Result | Scope |
+|---|---:|---|
+| Empty `/execute` throughput | **9,813 req/s** | `hey -n 5000 -c 10` against QEMU x86_64 guest |
+| Empty p50 / p99 | **1.0 ms / 1.3 ms** | same run |
+| CPU-bound guest throughput | **5,611 req/s** | 10,000-iteration guest, `hey -c 10` |
+| Sustained (30 s, c=50) | **292,967 reqs, 0 errors, 9,764 req/s** | same host, no client-side errors |
+| Recorded Wasm execution | **94-178 µs** (empty), **220-324 µs** (CPU) | unchanged from v0.27.1 |
+| Audit row count | matched request count within the 50 ms flush window | `execution_logs`, verified via `sqlite3` |
+
+The trade-off: an audit row is visible in `execution_logs` within 50 ms of the execute response, not immediately.
+
+Full method, per-concurrency sweeps, raw `hey` output and metric snapshots: [`docs/benchmarks-v0.47.0.md`](docs/benchmarks-v0.47.0.md).
+
+### v0.27.1: original sequential snapshot (2026-11-08)
+
+The following is a re-run of the original benchmark, executed on the same host on **2026-11-08 UTC** against the tree at v0.38.0 (post-M11 hardening):
 
 | Measurement | Result | Scope |
 |---|---:|---|
@@ -192,9 +211,9 @@ Original v0.27.1 measurement for comparison (2026-11-04 UTC): execution 180.9 µ
 
 The execution timer covers `Store::new`, asynchronous instantiation, `call_run`, and JSON result parsing. It excludes HTTP handling, module lookup, quota acquisition, and audit persistence. Pool wait is a separate timer. Neither number should be inverted into a throughput guarantee.
 
-**About versioning:** the crate manifests declare `0.1.0`; releases are tracked by git tags (`v0.38.0` at the time of this run, current tag `v0.46.0`). The benchmark guest is `tests/fixtures/empty/`, checked in for reproducibility.
+**About versioning:** the crate manifests declare `0.1.0`; releases are tracked by git tags (`v0.38.0` at the time of this run, current tag `v0.48.0`). The benchmark guest is `tests/fixtures/empty/`, checked in for reproducibility.
 
-[Read the method, raw values, limitations, and reproduction procedure →](docs/benchmarks.md)
+[Read the v0.48.0 method and raw values →](docs/benchmarks-v0.47.0.md) · [Original v0.27.1 method →](docs/benchmarks.md)
 
 ## Choose your path
 
