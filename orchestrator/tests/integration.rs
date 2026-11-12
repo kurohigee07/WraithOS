@@ -192,24 +192,41 @@ async fn upload_execute_audit_roundtrip() {
         .unwrap();
     assert_eq!(resp.status(), StatusCode::OK, "execute should return 200");
 
-    // 3. Audit log should reference it
-    let resp = app
-        .oneshot(
-            Request::builder()
-                .uri("/audit/logs")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-    assert_eq!(resp.status(), StatusCode::OK);
-    let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
-        .await
-        .unwrap();
-    let body_str = std::str::from_utf8(&body).unwrap();
+    // 3. Audit log should reference it.
+    //
+    // v0.48.0 batches audit writes: an execute response returns as
+    // soon as the AuditEntry lands on the bounded channel, and the
+    // writer coalesces rows into one INSERT per 50 ms or 100 rows.
+    // The row therefore appears up to ~50 ms after the response.
+    // Poll for up to 2 s before failing; anything longer is a real
+    // regression, not the batching window.
+    let mut body_str = String::new();
+    let mut found = false;
+    for _ in 0..40 {
+        let resp = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri("/audit/logs")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        body_str = String::from_utf8(body.to_vec()).unwrap();
+        if body_str.contains("test-mod") {
+            found = true;
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
     assert!(
-        body_str.contains("test-mod"),
-        "audit log should contain module id. Got: {body_str}"
+        found,
+        "audit log should contain module id within 2 s. Got: {body_str}"
     );
 }
 
