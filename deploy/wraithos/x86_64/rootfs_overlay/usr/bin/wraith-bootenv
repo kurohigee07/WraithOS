@@ -103,10 +103,16 @@ case "$1" in
         env_write "$n" 3 0 "$(seq_next)" "$n" "$c" "$n $o"
         ;;
     demote)
+        # Roll back from the current (failing) slot. The broken slot is
+        # already flagged bad by `rauc status mark-bad` (B_OK=0 lives in
+        # grubenv from that call). This entry only needs to point GRUB at
+        # the healthy other slot with a clean trial counter. Prior code
+        # used tries=3, good=0, lkg=$c, which left the healthy slot
+        # looking untrustworthy and the broken slot labelled last-known-good.
         c=$(slot_now)
         [ -n "$c" ] || c=A
         o=$(other_of "$c")
-        env_write "$o" 3 0 "$(seq_next)" "$o" "$c" "$o $c"
+        env_write "$o" 0 1 "$(seq_next)" "$o" "$o" "$o $c"
         ;;
     *)
         echo "usage: wraith-bootenv get|show|commit|trial|demote"

@@ -8,6 +8,41 @@ describes the change theme. `v0.30` was not released.
 Crate manifests declare `0.1.0`; the tags are the release units.
 Releases before `v0.24.0` are not itemized here; see commit history.
 
+## [v0.46.0-health-rollback-fixes] - 2026-11-12
+
+### Fixed
+- `wraith-bootenv demote` wrote the surviving slot as
+  `tries=3, good=0, lkg=$c` where `$c` is the failing slot. After a
+  rollback the grubenv looked like the surviving slot was itself
+  unproven and the broken slot was labelled last-known-good.
+  Functional rollback still worked because `grub.cfg` selects by
+  `ORDER`, but the metadata was wrong and misleading to monitoring.
+  `demote` now writes the surviving slot with `tries=0, good=1,
+  lkg=$o`.
+- `wraith-rauc-healthcheck` logged only through syslog. `/var/log`
+  is a tmpfs; the timeout branch reboots, so the reason for the
+  rollback disappeared before it could be read. The script now
+  writes to `/data/orchestrator/healthcheck.log` in addition to
+  syslog. `/data` is on the LUKS volume and survives the reboot.
+
+### Verified on QEMU aarch64 with a broken bundle
+
+A crafted bundle whose `/sbin/wraith-init` is a shell script that
+exits 1 was installed on a fresh image:
+
+  boot 1: wizard LUKS, wraith-install-bundle broken -> marker
+          armed, grubenv ORDER=B A
+  boot 2: slot B, orchestrator fails, healthcheck polls /readyz
+          for 60 s, times out at 69.7 s, mark-bad + demote +
+          reboot
+  boot 3: slot A, grubenv slot=A tries=0 good=1 lkg=A B_OK=0,
+          rauc status reports rootfs.1 bad and rootfs.0 booted
+          good, /data/orchestrator/healthcheck.log contains the
+          full timeout trail, /readyz 200
+
+The successful path (`readyz 200 -> mark-good + commit`) was
+verified in v0.45.0.
+
 ## [v0.45.0-rauc-health-rollback] - 2026-11-12
 
 ### Added
