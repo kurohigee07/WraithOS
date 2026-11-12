@@ -78,8 +78,8 @@ async fn main() -> anyhow::Result<()> {
         Commands::Logs => {
             let logs = client.get_logs().await?;
             println!(
-                "{:<6} {:<15} {:<15} {:<8} {:<8} {}",
-                "ID", "TENANT", "MODULE", "STATUS", "TIME(ms)", "EXECUTED_AT"
+                "{:<6} {:<15} {:<15} {:<8} {:<8} EXECUTED_AT",
+                "ID", "TENANT", "MODULE", "STATUS", "TIME(ms)"
             );
             println!("{}", "-".repeat(80));
             for l in logs {

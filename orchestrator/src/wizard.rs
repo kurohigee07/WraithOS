@@ -116,9 +116,15 @@ async fn status_handler(State(s): State<ApiState>) -> Json<StatusPayload> {
         1
     };
     let luks_recovery_needed = {
-        let probe = luks_cmd(&["isLuks", DATA_DEVICE], None).map(|o| o.status.success()).unwrap_or(false);
+        let probe = luks_cmd(&["isLuks", DATA_DEVICE], None)
+            .map(|o| o.status.success())
+            .unwrap_or(false);
         let mounted = std::fs::read_to_string("/proc/mounts")
-            .map(|m| m.lines().any(|l| l.split_whitespace().nth(1) == Some("/data"))).unwrap_or(false);
+            .map(|m| {
+                m.lines()
+                    .any(|l| l.split_whitespace().nth(1) == Some("/data"))
+            })
+            .unwrap_or(false);
         probe && !mounted
     };
     Json(StatusPayload {
@@ -263,21 +269,40 @@ fn derive_keyfile(pwd: &str) -> [u8; 32] {
 
 fn setup_luks(pwd: &str, data_dir: &std::path::Path) -> LuksResult<()> {
     if !std::path::Path::new(DATA_DEVICE).exists() {
-        return Err((StatusCode::BAD_REQUEST, "data partition /dev/vda4 not found".to_string()));
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "data partition /dev/vda4 not found".to_string(),
+        ));
     }
     let probe = luks_cmd(&["isLuks", DATA_DEVICE], None).map_err(internal)?;
     if probe.status.success() {
-        return Err((StatusCode::CONFLICT, "data partition already encrypted".to_string()));
+        return Err((
+            StatusCode::CONFLICT,
+            "data partition already encrypted".to_string(),
+        ));
     }
 
     let keyfile = "/tmp/luks.key";
     let key = derive_keyfile(pwd);
-    std::fs::write(keyfile, &key).map_err(|e| internal(format!("keyfile write: {e}")))?;
+    std::fs::write(keyfile, key).map_err(|e| internal(format!("keyfile write: {e}")))?;
     std::fs::set_permissions(keyfile, std::fs::Permissions::from_mode(0o600))
         .map_err(|e| internal(format!("keyfile chmod: {e}")))?;
 
-    let format_args = ["luksFormat","--type","luks2","--cipher","aes-xts-plain64",
-        "--key-size","512","--hash","sha256","--batch-mode","--key-file",keyfile,DATA_DEVICE];
+    let format_args = [
+        "luksFormat",
+        "--type",
+        "luks2",
+        "--cipher",
+        "aes-xts-plain64",
+        "--key-size",
+        "512",
+        "--hash",
+        "sha256",
+        "--batch-mode",
+        "--key-file",
+        keyfile,
+        DATA_DEVICE,
+    ];
     let out = luks_cmd(&format_args, None).map_err(internal)?;
     succeed("luksFormat", &out)?;
 
@@ -297,9 +322,12 @@ fn setup_luks(pwd: &str, data_dir: &std::path::Path) -> LuksResult<()> {
     let _ = std::fs::remove_dir_all(stage);
     std::fs::create_dir_all(stage).map_err(|e| internal(format!("stage mkdir: {e}")))?;
     let orch = stage.join("orchestrator");
-    std::fs::create_dir_all(orch.join("wraith")).map_err(|e| internal(format!("stage mkdir: {e}")))?;
-    std::fs::create_dir_all(stage.join("modules")).map_err(|e| internal(format!("stage mkdir: {e}")))?;
-    std::fs::create_dir_all(stage.join("wraith")).map_err(|e| internal(format!("stage mkdir: {e}")))?;
+    std::fs::create_dir_all(orch.join("wraith"))
+        .map_err(|e| internal(format!("stage mkdir: {e}")))?;
+    std::fs::create_dir_all(stage.join("modules"))
+        .map_err(|e| internal(format!("stage mkdir: {e}")))?;
+    std::fs::create_dir_all(stage.join("wraith"))
+        .map_err(|e| internal(format!("stage mkdir: {e}")))?;
     for name in ["hostname.txt", "admin.password.argon2", "network.toml"] {
         let src = data_dir.join("wraith").join(name);
         if src.exists() {
@@ -307,21 +335,37 @@ fn setup_luks(pwd: &str, data_dir: &std::path::Path) -> LuksResult<()> {
                 .map_err(|e| internal(format!("stage copy {name}: {e}")))?;
         }
     }
-    std::fs::write(orch.join("wraith").join("unlock.argon2"), format!("{hash}\n"))
-        .map_err(|e| internal(format!("stage unlock.argon2: {e}")))?;
-    std::fs::write(orch.join(LUKS_MARKER), "luks2\n").map_err(|e| internal(format!("stage marker: {e}")))?;
-    std::fs::write(orch.join(COMPLETE_MARKER), "completed\n").map_err(|e| internal(format!("stage complete: {e}")))?;
+    std::fs::write(
+        orch.join("wraith").join("unlock.argon2"),
+        format!("{hash}\n"),
+    )
+    .map_err(|e| internal(format!("stage unlock.argon2: {e}")))?;
+    std::fs::write(orch.join(LUKS_MARKER), "luks2\n")
+        .map_err(|e| internal(format!("stage marker: {e}")))?;
+    std::fs::write(orch.join(COMPLETE_MARKER), "completed\n")
+        .map_err(|e| internal(format!("stage complete: {e}")))?;
 
-    let mkfs = Command::new("mkfs.ext4").arg("-d").arg(stage).arg("-F").arg(&mapper).output()
+    let mkfs = Command::new("mkfs.ext4")
+        .arg("-d")
+        .arg(stage)
+        .arg("-F")
+        .arg(&mapper)
+        .output()
         .map_err(|e| internal(format!("mkfs.ext4 spawn: {e}")))?;
     if !mkfs.status.success() {
-        let plain = Command::new("mkfs.ext4").arg("-F").arg(&mapper).output()
+        let plain = Command::new("mkfs.ext4")
+            .arg("-F")
+            .arg(&mapper)
+            .output()
             .map_err(|e| internal(format!("mkfs.ext4 spawn: {e}")))?;
         succeed("mkfs.ext4", &plain)?;
         let mnt = std::path::Path::new("/tmp/wraith-luks-mnt");
         let _ = std::fs::remove_dir_all(mnt);
         std::fs::create_dir_all(mnt).map_err(|e| internal(format!("mnt mkdir: {e}")))?;
-        let m = Command::new("mount").arg(&mapper).arg(mnt).output()
+        let m = Command::new("mount")
+            .arg(&mapper)
+            .arg(mnt)
+            .output()
             .map_err(|e| internal(format!("mount spawn: {e}")))?;
         if !m.status.success() {
             let _ = std::fs::remove_file(keyfile);
@@ -331,14 +375,19 @@ fn setup_luks(pwd: &str, data_dir: &std::path::Path) -> LuksResult<()> {
             let d = mnt.join(sub);
             std::fs::create_dir_all(&d).map_err(|e| internal(format!("mnt sub mkdir: {e}")))?;
         }
-        let _ = Command::new("cp").arg("-a").arg(format!("{}/.", stage.display())).arg(mnt).status();
+        let _ = Command::new("cp")
+            .arg("-a")
+            .arg(format!("{}/.", stage.display()))
+            .arg(mnt)
+            .status();
         let _ = Command::new("umount").arg(mnt).status();
     }
 
     let close = luks_cmd(&["luksClose", MAPPER_NAME], None).map_err(internal)?;
     succeed("luksClose", &close)?;
 
-    std::fs::copy(keyfile, "/boot/luks.key").map_err(|e| internal(format!("keyfile -> /boot: {e}")))?;
+    std::fs::copy(keyfile, "/boot/luks.key")
+        .map_err(|e| internal(format!("keyfile -> /boot: {e}")))?;
     let _ = std::fs::remove_file(keyfile);
 
     Ok(())
@@ -413,12 +462,23 @@ async fn finish_handler(State(s): State<ApiState>) -> Response {
     }
     let luks_pwd = match w.encryption_password.as_ref() {
         Some(p) => p.clone(),
-        None => return err_response(StatusCode::BAD_REQUEST,
-                                    "encryption_password required for /data persistence"),
+        None => {
+            return err_response(
+                StatusCode::BAD_REQUEST,
+                "encryption_password required for /data persistence",
+            )
+        }
     };
     match setup_luks(&luks_pwd, &s.data_dir) {
-        Ok(()) => { w.luks_enabled = true; w.encryption_password = None; info!("wizard: LUKS data partition ready"); }
-        Err((code, msg)) => { warn!(err = %msg, "wizard: LUKS setup failed"); return err_response(code, msg); }
+        Ok(()) => {
+            w.luks_enabled = true;
+            w.encryption_password = None;
+            info!("wizard: LUKS data partition ready");
+        }
+        Err((code, msg)) => {
+            warn!(err = %msg, "wizard: LUKS setup failed");
+            return err_response(code, msg);
+        }
     }
 
     let marker = s.data_dir.join(COMPLETE_MARKER);
@@ -436,10 +496,13 @@ async fn finish_handler(State(s): State<ApiState>) -> Response {
         .into_response()
 }
 
-
 async fn reset_luks_handler(State(s): State<ApiState>) -> Response {
     let mounted = std::fs::read_to_string("/proc/mounts")
-        .map(|m| m.lines().any(|l| l.split_whitespace().nth(1) == Some("/data"))).unwrap_or(false);
+        .map(|m| {
+            m.lines()
+                .any(|l| l.split_whitespace().nth(1) == Some("/data"))
+        })
+        .unwrap_or(false);
     if mounted {
         return err_response(StatusCode::CONFLICT, "/data is mounted; refusing to erase");
     }
@@ -452,11 +515,15 @@ async fn reset_luks_handler(State(s): State<ApiState>) -> Response {
     }
     let out = match luks_cmd(&["luksErase", "--batch-mode", DATA_DEVICE], None) {
         Ok(o) => o,
-        Err(e) => return err_response(StatusCode::INTERNAL_SERVER_ERROR, format!("luksErase: {e}")),
+        Err(e) => {
+            return err_response(StatusCode::INTERNAL_SERVER_ERROR, format!("luksErase: {e}"))
+        }
     };
     if !out.status.success() {
-        return err_response(StatusCode::INTERNAL_SERVER_ERROR,
-            format!("luksErase failed: {}", stderr_tail(&out)));
+        return err_response(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("luksErase failed: {}", stderr_tail(&out)),
+        );
     }
     let _ = std::fs::remove_file("/boot/luks.key");
     let mut w = s.wizard.data.lock().await;
