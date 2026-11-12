@@ -42,6 +42,10 @@ case "$1" in
             echo "OK (fallback: wizard accessible, /data unmounted)"
         fi
         ;;
+    restart)
+        $0 stop
+        $0 start
+        ;;
     stop)
         umount /etc/wraith 2>/dev/null || true
         umount /modules 2>/dev/null || true
