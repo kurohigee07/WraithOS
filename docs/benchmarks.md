@@ -1,5 +1,8 @@
 # Benchmark: an empty component on Oracle Cloud
 
+> **See also:** [`benchmarks-v0.47.0.md`](benchmarks-v0.47.0.md) -- 2026-11-12 measurement with a batched audit writer. `/execute` throughput rises from ~950 req/s to ~9,800 req/s at concurrency 5-10 on the same host, with the empty guest as the fixture. The v0.27.1 numbers below are preserved as-is.
+
+
 **Evidence status:** maintainer-supplied measurement dated **2026-11-04 08:07:39 UTC**. It was not independently rerun for this documentation update. Raw values are preserved in [benchmark-data.json](benchmark-data.json), and a reproducible procedure is provided below.
 
 ## Results at a glance

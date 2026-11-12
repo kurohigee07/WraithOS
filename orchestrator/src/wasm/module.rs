@@ -7,6 +7,7 @@ use shared_types::ModuleManifest;
 use wasmtime::component::{Component, HasSelf, Linker};
 use wasmtime::{Engine, Store};
 
+use crate::audit::AuditEntry;
 use crate::capabilities::CapabilitySet;
 use crate::context::AppContext;
 use crate::module::OrchestratorModule;
@@ -45,26 +46,6 @@ impl std::fmt::Display for QuotaExecError {
 }
 
 impl WasmModule {
-    async fn log_execution(
-        db: &sqlx::SqlitePool,
-        tenant: String,
-        module_id: String,
-        status: &'static str,
-        duration_ms: u64,
-        error_msg: Option<String>,
-    ) {
-        let _ = sqlx::query(
-            "INSERT INTO execution_logs (tenant, module_id, status, duration_ms, error_message) VALUES (?, ?, ?, ?, ?)"
-        )
-        .bind(tenant)
-        .bind(module_id)
-        .bind(status)
-        .bind(duration_ms as i64)
-        .bind(error_msg)
-        .execute(db)
-        .await;
-    }
-
     pub fn load(
         engine: Arc<Engine>,
         manifest: ModuleManifest,
@@ -176,7 +157,7 @@ impl WasmModule {
 
         // 4. Execute
         let start = Instant::now();
-        let db_pool = ctx.db.clone();
+        let audit_tx = ctx.audit.sender();
         let result = self.execute_impl(ctx, payload).await;
         let elapsed = start.elapsed().as_secs_f64();
         let (status, err_msg) = match &result {
@@ -207,15 +188,19 @@ impl WasmModule {
             }
         }
 
-        Self::log_execution(
-            &db_pool,
-            tenant_id.clone(),
-            module_id.clone(),
-            status,
-            (elapsed * 1000.0) as u64,
-            err_msg,
-        )
-        .await;
+        // Batched audit write via bounded channel. The writer task in
+        // audit.rs coalesces rows into a single INSERT per 50 ms or 100
+        // rows. Awaiting send() applies backpressure without dropping
+        // entries when the channel is full.
+        let _ = audit_tx
+            .send(AuditEntry {
+                tenant: tenant_id.clone(),
+                module_id: module_id.clone(),
+                status,
+                duration_ms: (elapsed * 1000.0) as u64,
+                error_message: err_msg,
+            })
+            .await;
         metrics::histogram!(
             "wasm_execution_duration_seconds",
             "module" => module_id,
