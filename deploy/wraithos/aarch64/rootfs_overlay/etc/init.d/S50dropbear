@@ -13,9 +13,36 @@ case "$1" in
         if [ ! -d /etc/dropbear ]; then
             mkdir -p /var/run/dropbear 2>/dev/null
         fi
+
+        # SSH pubkey mode: wizard writes authorized_keys and the
+        # ssh-pubkey-only marker into /etc/wraith (persisted on LUKS).
+        # /root is on the read-only squashfs, so stage into tmpfs.
+        EXTRA_ARGS=""
+        if [ -f /var/lib/orchestrator/wraith/ssh-pubkey-only ] && [ -f /var/lib/orchestrator/wraith/authorized_keys ]; then
+            # /root is on the read-only squashfs. Dropbear resolves
+            # authorized_keys from getpwnam("root")->pw_dir = /root,
+            # not from $HOME. Overlay a tmpfs, seed it with the
+            # original files, then drop authorized_keys in.
+            if ! mountpoint -q /root; then
+                mkdir -p /tmp/root-seed
+                cp -a /root/. /tmp/root-seed/ 2>/dev/null
+                mount -t tmpfs -o mode=0700,size=8M tmpfs /root
+                cp -a /tmp/root-seed/. /root/ 2>/dev/null
+                rm -rf /tmp/root-seed
+            fi
+            mkdir -p /root/.ssh
+            cp /var/lib/orchestrator/wraith/authorized_keys /root/.ssh/authorized_keys 2>/dev/null
+            chmod 700 /root/.ssh 2>/dev/null
+            chmod 600 /root/.ssh/authorized_keys 2>/dev/null
+            if [ -s /root/.ssh/authorized_keys ]; then
+                EXTRA_ARGS="-s"
+                echo -n "[pubkey-only] "
+            fi
+        fi
+
         LD_PRELOAD=/usr/lib/libcrypt.so.2 \
             start-stop-daemon -S -q -p /var/run/dropbear.pid \
-                --exec /usr/sbin/dropbear -- ${DROPBEAR_ARGS:--R -p 22}
+                --exec /usr/sbin/dropbear -- ${DROPBEAR_ARGS:--R -p 22} $EXTRA_ARGS
         [ $? = 0 ] && echo "OK" || echo "FAIL"
         ;;
     stop)

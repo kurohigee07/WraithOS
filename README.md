@@ -98,12 +98,23 @@ data on `/dev/vda4` cannot be read.
 Serial console is the primary interface. Dropbear runs on port 22
 inside the guest as a second entry point — useful when the operator
 is working over a remote hypervisor console that occasionally drops
-characters, or when the serial tty is temporarily wedged. Password
-authentication is the only method; host keys are ephemeral and
-regenerated each boot (the rootfs is read-only and `/data` is under
-LUKS, so there is nowhere persistent to store them). The QEMU
-wrappers forward host ports 2222 (x86_64) and 2223 (aarch64) to
-guest port 22, so `ssh -p 2222 root@127.0.0.1` works out of the box.
+characters, or when the serial tty is temporarily wedged. Host keys
+are ephemeral and regenerated each boot (the rootfs is read-only
+and `/data` is under LUKS, so there is nowhere persistent to store
+them). The QEMU wrappers forward host ports 2222 (x86_64) and 2223
+(aarch64) to guest port 22, so `ssh -p 2222 root@127.0.0.1` works
+out of the box.
+
+**SSH authentication modes.** The wizard step 1 accepts an optional
+OpenSSH public key. When a key is provided, dropbear starts with
+`-s` on every subsequent boot and refuses password authentication;
+the key is staged from `/etc/wraith/authorized_keys` into
+`/root/.ssh/authorized_keys` (tmpfs) before dropbear starts. When
+the field is left empty, dropbear keeps password authentication on
+as a convenience for serial-adjacent recovery. **Serial console
+remains password-authenticated in both modes** — the Linux
+`/etc/shadow` password is independent of dropbear — so a lost SSH
+key is recoverable from the serial line without re-flashing.
 
 Dropbear on musl is fragile: the C library ships a `crypt()` stub
 that returns `NULL`, so the linker resolves the symbol from the stub

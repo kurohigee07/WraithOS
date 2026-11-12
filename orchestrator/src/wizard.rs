@@ -37,6 +37,7 @@ struct WizardData {
     completed: bool,
     encryption_password: Option<String>,
     luks_enabled: bool,
+    ssh_pubkey: Option<String>,
 }
 
 pub struct WizardState {
@@ -72,6 +73,8 @@ struct Step1Payload {
     password: String,
     #[serde(default)]
     encryption_password: Option<String>,
+    #[serde(default)]
+    ssh_pubkey: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -135,6 +138,49 @@ async fn status_handler(State(s): State<ApiState>) -> Json<StatusPayload> {
     })
 }
 
+fn validate_ssh_pubkey(input: &str) -> Result<String, String> {
+    const ALLOWED: &[&str] = &[
+        "ssh-ed25519",
+        "ssh-rsa",
+        "ecdsa-sha2-nistp256",
+        "ecdsa-sha2-nistp384",
+        "ecdsa-sha2-nistp521",
+        "sk-ssh-ed25519@openssh.com",
+        "sk-ecdsa-sha2-nistp256@openssh.com",
+    ];
+    let mut out = Vec::new();
+    for (i, raw) in input.lines().enumerate() {
+        let line = raw.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        let mut parts = line.split_whitespace();
+        let ktype = parts
+            .next()
+            .ok_or_else(|| format!("line {}: empty", i + 1))?;
+        let payload = parts
+            .next()
+            .ok_or_else(|| format!("line {}: missing base64 payload", i + 1))?;
+        if !ALLOWED.contains(&ktype) {
+            return Err(format!("line {}: unsupported key type '{}'", i + 1, ktype));
+        }
+        if !payload.starts_with("AAAA") || payload.len() < 16 {
+            return Err(format!("line {}: invalid base64 payload", i + 1));
+        }
+        if !payload
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '+' | '/' | '='))
+        {
+            return Err(format!("line {}: non-base64 chars in payload", i + 1));
+        }
+        out.push(line.to_string());
+    }
+    if out.is_empty() {
+        return Err("no valid keys found".to_string());
+    }
+    Ok(out.join("\n"))
+}
+
 async fn step1_handler(State(s): State<ApiState>, Json(p): Json<Step1Payload>) -> Response {
     if p.hostname.is_empty() || p.hostname.len() > 63 {
         return err_response(StatusCode::BAD_REQUEST, "hostname 1-63 chars");
@@ -172,6 +218,21 @@ async fn step1_handler(State(s): State<ApiState>, Json(p): Json<Step1Payload>) -
     w.hostname = Some(p.hostname);
     w.password_hash = Some(hash);
     w.encryption_password = p.encryption_password;
+
+    match p
+        .ssh_pubkey
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
+        Some(raw) => match validate_ssh_pubkey(raw) {
+            Ok(keys) => w.ssh_pubkey = Some(keys),
+            Err(e) => {
+                return err_response(StatusCode::BAD_REQUEST, format!("ssh_pubkey: {e}"));
+            }
+        },
+        None => w.ssh_pubkey = None,
+    }
     info!("wizard: step1 saved (hostname)");
     (
         StatusCode::OK,
@@ -488,6 +549,17 @@ async fn finish_handler(State(s): State<ApiState>) -> Response {
         Err((code, msg)) => {
             warn!(err = %msg, "wizard: LUKS setup failed");
             return err_response(code, msg);
+        }
+    }
+
+    if let Some(pk) = w.ssh_pubkey.as_ref() {
+        if let Err(e) = write_sync(&wraith_dir.join("authorized_keys"), pk.as_bytes()) {
+            warn!(err = %e, "wizard: write authorized_keys failed");
+        } else {
+            match write_sync(&wraith_dir.join("ssh-pubkey-only"), b"enabled\n") {
+                Ok(()) => info!("wizard: SSH pubkey-only mode enabled"),
+                Err(e) => warn!(err = %e, "wizard: write ssh-pubkey-only marker failed"),
+            }
         }
     }
 

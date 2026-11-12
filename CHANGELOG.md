@@ -8,6 +8,46 @@ describes the change theme. `v0.30` was not released.
 Crate manifests declare `0.1.0`; the tags are the release units.
 Releases before `v0.24.0` are not itemized here; see commit history.
 
+## [v0.44.0-ssh-pubkey-only] - 2026-11-12
+
+### Added
+- Optional SSH public key at wizard step 1. When set, `finish_handler`
+  writes `/etc/wraith/authorized_keys` (persisted on the LUKS volume)
+  and a marker file `/etc/wraith/ssh-pubkey-only`. On every subsequent
+  boot `S50dropbear` stages the key into `/root/.ssh/authorized_keys`
+  (tmpfs) and starts dropbear with `-s`, so SSH refuses password
+  authentication. Serial console keeps `/etc/shadow` password auth
+  regardless — a lost SSH key is recoverable from the serial line.
+
+### Changed
+- `docs/security.md`: new sections covering SSH authentication modes,
+  the physical-access threat model (LUKS keyfile on the ESP), boot
+  chain integrity (no Secure Boot, no runtime dm-verity on the
+  rootfs slot), and update verification / health-based rollback.
+  TPM2 sealing, Clevis/Tang, UEFI Secure Boot, ARM Verified Boot,
+  and S99wraith-init health polling are documented as v0.5x
+  roadmap, not implemented.
+- README: `Emergency SSH access` section documents both auth modes
+  and the serial-console recovery path.
+
+### Security
+- Wizard validates `ssh_pubkey` server-side before saving. Allowed
+  key types: `ssh-ed25519`, `ssh-rsa`, `ecdsa-sha2-nistp256/384/521`,
+  and the two `sk-*@openssh.com` FIDO variants. Payload must start
+  with `AAAA`, be at least 16 chars, and contain only base64
+  characters. Invalid input returns 400 with a line-scoped reason;
+  the wizard state is not modified.
+- Multiple keys are accepted, one per line. Comment lines (`#`) and
+  blank lines are stripped.
+
+### Notes
+- Empty `ssh_pubkey` (default) keeps password auth on dropbear,
+  matching the behaviour of v0.43.x. Pubkey-only is opt-in per
+  device, not a fleet default.
+- Ephemeral host keys are unchanged: each boot regenerates them,
+  clients see a `known_hosts` mismatch. Documented in
+  `docs/security.md` under "Known gaps".
+
 ## [v0.43.0-luks-wizard-ssh] - 2026-11-12
 
 ### Added

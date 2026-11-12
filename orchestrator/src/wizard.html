@@ -90,6 +90,12 @@ h1 { font-size: 20px; margin-bottom: 8px; }
                 <div class="hint">LUKS2 for /data. Required. Loss = data unrecoverable.</div>
                 <div class="err" id="err-encryption_password"></div>
             </div>
+            <div class="field">
+                <label>SSH Public Key (optional)</label>
+                <textarea id="ssh_pubkey" rows="3" placeholder="ssh-ed25519 AAAA... user@host"></textarea>
+                <div class="hint">Paste an OpenSSH public key. When set, dropbear starts with -s (password auth disabled on SSH). Serial console remains password-authenticated for recovery.</div>
+                <div class="err" id="err-ssh_pubkey"></div>
+            </div>
             <div class="actions">
                 <span></span>
                 <button class="btn" onclick="nextStep(1)">Continue →</button>
@@ -185,11 +191,12 @@ function toast(msg, kind) {
 
 async function nextStep(n) {
     if (n === 1) {
-        clearErr('hostname'); clearErr('password'); clearErr('password_confirm'); clearErr('encryption_password');
+        clearErr('hostname'); clearErr('password'); clearErr('password_confirm'); clearErr('encryption_password'); clearErr('ssh_pubkey');
         const hostname = document.getElementById('hostname').value.trim();
         const password = document.getElementById('password').value;
         const confirm = document.getElementById('password_confirm').value;
         const encryption_password = document.getElementById('encryption_password').value;
+        const ssh_pubkey = document.getElementById('ssh_pubkey').value.trim();
 
         if (!/^[a-z0-9-]{1,63}$/.test(hostname)) {
             showErr('hostname', 'Must be lowercase alphanumeric or hyphen, 1-63 chars');
@@ -210,6 +217,7 @@ async function nextStep(n) {
 
         const payload = { hostname, password };
         if (encryption_password) payload.encryption_password = encryption_password;
+        if (ssh_pubkey) payload.ssh_pubkey = ssh_pubkey;
 
         const r = await fetch('/wizard/step1', {
             method: 'POST',
