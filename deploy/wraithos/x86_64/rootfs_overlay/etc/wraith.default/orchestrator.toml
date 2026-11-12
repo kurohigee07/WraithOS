@@ -2,6 +2,7 @@
 
 db_path = "/var/lib/orchestrator/orchestrator.db"
 modules_dir = "/modules"
+data_dir = "/var/lib/orchestrator"
 http_timeout_secs = 30
 max_sockets = 256
 # Batasi Wasm paralel. Rule of thumb: < CPU count, agar tokio worker

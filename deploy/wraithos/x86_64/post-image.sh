@@ -98,6 +98,16 @@ rm -rf "$GEN_TMP"
     --outputpath "${BIN_DIR}" \
     --config "${BOARD_DIR}/genimage.cfg"
 
+# genimage's DOS partition table stops writing after the last partition
+# with an image source. p4 (data) is raw, so the file would end at p3
+# content and the kernel would reject p4 with "partition outside the
+# disk". Pad to 640 MiB so the whole partition table fits.
+IMG_TMP="${BIN_DIR}/wraithos.img"
+if [ -f "$IMG_TMP" ]; then
+    truncate -s 640M "$IMG_TMP"
+    echo "  padded: $(stat -c%s "$IMG_TMP") bytes"
+fi
+
 # ─── [5/6] Install GRUB to MBR ──────────────────────────────────────
 echo "[5/6] Installing GRUB to MBR"
 IMG="${BIN_DIR}/wraithos.img"
