@@ -12,7 +12,7 @@
 
 </div>
 
-> **Read this first.** Wraith is an ambitious, working engineering project, not a claim of independently audited production security. This documentation follows the source at commit `f71294a`, distinguishes measurements from simulations, and calls out unfinished integration paths. Start locally; read [Security](docs/security.md) before exposing an instance to other people.
+> **Read this first.** Wraith is an ambitious, working engineering project, not a claim of independently audited production security. This documentation follows the source at tag `v0.46.0-health-rollback-fixes` (commit `bfd2da6`), distinguishes measurements from simulations, and calls out unfinished integration paths. Start locally; read [Security](docs/security.md) before exposing an instance to other people.
 
 > **Default root credential.** WraithOS ships with root password
 > `wraithos-admin-change-me` for serial console login (ttyS0 on x86,
@@ -21,6 +21,12 @@
 > a read-only squashfs, so password rotation happens at build time by
 > editing `/etc/shadow` in the board overlay — see
 > [Security](docs/security.md) for the full first-boot checklist.
+>
+> **SSH pubkey is opt-in.** Step 1 of the wizard accepts an optional
+> OpenSSH public key. When one is supplied dropbear starts with `-s`
+> and refuses password auth over SSH; serial console keeps
+> `/etc/shadow` password auth so a lost key is recoverable from the
+> tty. When the field is empty dropbear keeps password auth.
 >
 > **`/data` encryption.** The first-boot wizard formats `/dev/vda4`
 > with LUKS2 and derives the keyfile from the operator-chosen
@@ -35,6 +41,18 @@
 > restart loop. Guest `reboot` under QEMU TCG leaves corrupted
 > serial/tty state; restarting the QEMU process clears it. The
 > wrapper hides this from the operator; hardware reboot is unaffected.
+>
+> **RAUC health gate.** `wraith-install-bundle` (and `wraith-update`
+> for the dd path) writes `/data/orchestrator/rauc.pending` on a
+> successful install. On the next boot `S99wraith-init` spawns
+> `wraith-rauc-healthcheck`, which polls `/readyz` for up to 60 s.
+> On `200` it runs `rauc status mark-good` and `wraith-bootenv
+> commit`. On timeout it runs `rauc status mark-bad`,
+> `wraith-bootenv demote`, and `reboot`, so the GRUB trial counter
+> falls through to the last-known-good slot. The timeout branch is
+> logged to `/data/orchestrator/healthcheck.log` (LUKS volume) as
+> well as syslog, because `/var/log` is a tmpfs and would lose the
+> trail across the rollback.
 
 ## What is Wraith?
 
@@ -174,7 +192,7 @@ Original v0.27.1 measurement for comparison (2026-11-04 UTC): execution 180.9 µ
 
 The execution timer covers `Store::new`, asynchronous instantiation, `call_run`, and JSON result parsing. It excludes HTTP handling, module lookup, quota acquisition, and audit persistence. Pool wait is a separate timer. Neither number should be inverted into a throughput guarantee.
 
-**About versioning:** the crate manifests declare `0.1.0`; releases are tracked by git tags (`v0.38.0` at the time of this run). The benchmark guest is `tests/fixtures/empty/`, checked in for reproducibility.
+**About versioning:** the crate manifests declare `0.1.0`; releases are tracked by git tags (`v0.38.0` at the time of this run, current tag `v0.46.0`). The benchmark guest is `tests/fixtures/empty/`, checked in for reproducibility.
 
 [Read the method, raw values, limitations, and reproduction procedure →](docs/benchmarks.md)
 
@@ -329,7 +347,7 @@ wraith-sdk/         Async Rust HTTP client
 wraith-cli/         `wraith` command-line application
 modules/default/    Checked-in sample component and quota sidecar
 deploy/             systemd, backup/restore, packaging, signing, smoke helpers
-deploy/wraithos/    x86 and ARM Buildroot trees, boot scripts, Termux helpers
+deploy/wraithos/    x86 and ARM Buildroot trees, boot scripts, RAUC wrappers, Termux helpers
 docs/               English guides, benchmark evidence, interactive documentation
 HANDOFF.md          Historical development notes; not the current source of truth
 TODO.md             Historical planning list; verify against source before using
@@ -339,9 +357,9 @@ The [source map](docs/source-map.md) covers every file tracked at the documented
 
 ## Implementation status and trust
 
-**Present in source:** component execution; HTTP/TCP/event host bridges; lifecycle API; quota gates; tenant configuration; optional global authentication; conditional Bubblewrap source builds; signatures; dashboard/WebSocket; SDK/CLI; first-boot wizard handlers; ARM boot-state/watchdog scripts; release helper scripts.
+**Present in source:** component execution; HTTP/TCP/event host bridges; lifecycle API; quota gates; tenant configuration; optional global authentication; conditional Bubblewrap source builds; signatures; dashboard/WebSocket; SDK/CLI; first-boot wizard handlers; ARM boot-state/watchdog scripts; RAUC health-gated rollback; release helper scripts.
 
-**Not established by this documentation:** a fresh OS image build, a reproducible benchmark rerun, independent penetration testing, complete tenant isolation, crash-safe update transactions, or a finished setup-to-login/network/encryption integration.
+**Not established by this documentation:** a fresh OS image build, a reproducible benchmark rerun, independent penetration testing, complete tenant isolation, crash-safe update transactions (a health-gated RAUC rollback exists, but power-loss atomicity of the GRUB env write is not proven), or a finished setup-to-login/network/encryption integration.
 
 Some historical notes describe features as planned even though code now exists. Other notes describe successful QEMU runs that cannot be independently verified from this checkout alone. The new guides label those claims explicitly.
 

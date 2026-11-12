@@ -1,0 +1,3 @@
+2026-11-12T08:13:03Z rauc-health: readyz timeout after 60s, marking bad and rebooting
+2026-11-12T08:13:04Z rauc-health: rauc-Message: 08:13:04.070: Using central status file /data/central.raucs
+2026-11-12T08:13:04Z rauc-health: rauc-event-Message: 08:13:04.312: Marked slot rootfs.1 as bad

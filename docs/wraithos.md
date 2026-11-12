@@ -13,7 +13,7 @@ WraithOS is not a second orchestrator implementation. It packages the Rust binar
 | Root slots | 128 MiB each | 64 MiB each |
 | Data partition | 256 MiB ext4 image | 128 MiB unformatted region in current ARM genimage |
 | Slot selection | `boot_b` marker, otherwise A | GRUB env trial counter + last-known-good |
-| Updater size check | 128 MiB | 60 MiB, leaving headroom below 64 MiB slot |
+| Updater size check | 128 MiB | 60 MiB (wraith-update); RAUC enforces bundle-to-slot fit |
 | Watchdog scripts | Not present in this tree | Present: watchdog, bootcheck, bootenv |
 | Runtime init | BusyBox-style overlay; defconfig conflict described below | BusyBox explicitly configured |
 | Included host binary | Must be supplied to x86 overlay | Prebuilt AArch64 ELF tracked at `sbin/wraith-init` |
@@ -126,7 +126,45 @@ The updater selects the inactive root slot from `slot=A/B`, checks image size, w
 
 **Kernel limitation:** ARM `Image-a` and `Image-b` live on the ESP. `wraith-update` writes only rootfs `/dev/vda2/3`; it does not update those kernels. A userspace/kernel compatibility change needs a coordinated kernel update strategy.
 
-### x86 manual marker rollback
+### RAUC bundle install (recommended)
+
+The primary update path is a signed RAUC bundle:
+
+    wraith-install-bundle /data/arm-v0.46.0-health-rollback-fixes.raucb
+
+wraith-install-bundle wraps rauc install. RAUC verifies the bundle
+signature against /etc/rauc/ca.cert.pem, opens the payload under
+dm-verity, writes the inactive rootfs slot, and marks the trial via
+grubenv. On success it writes /data/orchestrator/rauc.pending.
+
+### Health-gated rollback
+
+Both install paths arm a background health gate on the next boot:
+
+1. S99wraith-init starts the orchestrator as usual.
+2. If /data/orchestrator/rauc.pending exists it also spawns
+   wraith-rauc-healthcheck.
+3. The poller asks http://127.0.0.1:9090/readyz every 2 s for up to
+   60 s. /readyz confirms both the HTTP listener and the SQLite
+   connection, not just the socket.
+4. On 200: rauc status mark-good, wraith-bootenv commit, marker
+   removed. Slot committed.
+5. On timeout: rauc status mark-bad, wraith-bootenv demote, marker
+   removed, reboot. GRUB trial falls through to LKG.
+
+The poller runs in the background, so a slow boot never blocks. It
+logs to /var/log/messages and to /data/orchestrator/healthcheck.log.
+The /data copy survives the rollback because /var/log is a tmpfs.
+
+Verified end-to-end on ARM with a broken bundle: new slot booted,
+timed out at ~70 s, rolled back, rauc status reports it bad.
+
+### x86 manual marker rollback (legacy)
+
+This section documents the pre-RAUC x86 behaviour. RAUC and the
+health gate above supersede it. It is kept here for operators
+encountering a system where `grub.cfg` still uses `boot_a`/`boot_b`
+marker files; the current `grub.cfg` uses `grubenv`.
 
 x86 GRUB checks only `/boot/boot_b`: present selects B, absent selects A. Its updater toggles `boot_a`/`boot_b` markers but GRUB does not use `boot_a` as a symmetric selector. To return to A:
 
@@ -199,7 +237,7 @@ Kernel fragments enable BPF/JIT, AF_PACKET, cgroups, watchdog/panic behavior, Sq
 
 ARM inittab/fstab add `nosuid,nodev,noexec` to several writable tmpfs mounts. The shell profile fixes PATH, disables history/core dumps, sets umask/timeout, and makes selected variables readonly. These reduce accidental misuse but do not authenticate the root console or create a sandbox for a compromised root process.
 
-`etc/rauc/system.conf` files and old `post-image.sh.bak` files are historical artifacts. The active updater scripts are custom; do not assume RAUC is installed or manages the boot transaction.
+`etc/rauc/system.conf` files and old `post-image.sh.bak` files are historical artifacts. The RAUC integration is active since v0.42.1. /etc/rauc/system.conf is used by RAUC to manage the A/B slot state on both arches. wraith-update (the dd path) coexists as a lower-level writer that now arms the same health gate.
 
 ## Verification checklist on real target/VM
 
