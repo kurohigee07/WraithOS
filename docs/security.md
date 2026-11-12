@@ -157,6 +157,122 @@ The event bus is global, in-memory, and lossy. WebSocket clients see events acro
 
 Individual disk writes use fsync/rename, but module + sidecars + registry are not one transaction. Backups use SQLite `.backup` when the sqlite3 CLI is installed; the fallback file copy is explicitly not transactionally consistent.
 
+## SSH authentication
+
+Dropbear runs on port 22 inside the guest. It is a backup entry point
+behind the serial console, not the primary interface.
+
+- **Password auth (default).** Enabled until the wizard receives a
+  public key. Same credential as the serial console. Suitable for
+  development and for recovery when the operator has not yet enrolled
+  a key.
+- **Pubkey-only auth.** When the wizard step 1 `ssh_pubkey` field is
+  non-empty, `finish_handler` writes `/etc/wraith/authorized_keys`
+  (persisted on the LUKS volume) and a marker file
+  `/etc/wraith/ssh-pubkey-only`. On the next boot `S50dropbear`
+  stages the key into `/root/.ssh/authorized_keys` (tmpfs) and
+  starts dropbear with `-s`, disabling password auth for SSH.
+- **Serial console password never changes.** The Linux root password
+  in `/etc/shadow` is independent of dropbear. A lost SSH key can be
+  recovered by logging in on the serial tty and clearing
+  `/etc/wraith/ssh-pubkey-only` (or by re-running the wizard from a
+  fresh image). There is no SSH-only lockout.
+
+Known gaps:
+
+- Host keys are ephemeral. Every reboot produces a new SSH host key;
+  clients will see a `known_hosts` mismatch. This is a deliberate
+  trade-off — `/data` is LUKS-encrypted and `/etc` is a read-only
+  squashfs, so there is nowhere persistent to store the host key
+  that survives a factory reset without adding a second secret.
+- SSH bind address is `0.0.0.0:22`. There is no built-in firewall
+  rule restricting SSH to a management network; the operator is
+  expected to configure `iptables` or the upstream hypervisor.
+
+## Threat model — physical access
+
+The current release stores the LUKS keyfile for `/data` at
+`/boot/luks.key` on the unencrypted ESP so the device can auto-unlock
+on boot. An attacker with physical access to the disk can extract
+that keyfile and decrypt `/data` offline. This is a real limitation,
+not a theoretical one.
+
+Mitigations planned for v0.5x:
+
+- **TPM 2.0 sealing.** Seal the keyfile to PCRs covering the boot
+  chain (kernel, initramfs, cmdline). A keyfile extracted from a
+  different machine or a modified boot chain will not unseal.
+  Requires hardware TPM; QEMU `swtpm` can be used for testing but
+  does not prove production behaviour.
+- **Network-bound disk encryption.** Clevis/Tang with a Tang server
+  on a trusted network, optionally bound to a second factor. Requires
+  a Tang endpoint and a recovery keyfile printed at setup time. This
+  is the recommended path when the device is reachable over a
+  management network.
+- **Recovery key.** Regardless of sealing method, print a recovery
+  keyfile once at wizard completion for offline backup. Current
+  release has no recovery path beyond `POST /wizard/reset-luks`
+  (which destroys the volume).
+
+## Boot chain integrity
+
+The current release does not verify the boot chain cryptographically.
+
+- **No UEFI Secure Boot.** GRUB, the kernel, and the initramfs are
+  unsigned from the firmware's point of view. An attacker with
+  physical access can substitute any of them and the firmware will
+  load it. This invalidates the LUKS protection above: a modified
+  initramfs can log the decryption keyfile at boot.
+- **No ARM Verified Boot.** The aarch64 image uses the same unsigned
+  GRUB + kernel chain. There is no U-Boot FIT signing.
+- **dm-verity is applied to RAUC bundles only.** The `format=verity`
+  bundle verifies the rootfs squashfs against a signed root hash
+  during `rauc install`. This is a **transport** integrity check
+  (bundle → slot), not a **runtime** integrity check. The rootfs
+  itself is mounted from the raw slot with no dm-verity layer, so
+  post-install tampering with `/dev/vda2` or `/dev/vda3` is not
+  detected at boot.
+
+Mitigations planned for v0.5x:
+
+- UEFI Secure Boot with a per-device key pair (PK, KEK, db). Sign
+  GRUB and the kernel during build; enroll the custom keys in
+  firmware at first deployment. Requires build-time key management
+  and either a cloud KMS or a hardware token for the private keys.
+- ARM Verified Boot with U-Boot FIT signing. Requires replacing the
+  current EFI-GRUB path on aarch64 with a U-Boot verified-boot
+  chain.
+- Runtime dm-verity on the rootfs slot: add a small initramfs that
+  opens the slot squashfs under a dm-verity table backed by a signed
+  root hash stored in the boot partition, then pivots to it. This
+  closes the "attacker replaced the raw slot after install" gap but
+  does not close the "attacker modified the kernel" gap without
+  Secure Boot.
+
+## Update verification and rollback
+
+RAUC installs to the inactive slot and marks it active. The current
+release **does not confirm health before committing the trial boot**.
+If the new slot boots far enough to start `init` but the orchestrator
+never becomes reachable on `/healthz`, the system stays on the failing
+slot across the remaining trial attempts and then rolls back to the
+last-known-good slot via the existing GRUB trial counter. This is a
+kernel-level rollback, not a service-level rollback: a new slot that
+boots the kernel and init but leaves the orchestrator dead will still
+be marked good by the bootloader, and the operator has to intervene.
+
+Mitigations planned for v0.5x:
+
+- S99wraith-init extension: after starting the orchestrator, poll
+  `http://127.0.0.1:9090/healthz` for up to 30 s. On success, run
+  `rauc status mark-good`. On timeout, run `rauc status mark-bad`
+  and `reboot` so the next trial attempt falls through to the
+  previous slot.
+- The watchdog (`softdog` via `wraith-watchdog`, `soft_margin=15`)
+  already provides a last-resort reboot if the orchestrator hangs.
+  It does not distinguish between "hung" and "not yet started", so
+  it is a coarse signal and cannot replace health-based mark-good.
+
 ## Deployment decision guide
 
 | Use case | Current recommendation |
