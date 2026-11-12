@@ -11,6 +11,11 @@ case "$1" in
             /sbin/wraith-init --config /etc/wraith/orchestrator.toml \
                 >> /var/lib/orchestrator/wraith.log 2>&1 &
             echo "OK"
+            # RAUC trial-boot health gate. Runs in the background so
+            # the boot sequence never blocks. The poller is a no-op
+            # unless /data/orchestrator/rauc.pending exists.
+            [ -x /usr/bin/wraith-rauc-healthcheck ] && \
+                /usr/bin/wraith-rauc-healthcheck >/dev/null 2>&1 &
         else
             echo "SKIPPED (no config at /etc/wraith/orchestrator.toml)"
         fi

@@ -1,0 +1,42 @@
+#!/bin/sh
+# Wrapper around `rauc install` that arms the health-gated rollback.
+# Usage: wraith-install-bundle /path/to/bundle.raucb
+#
+# Writes /data/orchestrator/rauc.pending on success. On the next boot
+# S99wraith-init spawns wraith-rauc-healthcheck, which polls /readyz
+# for 60 s. If the orchestrator is healthy it runs rauc status
+# mark-good + wraith-bootenv commit; if not it marks bad, demotes the
+# bootenv, and reboots into the last-known-good slot.
+set -u
+
+if [ "$#" -ne 1 ]; then
+    echo "usage: $0 /path/to/bundle.raucb" >&2
+    exit 1
+fi
+
+BUNDLE=$1
+if [ ! -f "$BUNDLE" ]; then
+    echo "not found: $BUNDLE" >&2
+    exit 1
+fi
+
+if [ ! -d /data ]; then
+    echo "/data not mounted; cannot record pending marker" >&2
+    exit 1
+fi
+
+echo "── rauc install $BUNDLE"
+if ! rauc install "$BUNDLE"; then
+    echo "rauc install failed; not arming health check" >&2
+    exit 1
+fi
+
+mkdir -p /data/orchestrator
+printf 'armed %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+    > /data/orchestrator/rauc.pending
+sync
+
+echo ""
+echo "Bundle staged. Reboot to activate."
+echo "On next boot, /readyz is polled for 60 s. Success commits the slot;"
+echo "failure marks it bad and rolls back to the previous slot automatically."

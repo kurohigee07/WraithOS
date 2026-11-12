@@ -8,6 +8,56 @@ describes the change theme. `v0.30` was not released.
 Crate manifests declare `0.1.0`; the tags are the release units.
 Releases before `v0.24.0` are not itemized here; see commit history.
 
+## [v0.45.0-rauc-health-rollback] - 2026-11-12
+
+### Added
+- Health-gated RAUC rollback. `wraith-install-bundle` wraps
+  `rauc install` and writes `/data/orchestrator/rauc.pending` on
+  success. On the next boot `S99wraith-init` spawns
+  `wraith-rauc-healthcheck` in the background, which polls
+  `http://127.0.0.1:9090/readyz` for up to 60 s (2 s interval).
+  If `/readyz` returns 200 the script runs `rauc status mark-good`
+  and `wraith-bootenv commit`, then removes the marker. If it
+  times out the script runs `rauc status mark-bad`,
+  `wraith-bootenv demote`, removes the marker, and reboots; the
+  GRUB trial counter falls through to the last-known-good slot.
+- `wraith-update` (dd path, non-RAUC) also writes the same marker
+  so the health gate covers both install paths.
+- `[pubkey-only]` marker line was added to S50dropbear logs in
+  v0.44.0; this release keeps the same behaviour and reuses the
+  same marker file name.
+
+### Changed
+- `/readyz` is used instead of `/healthz`. It confirms both the
+  HTTP listener and the SQLite connection, which is what the
+  health gate actually needs. `/healthz` remains a shallow check
+  for upstream probes.
+- The health check runs in the background after `S99wraith-init`
+  finishes starting the orchestrator. It never blocks the boot
+  sequence. If `/data/orchestrator/rauc.pending` is absent the
+  script is a no-op.
+
+### Notes
+- Tested on QEMU aarch64:
+  - `wraith-install-bundle` on a fresh LUKS-mounted system: marker
+    written, reboot boots slot B, `readyz 200 after 2s`, mark-good,
+    `wraith-bootenv commit`, marker removed, grubenv shows
+    `slot=B, good=1, tries=0`.
+  - Manual marker on slot A with orchestrator already ready: `sh -x
+    wraith-rauc-healthcheck` exits 0, marker removed, grubenv
+    `seq=2`, `/var/log/messages` shows
+    `rauc-health: readyz 200 after 2s, marking good`.
+- The broken-slot path (`readyz` timeout) was not exercised end to
+  end in QEMU for this release. The timeout branch is unit-tested by
+  setting `TIMEOUT_SECS=2` and pointing `READY_URL` at a closed
+  port; the script runs `mark-bad`, `demote`, `reboot` in that
+  order. Full E2E with a deliberately broken bundle is on the P2
+  follow-up list.
+- This release rebuilds the ARM and x86_64 bundles because the
+  previous v0.44.0 draft bundle was produced before the health
+  check scripts existed. v0.44.0 tag stays in history; its draft
+  release will be removed once v0.45.0 is published.
+
 ## [v0.44.0-ssh-pubkey-only] - 2026-11-12
 
 ### Added

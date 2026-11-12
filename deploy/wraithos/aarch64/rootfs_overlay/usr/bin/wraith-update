@@ -43,6 +43,13 @@ mkdir -p /boot
 grep -q ' /boot ' /proc/mounts || mount -t vfat -o rw /dev/vda1 /boot
 rm -f /boot/boot_a /boot/boot_b
 /usr/bin/wraith-bootenv trial "$NEXT"
+
+# Marker for S99wraith-init's health gate. The wrapper
+# wraith-rauc-healthcheck runs on the next boot and either commits
+# the slot (readyz 200 within 60 s) or rolls back (mark-bad + reboot).
+mkdir -p /data/orchestrator 2>/dev/null
+printf 'armed %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+    > /data/orchestrator/rauc.pending 2>/dev/null
 sync
 
 echo "[3/3] Done"

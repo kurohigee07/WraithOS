@@ -1,0 +1,44 @@
+#!/bin/sh
+# Background health poller for RAUC trial boots.
+# Spawned by S99wraith-init after the orchestrator starts. Only runs
+# when /data/orchestrator/rauc.pending exists (written by
+# wraith-install-bundle). Polls /readyz for up to 60 s.
+#
+#   /readyz returns 200 when the HTTP listener is up and SQLite is
+#   reachable. /healthz is a shallower check and is not used here.
+#
+# On success: rauc status mark-good, wraith-bootenv commit, remove
+# marker. On timeout: rauc status mark-bad, wraith-bootenv demote,
+# remove marker, reboot. The GRUB trial counter falls through to the
+# last-known-good slot.
+set -u
+
+MARKER=/data/orchestrator/rauc.pending
+READY_URL=http://127.0.0.1:9090/readyz
+TIMEOUT_SECS=60
+INTERVAL_SECS=2
+
+[ -f "$MARKER" ] || exit 0
+
+ATTEMPTS=$((TIMEOUT_SECS / INTERVAL_SECS))
+i=1
+while [ "$i" -le "$ATTEMPTS" ]; do
+    code=$(wget -q -O /dev/null --server-response "$READY_URL" 2>&1 \
+        | awk '/HTTP\//{c=$2} END{print c}')
+    if [ "$code" = "200" ]; then
+        logger -t rauc-health "readyz 200 after $((i * INTERVAL_SECS))s, marking good"
+        rauc status mark-good 2>&1 | logger -t rauc-health
+        /usr/bin/wraith-bootenv commit 2>&1 | logger -t rauc-health
+        rm -f "$MARKER"
+        exit 0
+    fi
+    sleep "$INTERVAL_SECS"
+    i=$((i + 1))
+done
+
+logger -t rauc-health "readyz timeout after ${TIMEOUT_SECS}s, marking bad and rebooting"
+rauc status mark-bad 2>&1 | logger -t rauc-health
+/usr/bin/wraith-bootenv demote 2>&1 | logger -t rauc-health
+rm -f "$MARKER"
+sync
+reboot
