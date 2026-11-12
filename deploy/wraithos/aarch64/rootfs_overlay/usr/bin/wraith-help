@@ -1,0 +1,36 @@
+#!/bin/sh
+cat << 'HELP_TEXT'
+
+  WraithOS Quick Reference
+  ------------------------
+
+  System:
+    cat /proc/cmdline              -> active boot slot (slot=A or B)
+    mount | grep ' / '            -> active rootfs
+    wraith-bootenv show           -> boot contract state
+    wraith-bootcheck; echo $?    -> liveness proof (0 = healthy)
+
+  Orchestrator:
+    wget -qO- http://127.0.0.1:9090/healthz
+    wget -qO- http://127.0.0.1:9090/metrics
+    wget -qO- http://127.0.0.1:9090/wizard/status
+
+  Modules:
+    ls /modules
+
+  Update:
+    wraith-update /path/to/rootfs.squashfs
+    reboot
+
+  Boot contract:
+    wraith-bootenv show
+    wraith-bootenv trial B
+    wraith-bootenv commit
+    wraith-bootenv demote
+
+  Persistent data:
+    /data/orchestrator   -> DB, logs, wizard state
+    /data/modules        -> Wasm modules
+    /data/wraith         -> config
+
+HELP_TEXT

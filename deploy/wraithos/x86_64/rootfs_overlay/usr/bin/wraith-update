@@ -7,22 +7,22 @@ if [ ! -f "$NEW_IMAGE" ]; then
     exit 1
 fi
 
-ACTIVE=$(sed -n 's/.*slot=\([AB]\).*/\1/p' /proc/cmdline)
+ACTIVE=$(sed -n 's/.*slot=\([AB]\).*/\1/p' /proc/cmdline | head -1)
 if [ -z "$ACTIVE" ]; then
     echo "Cannot detect active slot"
     exit 1
 fi
 
-if [ "$ACTIVE" = "A" ]; then
-    TARGET_DEV="/dev/vda3"
-    NEXT="B"
+if [ "$ACTIVE" = A ]; then
+    TARGET_DEV=/dev/vda3
+    NEXT=B
 else
-    TARGET_DEV="/dev/vda2"
-    NEXT="A"
+    TARGET_DEV=/dev/vda2
+    NEXT=A
 fi
 
 SIZE=$(wc -c < "$NEW_IMAGE")
-LIMIT=$((128 * 1024 * 1024))
+LIMIT=$((120 * 1024 * 1024))
 if [ "$SIZE" -gt "$LIMIT" ]; then
     echo "ERROR: image too large: $SIZE > $LIMIT"
     exit 1
@@ -38,15 +38,14 @@ echo "[1/3] Writing squashfs to $TARGET_DEV..."
 dd if="$NEW_IMAGE" of="$TARGET_DEV" bs=1M conv=fsync 2>&1 | tail -1
 sync
 
-echo "[2/3] Setting boot marker..."
+echo "[2/3] Arming trial boot..."
 mkdir -p /boot
-grep -q ' /boot ' /proc/mounts || mount -t vfat /dev/vda1 /boot
-
+grep -q ' /boot ' /proc/mounts || mount -t vfat -o rw /dev/vda1 /boot
 rm -f /boot/boot_a /boot/boot_b
-touch "/boot/boot_$(echo $NEXT | tr 'AB' 'ab')"
+/usr/bin/wraith-bootenv trial "$NEXT"
 sync
 
 echo "[3/3] Done"
 echo ""
-echo "Update staged for slot $NEXT"
+echo "Update staged for slot $NEXT (3 boot attempts)"
 echo "Reboot to activate: reboot"

@@ -1,0 +1,15 @@
+#!/bin/sh
+# Publish boot state. Watchdog already started by inittab sysinit.
+mkdir -p /boot /run/wraith
+grep -q ' /boot ' /proc/mounts || mount -t vfat -o rw /dev/vda1 /boot 2>/dev/null
+rm -f /boot/boot_a /boot/boot_b
+SLOT=$(sed -n 's/.*slot=\([AB]\).*/\1/p' /proc/cmdline | head -1)
+[ -n "$SLOT" ] || SLOT=A
+if [ "$SLOT" = A ]; then OTHER=B; else OTHER=A; fi
+{
+    printf 'slot=%s\n' "$SLOT"
+    printf 'other=%s\n' "$OTHER"
+    printf 'env=/boot/grub/grubenv\n'
+} > /run/wraith/boot
+/usr/bin/wraith-bootenv show >> /run/wraith/boot 2>/dev/null || true
+echo "Wraith boot: slot=$SLOT other=$OTHER"

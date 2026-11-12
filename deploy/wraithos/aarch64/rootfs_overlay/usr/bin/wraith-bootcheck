@@ -1,0 +1,23 @@
+#!/bin/sh
+# Exit 0 only on full liveness proof.
+. /run/wraith/boot 2>/dev/null || exit 1
+[ -n "$slot" ] || exit 1
+[ -e /dev/watchdog ] || exit 1
+b=$(/usr/bin/wraith-bootenv get booted)
+[ "$b" = "$slot" ] || exit 1
+pidof wraith-init >/dev/null 2>&1 || exit 1
+h=$(wget -qO- -T 2 http://127.0.0.1:9090/healthz 2>/dev/null)
+[ "$h" = ok ] || exit 1
+[ -w /boot/grub/grubenv ] || exit 1
+s=$(wget -qO- -T 2 http://127.0.0.1:9090/wizard/status 2>/dev/null)
+case "$s" in
+    *'"completed":true'*)
+        grep -q ' /data ' /proc/mounts || exit 1
+        grep -q ' /var/lib/orchestrator ' /proc/mounts || exit 1
+        ;;
+esac
+d=/var/lib/orchestrator
+mkdir -p "$d" 2>/dev/null || exit 1
+touch "$d/.proof" 2>/dev/null || exit 1
+rm -f "$d/.proof"
+exit 0

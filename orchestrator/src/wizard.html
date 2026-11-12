@@ -45,6 +45,15 @@ h1 { font-size: 20px; margin-bottom: 8px; }
 </style>
 </head>
 <body>
+<div id="recovery-banner" style="display:none; background:#7a1a1a; color:#fff; padding:16px; margin:16px auto; max-width:640px; border-radius:6px; font-family:monospace;">
+    <h3 style="margin:0 0 8px 0;">⚠ LUKS recovery mode</h3>
+    <p style="margin:0 0 12px 0; font-size:13px; line-height:1.5;">
+        /data is LUKS-encrypted but could not be unlocked.
+        <strong>ALL DATA ON /dev/vda4 WILL BE LOST.</strong>
+    </p>
+    <button class="btn" style="background:#c0392b;" onclick="resetLuks()">Reset LUKS (destructive)</button>
+</div>
+
 <div class="container">
     <h1>👻 WraithOS Setup</h1>
     <p class="subtitle">First-boot configuration. Takes ~30 seconds.</p>
@@ -74,6 +83,12 @@ h1 { font-size: 20px; margin-bottom: 8px; }
                 <label>Confirm Password</label>
                 <input type="password" id="password_confirm" placeholder="repeat">
                 <div class="err" id="err-password_confirm"></div>
+            </div>
+            <div class="field">
+                <label>Data Encryption Password (required)</label>
+                <input type="password" id="encryption_password" placeholder="min 8 chars">
+                <div class="hint">LUKS2 for /data. Required. Loss = data unrecoverable.</div>
+                <div class="err" id="err-encryption_password"></div>
             </div>
             <div class="actions">
                 <span></span>
@@ -170,10 +185,11 @@ function toast(msg, kind) {
 
 async function nextStep(n) {
     if (n === 1) {
-        clearErr('hostname'); clearErr('password'); clearErr('password_confirm');
+        clearErr('hostname'); clearErr('password'); clearErr('password_confirm'); clearErr('encryption_password');
         const hostname = document.getElementById('hostname').value.trim();
         const password = document.getElementById('password').value;
         const confirm = document.getElementById('password_confirm').value;
+        const encryption_password = document.getElementById('encryption_password').value;
 
         if (!/^[a-z0-9-]{1,63}$/.test(hostname)) {
             showErr('hostname', 'Must be lowercase alphanumeric or hyphen, 1-63 chars');
@@ -187,11 +203,18 @@ async function nextStep(n) {
             showErr('password_confirm', 'Passwords do not match');
             return;
         }
+        if (!encryption_password || encryption_password.length < 8) {
+            showErr('encryption_password', 'Required, min 8 characters');
+            return;
+        }
+
+        const payload = { hostname, password };
+        if (encryption_password) payload.encryption_password = encryption_password;
 
         const r = await fetch('/wizard/step1', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({ hostname, password })
+            body: JSON.stringify(payload)
         });
         const body = await r.json();
         if (!r.ok) { toast('Step 1 failed: ' + (body.error || r.status), 'err'); return; }
@@ -266,6 +289,28 @@ fetch('/wizard/status').then(r => r.json()).then(s => {
         document.body.innerHTML = '<div style="text-align:center;padding:100px;color:var(--muted)"><h1>Setup already complete</h1><p><a href="/ui" style="color:var(--accent)">Go to dashboard</a></p></div>';
     }
 }).catch(() => {});
+
+async function resetLuks() {
+    if (!confirm('DESTRUCTIVE: erase LUKS header on /dev/vda4. All data lost. Continue?')) return;
+    if (!confirm('Final confirmation. There is no undo. Continue?')) return;
+    const r = await fetch('/wizard/reset-luks', {method: 'POST'});
+    const b = await r.json().catch(() => ({}));
+    if (!r.ok) { toast('Reset failed: ' + (b.error || r.status), 'err'); return; }
+    toast('LUKS reset. Re-run setup.', 'ok');
+    setTimeout(() => location.reload(), 1500);
+}
+async function checkRecovery() {
+    try {
+        const r = await fetch('/wizard/status');
+        if (!r.ok) return;
+        const s = await r.json();
+        if (s.luks_recovery_needed) {
+            const el = document.getElementById('recovery-banner');
+            if (el) el.style.display = 'block';
+        }
+    } catch (e) {}
+}
+window.addEventListener('DOMContentLoaded', checkRecovery);
 </script>
 </body>
 </html>
