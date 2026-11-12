@@ -474,6 +474,16 @@ async fn finish_handler(State(s): State<ApiState>) -> Response {
             w.luks_enabled = true;
             w.encryption_password = None;
             info!("wizard: LUKS data partition ready");
+            // Re-mount /data from the new LUKS volume immediately so
+            // RAUC status writes and orchestrator state see a
+            // writable /data without waiting for a reboot. S30data
+            // restart runs stop (unmount everything) + start (unlock
+            // LUKS with the keyfile we just wrote to /boot).
+            match Command::new("/etc/init.d/S30data").arg("restart").status() {
+                Ok(st) if st.success() => info!("wizard: /data remounted from LUKS"),
+                Ok(st) => warn!(code = ?st.code(), "wizard: /data remount exit non-zero"),
+                Err(e) => warn!(err = %e, "wizard: /data remount spawn failed"),
+            }
         }
         Err((code, msg)) => {
             warn!(err = %msg, "wizard: LUKS setup failed");
