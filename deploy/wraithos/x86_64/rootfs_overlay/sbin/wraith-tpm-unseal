@@ -1,0 +1,54 @@
+#!/bin/sh
+# wraith-tpm-unseal — unseal /boot/luks.sealed.{pub,priv} under PCR policy.
+# STDOUT on success: single line = tmpfs keyfile path. Nothing else.
+# Caller MUST rm -f the keyfile after use.
+# Exit: 0=ok, 1=unseal failed, 2=TPM absent
+set -u
+. /lib/wraith/tpm-lib.sh
+
+tpm_log "unseal: start"
+
+[ -s /boot/luks.sealed.pub ]  || { tpm_log "unseal: no sealed.pub";  exit 1; }
+[ -s /boot/luks.sealed.priv ] || { tpm_log "unseal: no sealed.priv"; exit 1; }
+
+tpm_check; RC=$?
+case "$RC" in
+  0) ;;
+  2) tpm_log "unseal: TPM absent"; exit 2 ;;
+  *) tpm_log "unseal: TPM present but not functional"; exit 1 ;;
+esac
+
+mkdir -p /run/wraith || { tpm_log "unseal: mkdir /run/wraith failed"; exit 1; }
+WORK=$(mktemp -d /run/wraith/tpm-unseal.XXXXXX) || { tpm_log "unseal: mktemp failed"; exit 1; }
+KEYFILE="/run/wraith/luks.key.$$"
+
+cleanup_on_fail() { rm -rf "$WORK"; rm -f "$KEYFILE"; }
+
+cp /boot/luks.sealed.pub  "$WORK/pub.bin"  || { cleanup_on_fail; tpm_log "unseal: cp pub";  exit 1; }
+cp /boot/luks.sealed.priv "$WORK/priv.bin" || { cleanup_on_fail; tpm_log "unseal: cp priv"; exit 1; }
+
+run_t() {
+  if command -v timeout >/dev/null 2>&1; then timeout 20 "$@"; else "$@"; fi
+}
+
+(
+  set -e
+  cd "$WORK"
+  run_t tpm2_createprimary -Q -C o -G rsa2048 -g sha256 -c primary.ctx
+  run_t tpm2_load -Q -C primary.ctx -u pub.bin -r priv.bin -c sealed.ctx
+  run_t tpm2_startauthsession -Q --policy-session -S session.ctx
+  run_t tpm2_policypcr -Q -S session.ctx -l "$WRAITH_TPM_PCRS"
+  run_t tpm2_unseal -Q -p session:session.ctx -c sealed.ctx -o "$KEYFILE"
+  run_t tpm2_flushcontext session.ctx || true
+) 2>>"$WRAITH_TPM_LOG" || {
+  tpm_log "unseal: tpm2 chain failed (PCR mismatch or TPM state change)"
+  cleanup_on_fail
+  exit 1
+}
+
+[ -s "$KEYFILE" ] || { tpm_log "unseal: keyfile empty after unseal"; cleanup_on_fail; exit 1; }
+
+rm -rf "$WORK"
+printf '%s\n' "$KEYFILE"
+tpm_log "unseal: OK keyfile=$KEYFILE"
+exit 0

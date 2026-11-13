@@ -8,7 +8,36 @@ case "$1" in
         MOUNTED=0
         if [ -b /dev/vda4 ]; then
             if command -v cryptsetup >/dev/null 2>&1 && cryptsetup isLuks /dev/vda4 2>/dev/null; then
-                if [ -f /boot/luks.key ]; then
+                # ── Item 1: TPM unseal priority ──
+                # Sealed blob coexists with plaintext in v1. No auto-remove;
+                # one-way transition is operator-triggered (wraith-tpm-finalize).
+                if [ -s /boot/luks.sealed.pub ] && [ -s /boot/luks.sealed.priv ]; then
+                    TPM_KEYFILE=$(/sbin/wraith-tpm-unseal 2>/dev/null)
+                    TPM_RC=$?
+                    case "$TPM_RC" in
+                        0)
+                            echo -n "TPM unseal OK. "
+                            if cryptsetup luksOpen --key-file "$TPM_KEYFILE" /dev/vda4 wraith-data 2>/dev/null; then
+                                mount -t ext4 /dev/mapper/wraith-data /data 2>/dev/null && MOUNTED=1
+                            fi
+                            rm -f "$TPM_KEYFILE"
+                            ;;
+                        2)
+                            echo -n "TPM absent, using plaintext keyfile. "
+                            ;;
+                        *)
+                            echo -n "TPM unseal failed (rc=$TPM_RC), falling back to plaintext keyfile. "
+                            ;;
+                    esac
+                else
+                    if [ -e /dev/tpmrm0 ]; then
+                        echo -n "no sealed blob, TPM present but not sealed, using plaintext keyfile. "
+                    else
+                        echo -n "TPM absent, using plaintext keyfile. "
+                    fi
+                fi
+                # ── Plaintext fallback (unchanged behavior) ──
+                if [ "$MOUNTED" = "0" ] && [ -f /boot/luks.key ]; then
                     if cryptsetup luksOpen --key-file /boot/luks.key /dev/vda4 wraith-data 2>/dev/null; then
                         mount -t ext4 /dev/mapper/wraith-data /data 2>/dev/null && MOUNTED=1
                     fi

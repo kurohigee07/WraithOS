@@ -1,0 +1,24 @@
+#!/bin/sh
+# wraith-tpm-reseal — OPERATOR: re-seal from plaintext after PCR change.
+# Requires plaintext present. Run prepare-update first if it was finalized.
+set -u
+. /lib/wraith/tpm-lib.sh
+tpm_log "reseal: start"
+
+[ -r /boot/luks.key ] || {
+  tpm_log "reseal: plaintext missing — run wraith-tpm-prepare-update first (if sealed blob still unsealable) or restore /boot/luks.key from backup"
+  exit 1
+}
+
+tpm_check; RC=$?
+case "$RC" in
+  0) ;;
+  2) tpm_log "reseal: TPM absent"; exit 2 ;;
+  *) tpm_log "reseal: TPM present but not functional"; exit 1 ;;
+esac
+
+/sbin/wraith-tpm-seal /boot/luks.key 2>>"$WRAITH_TPM_LOG"; RC=$?
+case "$RC" in
+  0) tpm_log "reseal: OK pcrs=$WRAITH_TPM_PCRS (plaintext kept)"; exit 0 ;;
+  *) tpm_log "reseal: seal failed rc=$RC"; exit 1 ;;
+esac

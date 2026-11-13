@@ -8,6 +8,106 @@ describes the change theme. `v0.30` was not released.
 Crate manifests declare `0.1.0`; the tags are the release units.
 Releases before `v0.24.0` are not itemized here; see commit history.
 
+## [v0.49.0-tpm-luks-seal] - 2026-11-13
+
+### Added
+
+- **TPM 2.0 sealing of the LUKS keyfile (x86_64 + aarch64).** The
+  wizard now seals `/boot/luks.key` to a TPM 2.0 device, when present,
+  under a PCR policy (`sha256:0,1,2,3,4,5,6,7`) that includes firmware
+  code/config, the GRUB EFI binary, grub.cfg, and Secure Boot state.
+  The sealed blob is written to `/boot/luks.sealed.{pub,priv}` next to
+  the plaintext keyfile. Anyone with only the disk can no longer
+  decrypt `/data`: the sealed blob will not unseal on a different TPM
+  and will not unseal if the boot chain's PCRs have changed.
+- Five new operator scripts under `/sbin`:
+  - `wraith-tpm-seal` — seal a keyfile to the current TPM. Idempotent
+    in the sense that it overwrites the sealed pair.
+  - `wraith-tpm-unseal` — unseal to a tmpfs keyfile. Writes only the
+    keyfile path to stdout, all diagnostics to stderr and to
+    `/var/log/wraith-tpm.log`.
+  - `wraith-tpm-finalize` — one-way transition: re-verify the sealed
+    blob unseals in the current boot, then remove the plaintext
+    keyfile and write `/boot/.luks-sealed-verified`. Idempotent.
+  - `wraith-tpm-reseal` — re-seal after a PCR change. Requires the
+    plaintext keyfile to be present; refuses otherwise.
+  - `wraith-tpm-prepare-update` — restore the plaintext keyfile from
+    the sealed blob before a PCR-affecting operation (kernel/GRUB
+    update, firmware update). No-op if plaintext already present.
+- Shared library `/lib/wraith/tpm-lib.sh` with `TPM2TOOLS_TCTI=device:
+  /dev/tpmrm0` (kernel resource manager, not `tpm2-abrmd`), `/boot`
+  read-write probe, and `tpm_check` tri-state (present+functional /
+  present+broken / absent).
+- Kernel support: `CONFIG_TCG_TPM=y` + `CONFIG_TCG_TIS=y` builtin on
+  both arches. ARM additionally `CONFIG_TCG_TIS_SPI=y` (override of
+  arm64 defconfig's `=m` because the initramfs does not load modules).
+- Buildroot packages in both defconfigs: `BR2_PACKAGE_TPM2_TSS=y`,
+  `BR2_PACKAGE_TPM2_TOOLS=y`. `tpm2-abrmd` is not shipped; kernel
+  resource manager is used.
+
+### Changed
+
+- `/etc/init.d/S30data` unseal priority: TPM-sealed blob first, then
+  plaintext `/boot/luks.key`, then wizard-accessible fallback. Each
+  outcome logs a distinct line on the serial console so recovery is
+  visible without reading the kernel ring buffer.
+- `wizard.rs::finish_handler` calls `/sbin/wraith-tpm-seal` immediately
+  after LUKS setup. Failure is non-fatal: the wizard completes with
+  plaintext-only fallback, and the failure is logged at warn level.
+- Wizard-time `/etc/init.d/S30data restart` performs an unseal
+  validation but does **not** remove the plaintext (v0.49.0 policy,
+  see Notes).
+
+### Verified on QEMU
+
+- **ARM aarch64, swtpm + tpm-tis-device.** Wizard flow → seal → cold
+  reboot → TPM unseal → `/data` mounted. Serial:
+  `Setting up /data: TPM unseal OK. OK (A/B)`. `/var/log/wraith-tpm.log`:
+  `unseal: OK keyfile=/run/wraith/luks.key.N`.
+- **ARM aarch64, no TPM.** Wizard with encryption password → plaintext
+  only, no sealed blob. Cold boot serial:
+  `Setting up /data: TPM absent, using plaintext keyfile. OK (A/B)`.
+- **ARM aarch64, TPM cleared externally.** New TPM state, same image
+  with sealed pair. Cold boot serial:
+  `Setting up /data: TPM unseal failed (rc=1), falling back to
+  plaintext keyfile. OK (A/B)`. Sealed pair, plaintext, and `/data`
+  all intact.
+- **ARM aarch64, PCR change.** `tpm2_pcrextend 0:sha256=...01` inside
+  the guest changed PCR 0 from `0x5F10...` to `0x3E93...`. Subsequent
+  `wraith-tpm-unseal` failed with TPM error `0x99D` (`a policy check
+  failed`), proving the PCR policy is enforced at the TPM, not by the
+  script. Fallback to plaintext worked.
+- **x86_64, swtpm + tpm-tis.** Same wizard → seal → cold-boot unseal
+  flow as ARM. Cold boot serial:
+  `Setting up /data: TPM unseal OK. OK (A/B)`.
+- **x86_64, no TPM.** Fresh image, wizard → plaintext-only, sealed
+  pair never created. Cold boot serial:
+  `Setting up /data: TPM absent, using plaintext keyfile. OK (A/B)`.
+
+### Notes
+
+- **v0.49.0 policy: sealed + plaintext coexist.** The plaintext
+  keyfile is never auto-removed. `wraith-tpm-finalize` performs the
+  one-way transition explicitly, after a successful unseal in the
+  current boot. Auto-removal on first successful unseal was
+  rejected as a data-loss risk: any future PCR change (kernel/GRUB
+  update, firmware update, TPM clear) with plaintext already removed
+  would brick `/data` without an operator in the loop. Auto-removal
+  is deferred to v0.50.0 after a production data cycle.
+- **Kernel/initramfs updates require `wraith-tpm-prepare-update`
+  before `rauc install`** while plaintext is finalized away.
+  Skipping this step bricks `/data`. A RAUC bundle-level
+  `hooks.sh` that automates this is deferred to v0.50.0.
+- **x86 PCR dump not captured.** PCR 0-7 stability on x86_64 is
+  inferred from successful seal/unseal across cold boots; individual
+  PCR contents were dumped only on ARM. A dedicated x86 PCR dump
+  is deferred to v0.50.0 hardening.
+- **Recovery runbook** is in `docs/wraithos.md` → "TPM 2.0 sealing".
+  Threat model and PCR justification are in `docs/security.md` →
+  "TPM 2.0 sealing (shipped in v0.49.0)".
+- ARM Verified Boot via U-Boot FIT signing remains out of scope and
+  is unchanged from prior releases.
+
 ## [v0.48.0-audit-batching] - 2026-11-12
 
 ### Changed

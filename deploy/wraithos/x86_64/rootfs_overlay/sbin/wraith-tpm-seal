@@ -1,0 +1,40 @@
+#!/bin/sh
+# wraith-tpm-seal — seal /boot/luks.key to TPM 2.0 under PCR policy.
+# Does NOT remove plaintext keyfile (v1 policy: coexist until -finalize).
+# Exit: 0=sealed, 1=error, 2=TPM absent
+set -u
+. /lib/wraith/tpm-lib.sh
+
+KEYFILE="${1:-/boot/luks.key}"
+tpm_log "seal: start keyfile=$KEYFILE"
+
+tpm_check; RC=$?
+case "$RC" in
+  0) ;;
+  2) tpm_log "seal: TPM absent"; exit 2 ;;
+  *) tpm_log "seal: TPM present but not functional"; exit 1 ;;
+esac
+
+boot_rw_check /boot || { tpm_log "seal: /boot not writable"; exit 1; }
+[ -r "$KEYFILE" ] || { tpm_log "seal: keyfile missing $KEYFILE"; exit 1; }
+
+mkdir -p /run/wraith
+WORK=$(mktemp -d /run/wraith/tpm-seal.XXXXXX) || { tpm_log "seal: mktemp failed"; exit 1; }
+trap 'rm -rf "$WORK"' EXIT INT TERM
+
+(
+  set -e
+  cd "$WORK"
+  tpm2_createprimary -Q -C o -G rsa2048 -g sha256 -c primary.ctx
+  tpm2_createpolicy -Q --policy-pcr -l "$WRAITH_TPM_PCRS" -L policy.digest
+  tpm2_create -Q -C primary.ctx -u pub.bin -r priv.bin -i "$KEYFILE" -L policy.digest
+) || { tpm_log "seal: tpm2 chain failed"; exit 1; }
+
+cp "$WORK/pub.bin"  /boot/luks.sealed.pub  || { tpm_log "seal: cp pub failed";  exit 1; }
+cp "$WORK/priv.bin" /boot/luks.sealed.priv || { tpm_log "seal: cp priv failed"; rm -f /boot/luks.sealed.pub; exit 1; }
+sync
+[ -s /boot/luks.sealed.pub ]  || { tpm_log "seal: sealed.pub empty";  exit 1; }
+[ -s /boot/luks.sealed.priv ] || { tpm_log "seal: sealed.priv empty"; exit 1; }
+
+tpm_log "seal: OK pub=$(wc -c </boot/luks.sealed.pub)B priv=$(wc -c </boot/luks.sealed.priv)B pcrs=$WRAITH_TPM_PCRS"
+exit 0

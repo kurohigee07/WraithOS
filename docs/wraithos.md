@@ -53,6 +53,115 @@ Persistent mapping when `/data` mounts successfully:
 
 The seed config lives at `/etc/wraith.default/orchestrator.toml`. S30data copies it only if persistent config is missing. `fstab` is not the whole story: inittab and init scripts perform the important mounts/bind mounts.
 
+## TPM 2.0 sealing (v0.49.0)
+
+The wizard seals `/boot/luks.key` to TPM 2.0 whenever one is present.
+The sealed blob is `/boot/luks.sealed.{pub,priv}` (two files, both
+needed). Both arches share the same PCR policy.
+
+### Boot-time unseal priority
+
+`/etc/init.d/S30data` resolves `/data` in this order:
+
+1. **TPM unseal.** If both `luks.sealed.pub` and `.priv` exist, run
+   `/sbin/wraith-tpm-unseal`, then `cryptsetup luksOpen` with the
+   resulting tmpfs keyfile.
+2. **Plaintext fallback.** If step 1 did not mount `/data` and
+   `/boot/luks.key` exists, unlock with it.
+3. **Wizard fallback.** `/data` stays unmounted; the wizard is
+   reachable for a fresh setup.
+
+Serial log lines (`Setting up /data: ...`):
+
+| Line | Meaning |
+|---|---|
+| `TPM unseal OK.` | Sealed path worked |
+| `TPM absent, using plaintext keyfile.` | No `/dev/tpmrm0` |
+| `TPM unseal failed (rc=N), falling back to plaintext keyfile.` | PCR mismatch or TPM state change |
+| `no sealed blob, TPM present but not sealed, using plaintext keyfile.` | TPM device present, sealed blob never created |
+| `LUKS keyfile unlock failed.` | Neither path worked; `/data` unmounted |
+
+### PCR policy
+
+Both arches: `sha256:0,1,2,3,4,5,6,7`.
+
+- PCR 0-3: firmware code/config, option ROMs
+- PCR 4: GRUB EFI binary
+- PCR 5: grub.cfg
+- PCR 6: host platform (constant on QEMU virt / SeaBIOS)
+- PCR 7: Secure Boot state
+
+Verified stable across cold boots on ARM (edk2 QEMU_EFI.fd) and
+x86_64 (SeaBIOS 1.16.3, `-cpu max`). Individual PCR contents were
+dumped on ARM only; x86 stability is inferred from successful
+seal/unseal across cold boots.
+
+Protects against: disk theft to a different TPM, tampering with the
+GRUB EFI binary or grub.cfg on the ESP.
+
+Does NOT protect against: U-Boot FIT measured boot (ARM-specific, no
+U-Boot shipped on this image); runtime modification of `/dev/vda2`
+or `/dev/vda3` after boot (dm-verity on RAUC bundles covers transport
+only); firmware replacement combined with matching PCRs.
+
+### v0.49.0 policy: sealed + plaintext coexist
+
+The plaintext `/boot/luks.key` is **never auto-removed** in v0.49.0.
+Auto-removal requires explicit operator action via
+`/sbin/wraith-tpm-finalize`, which re-verifies the sealed blob unseals
+in the current boot, removes the plaintext, writes
+`/boot/.luks-sealed-verified`, and logs a one-way transition. If the
+sealed blob does not unseal, `finalize` refuses and exits non-zero.
+If already finalized, it is idempotent (exit 0).
+
+Once finalized, run `/sbin/wraith-tpm-prepare-update` **before** any
+PCR-affecting operation (kernel/GRUB update, firmware update, RAUC
+install that touches `/boot`). It unseals to `/boot/luks.key`
+(restoring the plaintext fallback for the update window) and exits
+cleanly. After the update and a successful boot, run
+`/sbin/wraith-tpm-reseal` to seal under the new PCRs, then optionally
+`finalize` again.
+
+### Operator recovery commands
+
+    # Re-seal after a PCR change (plaintext present)
+    /sbin/wraith-tpm-reseal
+
+    # Restore plaintext, re-seal, re-finalize (plaintext was removed)
+    /sbin/wraith-tpm-prepare-update
+    /sbin/wraith-tpm-reseal
+    /sbin/wraith-tpm-finalize
+
+    # One-way: remove plaintext after confirming sealed works
+    /sbin/wraith-tpm-finalize
+
+    # Verify current state
+    ls -la /boot/luks.key /boot/luks.sealed.pub /boot/luks.sealed.priv
+    test -f /boot/.luks-sealed-verified && echo finalized
+    tail -20 /var/log/wraith-tpm.log
+
+| Symptom | Procedure |
+|---|---|
+| `TPM unseal OK` every boot | None (normal) |
+| `TPM absent` | None; plaintext fallback in use |
+| `TPM unseal failed` (plaintext present) | `/sbin/wraith-tpm-reseal` |
+| `TPM unseal failed` (plaintext finalized) | `prepare-update` + `reseal` + `finalize` |
+| `no sealed blob, TPM present` | `/sbin/wraith-tpm-seal /boot/luks.key` |
+
+### Kernel/initramfs update procedure (finalized state)
+
+1. `/sbin/wraith-tpm-prepare-update` — restores plaintext.
+2. `rauc install bundle.raucb` — bundle updates rootfs slot; `/boot`
+   contents survive (ESP is not a RAUC slot).
+3. Reboot.
+4. `/sbin/wraith-tpm-reseal` — seal under new PCRs.
+5. `/sbin/wraith-tpm-finalize` — remove plaintext, set marker.
+
+**Skipping step 1 while plaintext is finalized away and then updating
+the kernel will brick `/data` on the next boot.** This is the most
+important rule in this section. v0.50.0 automation via a RAUC
+bundle-level `hooks.sh` is tracked as roadmap.
+
 ## x86 configuration caveats
 
 The checked-in `wraithos_x86_64_defconfig` selects **systemd**, while the overlay provides BusyBox `/etc/inittab` and S99 scripts. The systemd unit and its absolute symlink are also present, but historical working boot notes describe BusyBox init. This is a source/config mismatch to resolve before claiming a clean reproducible image build.
