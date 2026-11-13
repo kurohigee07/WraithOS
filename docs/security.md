@@ -197,13 +197,48 @@ on boot. An attacker with physical access to the disk can extract
 that keyfile and decrypt `/data` offline. This is a real limitation,
 not a theoretical one.
 
-Mitigations planned for v0.5x:
+### TPM 2.0 sealing (shipped in v0.49.0)
 
-- **TPM 2.0 sealing.** Seal the keyfile to PCRs covering the boot
-  chain (kernel, initramfs, cmdline). A keyfile extracted from a
-  different machine or a modified boot chain will not unseal.
-  Requires hardware TPM; QEMU `swtpm` can be used for testing but
-  does not prove production behaviour.
+The wizard seals `/boot/luks.key` to a TPM 2.0 device under a PCR
+policy (`sha256:0,1,2,3,4,5,6,7`) whenever one is present. The sealed
+blob is written to `/boot/luks.sealed.{pub,priv}` next to (not
+replacing) the plaintext keyfile. On every boot `/etc/init.d/S30data`
+attempts TPM unseal first; only if it fails does it fall back to the
+plaintext keyfile.
+
+PCR selection by architecture:
+
+- **ARM aarch64.** PCR 0-7 (edk2 firmware code/config, GRUB EFI
+  binary, grub.cfg, Secure Boot state). Verified stable across cold
+  boots on QEMU `QEMU_EFI.fd`. Protects against disk theft to a
+  different TPM and against tampering with the GRUB binary/config.
+  Does **not** cover U-Boot FIT measured boot (no U-Boot on this
+  image); tracked as v0.50 roadmap.
+- **x86_64.** Same PCR set; verified stable on BIOS GRUB with
+  SeaBIOS 1.16.3 and `-cpu max`.
+
+Kernel support: `CONFIG_TCG_TPM=y` + `CONFIG_TCG_TIS=y` builtin on
+both arches (ARM additionally `CONFIG_TCG_TIS_SPI=y`). The kernel
+resource manager `/dev/tpmrm0` is the TCTI endpoint
+(`device:/dev/tpmrm0`); `tpm2-abrmd` is not shipped.
+
+**v0.49.0 policy: sealed + plaintext coexist.** The plaintext
+keyfile is **never** auto-removed. Auto-removal requires an explicit
+operator command (`wraith-tpm-finalize`) after re-verifying that the
+sealed blob unseals successfully in the current boot. This is a
+data-safety boundary: accidentally removing the only fallback would
+brick `/data` on the next PCR change (kernel/firmware update, TPM
+clear). Auto-removal on first successful unseal is deferred to
+v0.50.0 after the TPM path has survived a production data cycle.
+
+**Recovery procedures.** See `docs/wraithos.md` → "TPM 2.0 sealing"
+for the operator-facing runbook (how to re-seal after a PCR change,
+how to recover when the TPM has been cleared externally, how to
+revert to plaintext-only mode). The kernel/initramfs update procedure
+requires `wraith-tpm-prepare-update` **before** `rauc install` while
+plaintext has been finalized away.
+
+Mitigations still planned for v0.5x:
 - **Network-bound disk encryption.** Clevis/Tang with a Tang server
   on a trusted network, optionally bound to a second factor. Requires
   a Tang endpoint and a recovery keyfile printed at setup time. This

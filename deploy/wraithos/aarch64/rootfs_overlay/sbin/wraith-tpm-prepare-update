@@ -1,0 +1,31 @@
+#!/bin/sh
+# wraith-tpm-prepare-update — OPERATOR: before any PCR-affecting operation
+# (rauc install that changes GRUB, firmware update), restore plaintext.
+# No-op success if plaintext already exists.
+set -u
+. /lib/wraith/tpm-lib.sh
+tpm_log "prepare-update: start"
+
+if [ -s /boot/luks.key ]; then
+    tpm_log "prepare-update: plaintext already present, no-op"
+    exit 0
+fi
+[ -s /boot/luks.sealed.pub ]  || { tpm_log "prepare-update: no sealed.pub and no plaintext — cannot recover"; exit 1; }
+[ -s /boot/luks.sealed.priv ] || { tpm_log "prepare-update: no sealed.priv and no plaintext — cannot recover"; exit 1; }
+
+boot_rw_check /boot || { tpm_log "prepare-update: /boot not writable"; exit 1; }
+
+K=$(/sbin/wraith-tpm-unseal 2>>"$WRAITH_TPM_LOG"); RC=$?
+case "$RC" in
+  0) ;;
+  2) tpm_log "prepare-update: TPM absent"; exit 2 ;;
+  *) tpm_log "prepare-update: unseal failed rc=$RC — cannot restore plaintext"; exit 1 ;;
+esac
+[ -s "$K" ] || { tpm_log "prepare-update: unseal produced empty keyfile"; rm -f "$K"; exit 1; }
+
+cp "$K" /boot/luks.key || { rm -f "$K"; tpm_log "prepare-update: write plaintext failed"; exit 1; }
+chmod 600 /boot/luks.key
+rm -f "$K"
+sync
+tpm_log "prepare-update: plaintext restored — run the update, then wraith-tpm-reseal"
+exit 0

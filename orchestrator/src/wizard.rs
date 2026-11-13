@@ -320,6 +320,31 @@ fn succeed(step: &str, out: &std::process::Output) -> LuksResult<()> {
     }
 }
 
+/// Item 1: best-effort seal of /boot/luks.key to TPM 2.0.
+/// Never fails wizard completion — plaintext keyfile stays as
+/// recovery path until operator runs wraith-tpm-finalize.
+enum SealOutcome {
+    Sealed,
+    TpmAbsent,
+    Failed(String),
+}
+
+fn tpm_seal_best_effort() -> SealOutcome {
+    let out = Command::new("/sbin/wraith-tpm-seal")
+        .arg("/boot/luks.key")
+        .output();
+    match out {
+        Ok(o) if o.status.success() => SealOutcome::Sealed,
+        Ok(o) if o.status.code() == Some(2) => SealOutcome::TpmAbsent,
+        Ok(o) => SealOutcome::Failed(format!(
+            "exit={:?} stderr_tail={}",
+            o.status.code(),
+            stderr_tail(&o)
+        )),
+        Err(e) => SealOutcome::Failed(format!("spawn failed: {e}")),
+    }
+}
+
 fn derive_keyfile(pwd: &str) -> [u8; 32] {
     let mut out = [0u8; 32];
     Argon2::default()
@@ -535,6 +560,15 @@ async fn finish_handler(State(s): State<ApiState>) -> Response {
             w.luks_enabled = true;
             w.encryption_password = None;
             info!("wizard: LUKS data partition ready");
+
+            // Item 1: best-effort TPM seal. Non-fatal.
+            match tpm_seal_best_effort() {
+                SealOutcome::Sealed => info!("wizard: TPM seal succeeded"),
+                SealOutcome::TpmAbsent => info!("wizard: TPM absent, plaintext keyfile only"),
+                SealOutcome::Failed(err) => {
+                    warn!(err = %err, "wizard: TPM seal failed (non-fatal, plaintext fallback)")
+                }
+            }
             // Re-mount /data from the new LUKS volume immediately so
             // RAUC status writes and orchestrator state see a
             // writable /data without waiting for a reboot. S30data

@@ -1,0 +1,35 @@
+#!/bin/sh
+# wraith-tpm-finalize — OPERATOR, one-way: remove plaintext keyfile after
+# re-verifying sealed blob unseals NOW. Refuse if unseal fails.
+# Idempotent: if already finalized, exits 0.
+set -u
+. /lib/wraith/tpm-lib.sh
+tpm_log "finalize: start"
+
+if [ -f /boot/.luks-sealed-verified ]; then
+    tpm_log "finalize: already finalized ($(head -1 /boot/.luks-sealed-verified))"
+    exit 0
+fi
+
+boot_rw_check /boot || { tpm_log "finalize: /boot not writable"; exit 1; }
+[ -s /boot/luks.sealed.pub ]  || { tpm_log "finalize: no sealed.pub";  exit 1; }
+[ -s /boot/luks.sealed.priv ] || { tpm_log "finalize: no sealed.priv"; exit 1; }
+[ -r /boot/luks.key ]         || { tpm_log "finalize: no plaintext (already removed?)"; exit 1; }
+
+K=$(/sbin/wraith-tpm-unseal 2>>"$WRAITH_TPM_LOG"); RC=$?
+case "$RC" in
+  0) ;;
+  2) tpm_log "finalize: TPM absent, refusing removal"; exit 1 ;;
+  *) tpm_log "finalize: unseal verification failed (rc=$RC), refusing removal"; exit 1 ;;
+esac
+[ -s "$K" ] || { tpm_log "finalize: unseal produced empty keyfile"; rm -f "$K"; exit 1; }
+rm -f "$K"
+
+rm -f /boot/luks.key || { tpm_log "finalize: rm plaintext failed"; exit 1; }
+{
+  echo "finalized_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  echo "pcrs=$WRAITH_TPM_PCRS"
+} > /boot/.luks-sealed-verified
+sync
+tpm_log "*** ONE-WAY: plaintext removed; sealed verified; PCRs=$WRAITH_TPM_PCRS ***"
+exit 0
