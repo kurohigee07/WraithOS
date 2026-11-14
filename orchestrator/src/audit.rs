@@ -12,10 +12,11 @@
 //! load the producer awaits and backpressure propagates naturally
 //! instead of dropping entries.
 
+use std::sync::Arc;
 use std::time::Duration;
 
 use sqlx::SqlitePool;
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, Mutex, Notify};
 use tokio::task::JoinHandle;
 use tracing::{debug, warn};
 
@@ -34,16 +35,25 @@ pub struct AuditEntry {
 
 pub struct AuditWriter {
     tx: mpsc::Sender<AuditEntry>,
-    handle: Option<JoinHandle<()>>,
+    /// Mutex so `drain(&self)` can `.take()` the handle from behind
+    /// an `Arc<AuditWriter>` (AppContext holds `Arc<AuditWriter>`,
+    /// callers cannot move out of it).
+    handle: Mutex<Option<JoinHandle<()>>>,
+    /// Explicit shutdown signal so `drain()` can wake the writer
+    /// without relying on channel-closed (which only fires when all
+    /// senders, including the one held by this struct, are dropped).
+    shutdown: Arc<Notify>,
 }
 
 impl AuditWriter {
     pub fn spawn(db: SqlitePool) -> Self {
         let (tx, rx) = mpsc::channel(CHANNEL_CAPACITY);
-        let handle = tokio::spawn(writer_loop(db, rx));
+        let shutdown = Arc::new(Notify::new());
+        let handle = tokio::spawn(writer_loop(db, rx, shutdown.clone()));
         Self {
             tx,
-            handle: Some(handle),
+            handle: Mutex::new(Some(handle)),
+            shutdown,
         }
     }
 
@@ -51,17 +61,30 @@ impl AuditWriter {
         self.tx.clone()
     }
 
-    /// Drain remaining entries. Called from AppContext::shutdown.
-    /// Dropping all external senders before this is called lets the
-    /// writer observe None and exit; the timeout is a safety net.
-    pub async fn shutdown(mut self) {
-        if let Some(h) = self.handle.take() {
-            let _ = tokio::time::timeout(Duration::from_secs(2), h).await;
+    /// Drain remaining entries and stop the writer task. Called from
+    /// `AppContext::shutdown(&self)`. `&self` because `AppContext`
+    /// holds `Arc<AuditWriter>`; `drain()` uses a Notify signal plus
+    /// a Mutex-guarded handle so the writer wakes, drains the
+    /// remaining queue, flushes, and exits. Bounded by a 3-second
+    /// timeout: a stuck DB call must not block process exit.
+    ///
+    /// Note: entries pushed between the last `sender()` drop and this
+    /// call are NOT lost — the writer drains `try_recv()` after the
+    /// notify before final flush (see writer_loop).
+    pub async fn drain(&self) {
+        self.shutdown.notify_waiters();
+        let mut guard = self.handle.lock().await;
+        if let Some(h) = guard.take() {
+            let _ = tokio::time::timeout(Duration::from_secs(3), h).await;
         }
     }
 }
 
-async fn writer_loop(db: SqlitePool, mut rx: mpsc::Receiver<AuditEntry>) {
+async fn writer_loop(
+    db: SqlitePool,
+    mut rx: mpsc::Receiver<AuditEntry>,
+    shutdown: Arc<Notify>,
+) {
     let mut batch: Vec<AuditEntry> = Vec::with_capacity(BATCH_MAX);
     let mut ticker = tokio::time::interval(Duration::from_millis(FLUSH_INTERVAL_MS));
     ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
@@ -75,19 +98,28 @@ async fn writer_loop(db: SqlitePool, mut rx: mpsc::Receiver<AuditEntry>) {
                         flush(&db, &mut batch).await;
                     }
                 }
-                None => {
-                    if !batch.is_empty() {
-                        flush(&db, &mut batch).await;
-                    }
-                    break;
-                }
+                None => break,
             },
             _ = ticker.tick() => {
                 if !batch.is_empty() {
                     flush(&db, &mut batch).await;
                 }
             }
+            _ = shutdown.notified() => break,
         }
+    }
+
+    // Drain any remaining queued entries after shutdown notify.
+    // Without this, entries pushed between the last sender drop and
+    // the shutdown signal would be dropped.
+    while let Ok(e) = rx.try_recv() {
+        batch.push(e);
+        if batch.len() >= BATCH_MAX {
+            flush(&db, &mut batch).await;
+        }
+    }
+    if !batch.is_empty() {
+        flush(&db, &mut batch).await;
     }
     debug!("audit writer stopped");
 }

@@ -192,7 +192,7 @@ impl WasmModule {
         // audit.rs coalesces rows into a single INSERT per 50 ms or 100
         // rows. Awaiting send() applies backpressure without dropping
         // entries when the channel is full.
-        let _ = audit_tx
+        if let Err(e) = audit_tx
             .send(AuditEntry {
                 tenant: tenant_id.clone(),
                 module_id: module_id.clone(),
@@ -200,7 +200,19 @@ impl WasmModule {
                 duration_ms: (elapsed * 1000.0) as u64,
                 error_message: err_msg,
             })
-            .await;
+            .await
+        {
+            // Sender can only fail if the writer task exited (channel
+            // closed). This is not fatal for the execute response, but
+            // the row is lost. Log loudly: silent drop violates the
+            // audit invariant.
+            tracing::warn!(
+                tenant = %tenant_id,
+                module_id = %module_id,
+                err = %e,
+                "audit send failed: entry dropped"
+            );
+        }
         metrics::histogram!(
             "wasm_execution_duration_seconds",
             "module" => module_id,
