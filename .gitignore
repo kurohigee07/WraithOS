@@ -10,6 +10,11 @@ Cargo.lock.bak
 modules/**/*.wasm
 !modules/.gitkeep
 
+# Backup / temp files from editing
+*.bak
+*.orig
+*.pre-*
+
 # Editor / OS
 .vscode/
 .idea/
