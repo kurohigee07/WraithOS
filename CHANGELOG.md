@@ -8,6 +8,114 @@ describes the change theme. `v0.30` was not released.
 Crate manifests declare `0.1.0`; the tags are the release units.
 Releases before `v0.24.0` are not itemized here; see commit history.
 
+## [v0.50.0-secureboot] - 2026-11-14
+
+### Added
+
+- **UEFI Secure Boot for x86_64** (aarch64 Secure Boot remains out of
+  scope; requires U-Boot FIT measured boot which the current
+  EFI-GRUB aarch64 image does not provide).
+- Device-specific Secure Boot key generation script at
+  `deploy/wraithos/uefi/gen-sb-keys.sh`. Produces PK, KEK, and db
+  (RSA-2048, SHA-256, 10-year) encrypted with a password from
+  `WRAITH_SB_KEYPASS`. Keys are never committed; the script refuses
+  overwrite and warns loudly if the output directory is outside
+  `/tmp/`.
+- Build-time signing pipeline in `post-image.sh`:
+  - `bzImage` is signed with the db key before being staged on the
+    ESP. Firmware `LoadImage` verifies it through the EFI stub
+    loader.
+  - `grubx64.efi` is built from an `x86_64-efi` GRUB target and
+    signed with the db key before being placed at
+    `EFI/BOOT/BOOTX64.EFI`.
+  - The whole pipeline is gated by `WRAITH_SB_KEYS` and
+    `WRAITH_SB_KEYPASS`. Without `WRAITH_SB_KEYS` the build emits
+    the legacy BIOS-only image and prints a loud warning so a
+    production release cannot ship unsigned by accident.
+- `deploy/wraithos/x86_64/genimage-efi.cfg`: same as `genimage.cfg`
+  but includes `EFI` in the `boot.vfat` files list. The build picks
+  `genimage-efi.cfg` when signing is enabled and `genimage.cfg`
+  otherwise.
+- New Buildroot config in `wraithos_x86_64_defconfig`:
+  `BR2_TARGET_GRUB2_X86_64_EFI=y` and a matching
+  `BR2_TARGET_GRUB2_BUILTIN_MODULES_EFI` list. GRUB dual-build now
+  produces both `grub.img`/`grub-eltorito.img` (BIOS) and
+  `EFI/BOOT/BOOTX64.EFI` (UEFI).
+- GRUB 2.12 patches at `deploy/wraithos/grub-patches/` applied at
+  build time:
+  - `0001-skip-shim-lock-check.patch`: `linux.c` bypasses the
+    `grub_is_shim_lock_enabled()` guard so GRUB uses the EFI stub
+    loader instead of the legacy shim-requiring path.
+  - `0002-bypass-shim-lock-verifier.patch`: `kern/efi/sb.c`'s
+    `shim_lock_verifier_write` returns `GRUB_ERR_NONE` when the
+    Microsoft shim protocol is absent. This only unblocks the open
+    of an already-firmware-verified kernel; it does not disable
+    firmware verification of `grubx64.efi` or `bzImage`.
+
+### Changed
+
+- `grub.cfg` adds `rootwait` to both menu entries. The UEFI EFI stub
+  boot path enumerates virtio-blk later than the BIOS path; without
+  `rootwait`, `VFS: Cannot open root device "/dev/vda2"` panics
+  before the device is ready.
+- `genimage.cfg` was silently diverged from the ext-tree copy
+  (`size = 640M` present in the repo, absent in ext-tree). The
+  divergence is now removed; the repo file matches the ext-tree
+  source. The 640 MiB padding is still applied by
+  `truncate -s 640M` in `post-image.sh`, not by the genimage config.
+- `post-image.sh` stages `EFI/` from the boot stage into
+  `$BIN_DIR/EFI` before invoking genimage, because genimage resolves
+  `files = {...}` entries from `--inputpath`, not `--rootpath`.
+
+### Verified on QEMU OVMF (KVM)
+
+- **T-SB0** BIOS regression, unsigned image: boots, `/healthz` OK,
+  `rootwait` in cmdline, `dmesg | grep -ci "secure boot"` = 0,
+  `rauc status` reports slot A active.
+- **T-SB1** UEFI + custom PK + Secure Boot ON + signed image:
+  boots to `wraithos login:`, `dmesg` contains
+  `Secure boot enabled`, `rootwait` in cmdline, `/data` mount attempt
+  reached (fallback wizard path, no LUKS set up on fresh image).
+- **T-SB2** UEFI, Secure Boot OFF, unsigned image: boots to login.
+- **T-SB3** stock OVMF (Microsoft PK still in db), Secure Boot ON,
+  signed image: firmware refuses,
+  `BdsDxe: failed to load Boot0001 ...: Access Denied`.
+- **T-SB4a** custom PK, Secure Boot ON, tampered **unsigned** GRUB
+  on the ESP: firmware refuses, same `Access Denied`.
+- **T-SB4b** custom PK, Secure Boot ON, signed GRUB: reaches GRUB
+  menu and boots to login.
+
+### Notes
+
+- **Honest gaps (documented in `docs/security.md`):**
+  - Kernel signature verification depends on OVMF's `LoadImage` PE
+    verification via the EFI stub loader. This works in QEMU OVMF
+    and should work on physical UEFI, but physical hardware is not
+    tested in v0.50.0. Section title:
+    "QEMU-verified, hardware validation pending v0.51".
+  - Rootfs tamper is **not** detected at boot. `/dev/vda2` and
+    `/dev/vda3` are raw squashfs slots with no runtime dm-verity
+    layer. An attacker with raw disk access can replace the rootfs
+    even with Secure Boot on. This gap existed on the BIOS path too;
+    Secure Boot narrows the attack surface to post-install rootfs
+    writes without closing it.
+  - IMA appraisal is not enabled. Deferred to v0.51.
+  - ARM Secure Boot is not part of v0.50.0.
+- **No Microsoft shim.** The build uses two local GRUB patches to
+  bypass the shim-lock requirement rather than shipping a
+  Microsoft-signed shim. This keeps the release self-contained and
+  avoids Microsoft's submission process. The patches do not weaken
+  firmware verification.
+- **Production build requirement.** `WRAITH_SB_KEYS` must be set
+  when building a release image. Without it, the image is BIOS-only
+  and the build prints a loud warning. This is intentional: dev/CI
+  builds without keys must not fail, but production builds must not
+  ship unsigned by accident.
+- **Release engineering note.** The git tag
+  `v0.50.0-secureboot` does not include built images. Operators
+  build with their own device-specific keys; per-device keys are not
+  shared across the fleet.
+
 ## [v0.49.0-tpm-luks-seal] - 2026-11-13
 
 ### Added

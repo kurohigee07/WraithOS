@@ -1,0 +1,12 @@
+# UEFI Secure Boot keys are device-specific and NEVER committed.
+# Default generation path is $WRAITH_SB_KEYS (outside repo).
+# This directory holds only scripts, .auth files derived at build time,
+# and documentation.
+*.key
+*.crt
+*.der
+*.p12
+*.pfx
+*.esl
+*.auth
+sb-keys/
