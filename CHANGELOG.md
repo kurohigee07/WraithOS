@@ -8,6 +8,35 @@ describes the change theme. `v0.30` was not released.
 Crate manifests declare `0.1.0`; the tags are the release units.
 Releases before `v0.24.0` are not itemized here; see commit history.
 
+## [Unreleased]
+
+### Documentation
+
+- **Post-mortem for the v0.50.0 Secure Boot key loss** at
+  `docs/security.md` -> "Build-process post-mortem (v0.50.0 Secure
+  Boot key loss)". Documents the timeline (script defaulted to
+  `/tmp/sb-keys`, inverted warning logic), why the v0.50.0 image
+  remains valid (PE signatures are self-contained; `db.crt` is
+  embedded in the signed binaries and published as a release
+  asset), why a lost key is not a compromise (no attacker
+  capability added), and the fix that landed on main after the
+  v0.50.0 tag (`aae2af7`: `gen-sb-keys.sh` now defaults to
+  `$HOME/sb-keys`, refuses `/tmp/` without `--force-dev`, pauses
+  with a backup checklist).
+- **Certificate migration runbook** at `docs/wraithos.md` ->
+  "Certificate migration v0.50.0 -> v0.52+" (subsection 6 of
+  "Building a UEFI Secure Boot x86_64 image"). Step-by-step
+  procedure for replacing the enrolled `db.crt` on a
+  v0.50.0-provisioned device before flashing a v0.52+ image
+  signed with a different key. Explicitly destructive: wipes the
+  disk including LUKS `/data`. Includes firmware enrollment
+  verification step and `/data` restore step from a v0.50.0
+  backup.
+- Both docs are additive to v0.51.0 (which shipped the dropbear
+  gate). The v0.51.0 tag is not modified; the docs land on
+  `main` after the tag and will roll into v0.52 release notes if
+  not surfaced sooner.
+
 ## [v0.51.0-dropbear-provisioning] - 2026-11-14
 
 ### Security
