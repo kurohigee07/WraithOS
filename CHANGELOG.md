@@ -8,6 +8,96 @@ describes the change theme. `v0.30` was not released.
 Crate manifests declare `0.1.0`; the tags are the release units.
 Releases before `v0.24.0` are not itemized here; see commit history.
 
+## [v0.51.0-dropbear-provisioning] - 2026-11-14
+
+### Security
+
+- **Pre-wizard SSH is closed.** Before this release, `S50dropbear`
+  started on every boot including the first one, before the
+  first-boot wizard had completed. The shipped default root
+  password (`wraithos-admin-change-me`, documented in README) was
+  therefore reachable on port 22 on a fresh device from the moment
+  network came up, before the operator could provision anything.
+  The SSH pubkey mode (`dropbear -s`) only disables password auth
+  *after* the wizard writes the `ssh-pubkey-only` marker, so it did
+  not close the pre-wizard window. An attacker with network
+  reachability to a fresh device could authenticate as root with
+  the public default.
+- Fix: `S50dropbear` now refuses to start until
+  `/var/lib/orchestrator/wizard.complete` exists. On skip it prints
+  `SKIPPED (wizard not complete)` and exits 0 (same exit code as
+  success so BusyBox init does not treat the skip as a failure).
+  The gate applies to both x86_64 and aarch64 boards.
+- `wizard.rs` `finish_handler` restarts `S50dropbear` after the
+  marker is written, so port 22 becomes available in the same
+  wizard run without a reboot. Ordering is intentional: the
+  restart happens after `w.completed = true` and after
+  `write_sync(&marker, ...)`; running it earlier would re-trip the
+  guard.
+- Serial console remains password-authenticated with the documented
+  default throughout. Serial is the primary provisioning interface
+  and the documented recovery path (`docs/security.md` -> "SSH
+  authentication", "Default credentials"). The gate is about
+  *timing* (no pre-wizard SSH exposure), not about *credential*
+  (the default is still valid on serial, and on SSH post-wizard
+  until the operator sets an SSH pubkey or rotates `/etc/shadow` at
+  build time).
+
+### Changed
+
+- README callout, `docs/security.md` "SSH authentication" and
+  "Default credentials" sections, and `docs/wraithos.md`
+  "First-boot wizard and LUKS" section now document the gate and
+  the pre-v0.51 exposure it closes.
+
+### Upgrade notes
+
+- RAUC bundle from v0.50.0 -> v0.51.0 works normally on both
+  arches; the gate is a rootfs change (S50dropbear script +
+  orchestrator binary), and rootfs is what RAUC updates.
+- v0.51.0 does **not** ship an SB-enabled disk image. The v0.50.0
+  SB keys are lost (see the v0.50.0 release notes' "Key
+  lifecycle"). Building v0.51.0 with `WRAITH_SB_KEYS` will fail
+  signing because the private keys are not available; v0.51.0
+  images are BIOS-only by design. SB will resume in a future
+  release after the device-specific key rollout. Existing v0.50.0
+  SB deployments continue to be RAUC-updatable without re-enroll
+  (ESP unchanged).
+- Serial console behaviour, LUKS/TMP sealing (Item 1), and the
+  SB/BIOS dual chain (Item 2) are unchanged from v0.50.0.
+
+### Verified on QEMU
+
+- **T-V051.1** fresh image, no wizard: host SSH probe on port 22
+  gets connection refused / empty banner; serial shows
+  `Starting dropbear sshd: SKIPPED (wizard not complete)`;
+  serial login with `wraithos-admin-change-me` succeeds;
+  wizard endpoints step1/step2/finish return 200.
+- **T-V051.2** wizard completes over serial; within ~2s of
+  `finish` returning `{"status":"complete"}`, `ss -tln` shows
+  `LISTEN 0.0.0.0:22`; host SSH banner is
+  `SSH-2.0-dropbear_2024.85`; `/var/lib/orchestrator/wizard.complete`
+  exists; `healthz` over SSH returns `ok`.
+- **T-V051.3** reboot with marker present: serial shows
+  `Starting dropbear sshd: OK` (no SKIPPED); `/data` mounted via
+  plaintext keyfile (TPM absent fallback, Item 1 path unchanged);
+  `healthz` over SSH returns `ok`; no wizard prompt.
+- **T-SB0** BIOS regression: BIOS path boots, `/healthz` ok,
+  dropbear opens normally when marker present.
+
+### Not changed
+
+- Default root password remains `wraithos-admin-change-me`
+  (documented as a conscious decision in
+  `docs/security.md` -> "Default credentials"). Changing it is a
+  build-time edit to `/etc/shadow` in the board overlay; not part
+  of this fix.
+- No new firewall rules. SSH still binds `0.0.0.0:22` post-wizard;
+  the operator is expected to restrict reachability upstream
+  (`docs/security.md` -> "SSH authentication" known gaps).
+- No changes to `/etc/rauc/system.conf`, RAUC CA, `make-bundle.sh`,
+  the v0.50.0 tag, or the v0.50.0 release assets.
+
 ## [v0.50.0-secureboot] - 2026-11-14
 
 ### Added

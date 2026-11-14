@@ -28,6 +28,15 @@
 > `/etc/shadow` password auth so a lost key is recoverable from the
 > tty. When the field is empty dropbear keeps password auth.
 >
+> **SSH is closed before the wizard completes (v0.51+).** The
+> dropbear init script refuses to start until
+> `/var/lib/orchestrator/wizard.complete` exists, so a fresh device
+> does not expose port 22 while it waits for provisioning. Serial
+> console remains password-authenticated with the default above
+> (intentional - it is the primary interface). The wizard restarts
+> dropbear at the end of `finish_handler`, so SSH becomes available
+> in the same wizard run without a reboot.
+>
 > **`/data` encryption.** The first-boot wizard formats `/dev/vda4`
 > with LUKS2 and derives the keyfile from the operator-chosen
 > encryption password. `/boot/luks.key` is written to the ESP so
@@ -154,6 +163,18 @@ as a convenience for serial-adjacent recovery. **Serial console
 remains password-authenticated in both modes** — the Linux
 `/etc/shadow` password is independent of dropbear — so a lost SSH
 key is recoverable from the serial line without re-flashing.
+
+**SSH only opens after the wizard completes (v0.51+).**
+`S50dropbear` refuses to start until
+`/var/lib/orchestrator/wizard.complete` exists, so on a fresh device
+port 22 is closed from first boot until the wizard finishes.
+`finish_handler` restarts dropbear immediately after writing the
+marker; no reboot required. Serial console is the interface used
+to reach the wizard, and it continues to accept the default
+password throughout (see the callout at the top of this file).
+Pre-v0.51 images do not have this gate - the pre-wizard SSH
+window there was an accepted risk documented in earlier releases
+and closed as of v0.51.
 
 Dropbear on musl is fragile: the C library ships a `crypt()` stub
 that returns `NULL`, so the linker resolves the symbol from the stub
