@@ -31,7 +31,7 @@ data/
 tests/fixtures/*/target/
 tests/fixtures/*/Cargo.lock
 
-# Termux package (moved from wraithos/termux-package/)
+# Termux package
 deploy/wraithos/termux-package/orchestrator
 deploy/wraithos/termux-package/*.db*
 deploy/wraithos/termux-package/logs/

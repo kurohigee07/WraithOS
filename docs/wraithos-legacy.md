@@ -17,7 +17,7 @@ Start with the detailed, source-guided [WraithOS guide](../docs/wraithos.md). It
 - `buildroot-configs/wraithos_x86_64_defconfig` — x86 defconfig; review its systemd/BusyBox and post-image wiring mismatches before building.
 - `buildroot-configs/wraithos_aarch64_defconfig` — ARM defconfig with hardcoded external-tree paths that must be adapted.
 - `buildroot-configs/wraithos_x86_64_final.config` — **only a mirror directive**, not a complete final Buildroot configuration.
-- `termux-package/` — phone-oriented config and helper scripts; supply the binary separately.
+- `deploy/wraithos/termux-package/` — phone-oriented config and helper scripts; supply the binary separately.
 
 ## Historical x86 rebuild outline
 
