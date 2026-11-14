@@ -303,10 +303,16 @@ impl AppContext {
 
     pub async fn shutdown(&self) -> anyhow::Result<()> {
         debug!("AppContext shutting down");
-        // Audit writer holds a DB clone; drain it before closing the pool
-        // so queued rows land on disk. Arc::clone → AuditWriter::shutdown
-        // is &self-safe via an internal timeout on the join handle.
-        let _ = tokio::time::timeout(Duration::from_secs(2), self.audit.sender().closed()).await;
+        // Drain the audit writer BEFORE closing the pool. The writer
+        // task holds a clone of the SqlitePool, so closing the pool
+        // first would make any in-flight flush fail.
+        //
+        // Prior implementation used `self.audit.sender().closed()`,
+        // which never completes: AppContext holds `Arc<AuditWriter>`
+        // and the AuditWriter itself holds the original Sender, so
+        // `.closed()` was always a 2-second no-op timeout followed by
+        // a `db.close()` while the writer was still running.
+        self.audit.drain().await;
         self.db.close().await;
         Ok(())
     }
