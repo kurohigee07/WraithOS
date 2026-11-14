@@ -30,42 +30,13 @@ The CI workflow runs on pushes/PRs targeting `main`. It has formatting/Clippy, g
 
 **Verification boundary for this update:** Rust/Cargo was not installed in the documentation workspace, so these Rust commands were not rerun. The work changed documentation and documentation tooling, not runtime source.
 
-## Documentation site
+## Documentation
 
-The site is plain HTML/CSS/JavaScript. Markdown guides are compiled into `docs/book/` by a small Node build script using marked. Fonts and scripts are local; no CDN or orchestrator backend is required.
-
-```bash
-cd docs
-npm ci
-npm run build
-npm start
-```
-
-Open `http://localhost:4173/`. The server binds `0.0.0.0` for container/live-preview compatibility and accepts arbitrary preview hostnames. It serves only the documentation directory, not repository secrets or the runtime API. For a laptop-only bind, use the Python alternative from the repository root:
-
-```bash
-python3 -m http.server 4173 --bind 127.0.0.1
-```
-
-Then open `/docs/`. The generated `docs/index.html` also works as a local file in a modern browser.
-
-### Browser checks
-
-With a Playwright-compatible Chromium available:
-
-```bash
-cd docs
-npx playwright install chromium
-npm test
-```
-
-Or point to an existing browser:
-
-```bash
-CHROMIUM_PATH=/path/to/chromium npm test
-```
-
-`npm test` first checks local links/assets/anchors, then runs the browser smoke suite against the running preview server. The browser checks cover guide rendering/search, request stepping and scenarios, concurrency simulation, ARM boot transitions, benchmark scale switching, keyboard/accessibility basics, mobile overflow, and browser console errors. Run `npm run test:links` for the server-free link check alone. These checks do not test the Rust runtime.
+All documentation is plain Markdown under `docs/`. The static-site
+generator (Node, `docs/build.mjs`, `docs/book/`) that used to ship
+was removed in v0.52 — it added a Node toolchain dependency for a
+feature that no one was using. Render the Markdown with any viewer
+(`glow`, `bat`, VS Code preview, GitHub's own).
 
 ## Source/documentation consistency checklist
 

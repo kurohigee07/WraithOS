@@ -1,454 +1,157 @@
 <div align="center">
 
-<img src="docs/assets/wraith-banner.svg" alt="Wraith — Rust, WebAssembly, and an appliance operating system" width="100%">
+<img src=".github/wraithos-banner.svg" alt="WraithOS" width="100%">
 
-# Wraith
+**A Wasm appliance Linux. Single binary, signed boot chain, encrypted data.**
 
-**A small Rust runtime for sandboxed WebAssembly plugins.<br>An appliance OS for running that same runtime close to the metal.**
+<p>
+  <code>Rust 1.85+</code> ·
+  <code>Wasmtime 48</code> ·
+  <code>WASI Preview 2</code> ·
+  <code>AGPL-3.0-or-later</code>
+</p>
 
-[Interactive documentation](docs/index.html) · [Quick start](docs/quickstart.md) · [Architecture](docs/architecture.md) · [API](docs/api.md) · [Security boundaries](docs/security.md)
-
-`Rust 1.85+` · `Wasmtime 48` · `WASI Preview 2` · `Axum` · `SQLite` · `AGPL-3.0-or-later`
+<p>
+  <a href="https://github.com/kurohigee07/WraithOS/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/kurohigee07/WraithOS?label=release&style=flat-square&color=d7af5f"></a>
+  <a href="https://github.com/kurohigee07/WraithOS/actions/workflows/rust.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/kurohigee07/WraithOS/rust.yml?label=CI&style=flat-square"></a>
+  <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-AGPL--3.0--or--later%20%7C%20commercial-d7af5f?style=flat-square"></a>
+</p>
 
 </div>
 
-> **Read this first.** Wraith is an ambitious, working engineering project, not a claim of independently audited production security. This documentation follows the source at tag `v0.46.0-health-rollback-fixes` (commit `bfd2da6`), distinguishes measurements from simulations, and calls out unfinished integration paths. Start locally; read [Security](docs/security.md) before exposing an instance to other people.
+---
 
-> **Default root credential.** WraithOS ships with root password
-> `wraithos-admin-change-me` for serial console login (ttyS0 on x86,
-> ttyAMA0 on ARM) and for the emergency SSH backup (dropbear, port 22
-> inside the guest). Change it before exposing the device. Rootfs is
-> a read-only squashfs, so password rotation happens at build time by
-> editing `/etc/shadow` in the board overlay — see
-> [Security](docs/security.md) for the full first-boot checklist.
->
-> **SSH pubkey is opt-in.** Step 1 of the wizard accepts an optional
-> OpenSSH public key. When one is supplied dropbear starts with `-s`
-> and refuses password auth over SSH; serial console keeps
-> `/etc/shadow` password auth so a lost key is recoverable from the
-> tty. When the field is empty dropbear keeps password auth.
->
-> **SSH is closed before the wizard completes (v0.51+).** The
-> dropbear init script refuses to start until
-> `/var/lib/orchestrator/wizard.complete` exists, so a fresh device
-> does not expose port 22 while it waits for provisioning. Serial
-> console remains password-authenticated with the default above
-> (intentional - it is the primary interface). The wizard restarts
-> dropbear at the end of `finish_handler`, so SSH becomes available
-> in the same wizard run without a reboot.
->
-> **`/data` encryption.** The first-boot wizard formats `/dev/vda4`
-> with LUKS2 and derives the keyfile from the operator-chosen
-> encryption password. `/boot/luks.key` is written to the ESP so
-> `S30data` can auto-unlock on boot without prompting. If that
-> keyfile is lost or corrupt the recovery path is `POST
-> /wizard/reset-luks`, which destroys the volume and re-runs the
-> wizard — there is no out-of-band recovery key.
->
-> **QEMU testing.** `deploy/run-wraithos.sh` and
-> `deploy/run-wraithos-arm.sh` run QEMU with `-no-reboot` and a
-> restart loop. Guest `reboot` under QEMU TCG leaves corrupted
-> serial/tty state; restarting the QEMU process clears it. The
-> wrapper hides this from the operator; hardware reboot is unaffected.
->
-> **RAUC health gate.** `wraith-install-bundle` (and `wraith-update`
-> for the dd path) writes `/data/orchestrator/rauc.pending` on a
-> successful install. On the next boot `S99wraith-init` spawns
-> `wraith-rauc-healthcheck`, which polls `/readyz` for up to 60 s.
-> On `200` it runs `rauc status mark-good` and `wraith-bootenv
-> commit`. On timeout it runs `rauc status mark-bad`,
-> `wraith-bootenv demote`, and `reboot`, so the GRUB trial counter
-> falls through to the last-known-good slot. The timeout branch is
-> logged to `/data/orchestrator/healthcheck.log` (LUKS volume) as
-> well as syslog, because `/var/log` is a tmpfs and would lose the
-> trail across the rollback.
->
-> **TPM 2.0 LUKS sealing.** On first boot, if a TPM 2.0 device is
-> present, the wizard seals `/boot/luks.key` to it under a PCR policy
-> (0, 4, 5, 7). The plaintext keyfile is kept alongside the sealed
-> blob so that any TPM failure (hardware move, firmware update, PCR
-> drift) falls back to plaintext and `/data` remains mountable.
-> Removal of the plaintext requires an explicit
-> `wraith-tpm-finalize`; auto-removal is deferred to v0.51+. See
-> [WraithOS](docs/wraithos.md) → "TPM 2.0 sealing".
->
-> **UEFI Secure Boot (x86_64 only).** v0.50.0 adds a signed boot
-> chain on the x86_64 image: firmware verifies `grubx64.efi` against
-> a device-specific PK enrolled in the firmware, and the kernel is
-> loaded via the EFI stub loader so the firmware verifies `bzImage`
-> against the db key as well. Signing is opt-in via
-> `WRAITH_SB_KEYS`; builds without it produce the legacy BIOS-only
-> image. The v0.50.0 release ships with a single shared certificate
-> (the corresponding private keys were lost after signing; see the
-> release notes for the upgrade path). See
-> [WraithOS](docs/wraithos.md) → "Building a UEFI Secure Boot x86_64
-> image".
+## What it is
 
-## What is Wraith?
+A host binary that runs sandboxed WebAssembly plugins, packaged as a
+Buildroot appliance image that boots in under 2 seconds. Two arches,
+x86_64 (BIOS + UEFI Secure Boot) and aarch64 (UEFI). A/B rootfs slots
+via RAUC, encrypted `/data`, TPM-sealed keys, wizard-driven provisioning.
 
-Imagine deploying a small piece of business logic without shipping an entire container image or giving that code unrestricted access to your server.
+The runtime alone is a single ~26 MB static-musl binary. It runs the
+same on a laptop and on the appliance.
 
-Wraith accepts a **WebAssembly component**, exposes a narrowly defined set of host functions, and runs its exported `run` function when an HTTP request arrives. The host controls network permissions, execution concurrency, linear-memory limits, and an epoch-based interruption deadline. Execution results are recorded in SQLite and exported as Prometheus metrics.
+## Why it's worth a look
 
-The repository contains two connected deliverables:
+- **The appliance is small.** 34 MB squashfs rootfs. 640 MB disk image
+  includes two rootfs slots, a 256 MB LUKS partition, and the ESP. Most
+  minimal Linux distros are 10× larger.
+- **Boot chain is verified.** On x86 with Secure Boot enrolled, the
+  firmware verifies GRUB, GRUB loads a signed kernel via the EFI stub,
+  the kernel boots. Full chain, no Microsoft shim, two small local GRUB
+  patches. The threat model and gaps (rootfs tamper at runtime is *not*
+  detected; dm-verity on the slot is deferred) are in
+  [`docs/security.md`](docs/security.md).
+- **TPM sealing is real.** The LUKS keyfile is sealed to PCRs 0-7 under
+  a policy that includes the GRUB binary, `grub.cfg`, and Secure Boot
+  state. Change any of those, the blob no longer unseals. Plaintext
+  keyfile stays as documented recovery path until the operator runs an
+  explicit `wraith-tpm-finalize`.
+- **Runs the same code you test on your laptop.** `cargo run` in the
+  repo gives you the same Axum + Wasmtime host that runs in the
+  appliance, without Buildroot or QEMU.
 
-1. **Wraith Orchestrator** — a Rust service combining an HTTP API, Wasmtime, Rhai event rules, an event bus, a dashboard, and a Rust SDK/CLI.
-2. **WraithOS** — Buildroot definitions for a minimal Linux appliance that boots the same orchestrator, keeps application data separate from its read-only root filesystem, and supports A/B root filesystem updates.
+## Quick start (local)
 
-```text
-Your application / curl / Wraith CLI
-                 │ HTTP + JSON
-                 ▼
-┌──────────────────────────────────────────────────────────────┐
-│ Wraith Orchestrator                                      │
-│                                                              │
-│ Axum → authentication → module lookup → quota gates           │
-│                                      │                       │
-│                                      ▼                       │
-│                           Wasmtime component                 │
-│                           run(JSON) → JSON                   │
-│                                      │                       │
-│                 controlled HTTP / TCP / event emission       │
-│                                      │                       │
-│                         EventBus → Rhai / WebSocket          │
-│                                                              │
-│ SQLite audit log + Prometheus metrics + embedded dashboard    │
-└──────────────────────────────────────────────────────────────┘
-                 ▲ the same Rust binary
-┌─────────────────────────────────────────────────────────────┐
-│ WraithOS: kernel + read-only rootfs A/B + persistent data │
-└──────────────────────────────────────────────────────────────┘
-```
+Run the host binary:
 
-### Data persistence and encryption
+    git clone https://github.com/kurohigee07/WraithOS
+    cd WraithOS
+    cargo run --release
 
-`/data` is the only writable partition. On first boot, before
-`/data` is mounted, `S30data` drops into a fallback mode that mounts
-a tmpfs over `/etc/wraith` and seeds a default `orchestrator.toml`,
-so the wizard is always reachable. Once the operator submits the
-wizard with a data-encryption password, `/dev/vda4` is formatted as
-LUKS2 (aes-xts-plain64) using a keyfile derived from that password
-via argon2, and the keyfile is written to the ESP at
-`/boot/luks.key`. Every subsequent boot unlocks the volume with that
-keyfile, mounts the ext4 filesystem on the mapper device, and bind
-mounts `orchestrator/`, `modules/`, and `wraith/` under `/data`. No
-password prompt appears on the console; the boot log shows
-`Setting up /data: OK (A/B)` when the unlock succeeded and
-`OK (fallback: wizard accessible, /data unmounted)` when it did not.
+Then in another shell:
 
-The wizard also exposes `POST /wizard/reset-luks`, which erases the
-LUKS header and clears wizard state. It is the only recovery path
-and it is destructive by design: without the derived keyfile the
-data on `/dev/vda4` cannot be read.
+    curl -s http://127.0.0.1:9090/healthz
 
-### Emergency SSH access
+    curl -X POST http://127.0.0.1:9090/modules \
+         -H 'x-module-id: hello' \
+         --data-binary @modules/default/sample.wasm
 
-Serial console is the primary interface. Dropbear runs on port 22
-inside the guest as a second entry point — useful when the operator
-is working over a remote hypervisor console that occasionally drops
-characters, or when the serial tty is temporarily wedged. Host keys
-are ephemeral and regenerated each boot (the rootfs is read-only
-and `/data` is under LUKS, so there is nowhere persistent to store
-them). The QEMU wrappers forward host ports 2222 (x86_64) and 2223
-(aarch64) to guest port 22, so `ssh -p 2222 root@127.0.0.1` works
-out of the box.
+    curl -X POST http://127.0.0.1:9090/modules/hello/execute \
+         -H 'content-type: application/json' \
+         -d '{}'
 
-**SSH authentication modes.** The wizard step 1 accepts an optional
-OpenSSH public key. When a key is provided, dropbear starts with
-`-s` on every subsequent boot and refuses password authentication;
-the key is staged from `/etc/wraith/authorized_keys` into
-`/root/.ssh/authorized_keys` (tmpfs) before dropbear starts. When
-the field is left empty, dropbear keeps password authentication on
-as a convenience for serial-adjacent recovery. **Serial console
-remains password-authenticated in both modes** — the Linux
-`/etc/shadow` password is independent of dropbear — so a lost SSH
-key is recoverable from the serial line without re-flashing.
+Full API surface in [`docs/api.md`](docs/api.md). Guest contract, WIT
+files, and capability model in [`docs/architecture.md`](docs/architecture.md).
 
-**SSH only opens after the wizard completes (v0.51+).**
-`S50dropbear` refuses to start until
-`/var/lib/orchestrator/wizard.complete` exists, so on a fresh device
-port 22 is closed from first boot until the wizard finishes.
-`finish_handler` restarts dropbear immediately after writing the
-marker; no reboot required. Serial console is the interface used
-to reach the wizard, and it continues to accept the default
-password throughout (see the callout at the top of this file).
-Pre-v0.51 images do not have this gate - the pre-wizard SSH
-window there was an accepted risk documented in earlier releases
-and closed as of v0.51.
+## Quick start (appliance image)
 
-Dropbear on musl is fragile: the C library ships a `crypt()` stub
-that returns `NULL`, so the linker resolves the symbol from the stub
-and drops `-lcrypt` via `--as-needed`, which silently breaks
-password authentication. Buildroot is patched to force
-`ac_cv_search_crypt=-lcrypt`, and `S50dropbear` exports
-`LD_PRELOAD=/usr/lib/libcrypt.so.2` as a belt-and-braces guarantee
-that the real implementation shadows the stub at runtime.
+The appliance is not a cloud image. It's a disk image that boots to a
+wizard on serial console, then provisions itself from there.
 
-### Why this project is interesting
+    curl -LO https://github.com/kurohigee07/WraithOS/releases/latest/download/wraithos-x86_64-v0.52.0-security-hardening.img
 
-| Value | What it means in practice | Source |
-|---|---|---|
-| **A compact deployment unit** | The Rust service can be cross-compiled as a static musl binary; the ARM overlay includes an AArch64 ELF executable. No Node.js or Python runtime is needed by the service itself. | [Build configuration](Cargo.toml), [operations](docs/operations.md) |
-| **A real sandbox boundary** | Guests use linear memory and explicit WIT imports instead of inheriting arbitrary host filesystem access. Host calls pass through capability checks. | [Wasm implementation](orchestrator/src/wasm/module.rs) |
-| **Backpressure, not wishful scaling** | Tenant, module, and global concurrency gates bound work. Rate limits use token buckets; waiting for a permit has a timeout. | [Quota implementation](orchestrator/src/quota.rs) |
-| **One contract across languages** | WIT defines the guest boundary. The included guest is Rust, but the contract is not inherently Rust-only. | [WIT contract](orchestrator/wit/host-capabilities.wit) |
-| **Observable execution** | Audit rows, execution/wait histograms, pool gauges, health checks, and live events make the runtime inspectable. | [Telemetry](orchestrator/src/telemetry.rs) |
-| **Runtime + operating system** | The project goes beyond an application server: boot scripts, persistent mounts, image generation, and ARM boot recovery are included. | [WraithOS guide](docs/wraithos.md) |
-| **Inspectable trade-offs** | Limits, known gaps, and historical measurements are documented rather than hidden behind a “production-ready” label. | [Security](docs/security.md), [source map](docs/source-map.md) |
+    qemu-system-x86_64 -machine pc -cpu max -m 1024 -smp 2 \
+      -drive file=wraithos-x86_64-v0.52.0-security-hardening.img,format=raw,if=virtio \
+      -netdev user,id=net0,hostfwd=tcp::2223-:22 \
+      -device virtio-net-pci,netdev=net0 \
+      -serial mon:stdio -no-reboot
 
-## Explore it interactively
+On serial console, log in as `root` with `wraithos-admin-change-me`
+(documented, intentional, rotate it) and follow the wizard at
+`http://127.0.0.1:9090/wizard`. The wizard formats `/dev/vda4` with
+LUKS2, seals the keyfile to TPM if present, and gates dropbear until
+it completes.
 
-GitHub renders Markdown but does not run JavaScript inside a README. The repository therefore includes a **standalone, dependency-free documentation site** alongside the readable guides.
+`-cpu max` is required for QEMU. With `-cpu qemu64` (the default), the
+guest kernel panics on init because BusyBox uses SSE that qemu64
+doesn't expose. This is a QEMU gotcha, not an image bug.
 
-From a local checkout:
+## Architecture
 
-```bash
-python3 -m http.server 4173 --bind 0.0.0.0
-```
+The boot chain is firmware → GRUB (A/B) → signed kernel via EFI stub →
+read-only squashfs rootfs → `wraith-init` (Axum + Wasmtime + SQLite +
+RAUC healthcheck). `/dev/vda4` is LUKS2 with a TPM-sealed keyfile.
 
-Open **http://localhost:4173/docs/**. Alternatively, open `docs/index.html` directly in a browser; the generated site does not need a backend or CDN.
+Longer writeup, boot contract details, and A/B rollback semantics in
+[`docs/wraithos.md`](docs/wraithos.md).
 
-The site includes:
+## What you get
 
-- **Request journey:** step through authentication, quotas, instantiation, guest execution, and response handling; inspect failure scenarios.
-- **Concurrency lab:** change pool capacity, service time, arrivals, and wait timeout; watch requests run, wait, or time out.
-- **A/B boot lab:** explore the ARM GRUB trial counter and fallback to the last-known-good slot.
-- **Benchmark explorer:** switch between linear and logarithmic views without confusing server execution time with client wall time.
-- **Full-text guide search**, code copying, and beginner/engineer explanations.
-
-> Labs are deterministic teaching simulations. They do not contact your server, execute Wasm, write disks, or generate benchmark results.
-
-## Measured snapshot — not a universal speed claim
-
-### v0.48.0: batched audit writer (2026-11-12)
-
-Batched audit writes raised `/execute` throughput on the same host and client from **~950 req/s to ~9,800 req/s** at concurrency 5-10. The bottleneck was never Wasm execution; it was the fsync-bound per-request `INSERT` into `execution_logs`, which serialised on SQLite's single writer.
-
-| Measurement | Result | Scope |
-|---|---:|---|
-| Empty `/execute` throughput | **9,813 req/s** | `hey -n 5000 -c 10` against QEMU x86_64 guest |
-| Empty p50 / p99 | **1.0 ms / 1.3 ms** | same run |
-| CPU-bound guest throughput | **5,611 req/s** | 10,000-iteration guest, `hey -c 10` |
-| Sustained (30 s, c=50) | **292,967 reqs, 0 errors, 9,764 req/s** | same host, no client-side errors |
-| Recorded Wasm execution | **94-178 µs** (empty), **220-324 µs** (CPU) | unchanged from v0.27.1 |
-| Audit row count | matched request count within the 50 ms flush window | `execution_logs`, verified via `sqlite3` |
-
-The trade-off: an audit row is visible in `execution_logs` within 50 ms of the execute response, not immediately.
-
-Full method, per-concurrency sweeps, raw `hey` output and metric snapshots: [`docs/benchmarks-v0.47.0.md`](docs/benchmarks-v0.47.0.md).
-
-### v0.27.1: original sequential snapshot (2026-11-08)
-
-The following is a re-run of the original benchmark, executed on the same host on **2026-11-08 UTC** against the tree at v0.38.0 (post-M11 hardening):
-
-| Measurement | Result | Scope |
-|---|---:|---|
-| Mean recorded Wasm execution | **183.5 µs** | 20 executions after 3 warmups; empty guest returning `{}` |
-| Mean global-pool wait | **1.66 µs** | Same 23 executions; sequential requests |
-| Client wall time per request | **1.66 ms** | 20 sequential curl invocations on this host |
-| Successful executions | **23 / 23** | Audit log verified |
-| Cold source build | **not re-run** | Covered by CI pipeline instead |
-
-Original v0.27.1 measurement for comparison (2026-11-04 UTC): execution 180.9 µs, pool wait 1.45 µs, wall 6.10 ms. Execution and pool-wait values are within run-to-run noise (a few percent). Wall time differs because the 2026-11-04 number was collected on a different machine under different load; it is not a regression and not a speedup — it is simply a different host.
-
-The execution timer covers `Store::new`, asynchronous instantiation, `call_run`, and JSON result parsing. It excludes HTTP handling, module lookup, quota acquisition, and audit persistence. Pool wait is a separate timer. Neither number should be inverted into a throughput guarantee.
-
-**About versioning:** the crate manifests declare `0.1.0`; releases are tracked by git tags (`v0.38.0` at the time of this run, current tag `v0.48.0`). The benchmark guest is `tests/fixtures/empty/`, checked in for reproducibility.
-
-[Read the v0.48.0 method and raw values →](docs/benchmarks-v0.47.0.md) · [Original v0.27.1 method →](docs/benchmarks.md)
-
-## Choose your path
-
-| You want to… | Start here |
+| | |
 |---|---|
-| Run your first module locally | [Quick start](docs/quickstart.md) |
-| Understand every major runtime component | [Architecture](docs/architecture.md) |
-| Write a plugin | [Plugin guide + WIT contract](docs/plugins.md) |
-| Integrate over HTTP or Rust | [API reference](docs/api.md), [SDK and CLI](docs/sdk-cli.md) |
-| Tune memory, timeouts, tenants, or capabilities | [Configuration](docs/configuration.md) |
-| Deploy, back up, restore, and observe | [Operations](docs/operations.md) |
-| Evaluate the actual security boundary | [Security and known limitations](docs/security.md) |
-| Build or inspect the appliance OS | [WraithOS](docs/wraithos.md) |
-| Verify performance claims | [Benchmarks](docs/benchmarks.md) |
-| Find the purpose of a repository file | [Complete source map](docs/source-map.md) |
-| Contribute or rerun checks | [Testing and contributing](docs/testing.md) |
+| **Runtime** | Axum + Wasmtime 48, component model, async host functions, WASI Preview 2 |
+| **Sandbox** | Per-module memory limits, per-execution fuel budget, capability-gated HTTP / TCP / DB / log / event |
+| **Host** | x86_64 (BIOS / UEFI Secure Boot), aarch64 (UEFI) |
+| **Storage** | A/B rootfs via RAUC (health-gated rollback), LUKS2 `/data`, TPM 2.0 seal (PCR 0-7) |
+| **Boot** | GRUB, EFI stub, signed kernel on x86 with Secure Boot, no Microsoft shim required |
+| **Update** | Signed RAUC bundles, dm-verity transport, trial boot + `/readyz` health gate |
 
-## Quick start
+Every one of those has a paper trail. Security model, threat surface,
+and known gaps in [`docs/security.md`](docs/security.md). Benchmarks in
+[`docs/benchmarks.md`](docs/benchmarks.md) with raw `hey` output in
+[`docs/evidence/`](docs/evidence/).
 
-### 1. Prerequisites
+## Status
 
-- Linux is the primary target; the deployment scripts also assume Bash, curl, and systemd user services.
-- Rust **1.85 or newer**, with Cargo.
-- The `wasm32-wasip2` target for building guests.
-- For the supplied static-musl deployment path: `cargo-zigbuild`, Zig, and the `x86_64-unknown-linux-musl` target.
-- Only if enabling source builds: Bubblewrap, GNU tar, a rustup toolchain, and a pre-fetched Cargo dependency cache.
+This is a working engineering project, not a claim of audited
+production security. Releases are tagged, changes are documented,
+gaps are called out. Recent audit response (11/14 findings fixed, 3
+skipped with explicit rationale) is documented in
+[`CHANGELOG.md`](CHANGELOG.md) under v0.52.0.
 
-```bash
-rustup target add wasm32-wasip2
-cargo build --locked -p orchestrator
-cargo build --locked -p sample-plugin --target wasm32-wasip2 --release
-```
+Before deploying to real hardware: read
+[`docs/security.md`](docs/security.md), change the default root
+password at build time, and understand that the current image is
+BIOS-only (v0.50 is the last SB-enabled image; v0.51+ ship BIOS-only
+pending the v0.53 per-device SB key rollout).
 
-### 2. Start the service
+## Documentation
 
-Run from the repository root so relative paths resolve correctly:
-
-```bash
-./target/debug/orchestrator --config orchestrator.toml
-```
-
-The supplied configuration binds to `127.0.0.1:9090`. Despite its name, **`metrics_bind` is the listener for the entire API and dashboard**, not just Prometheus.
-
-```bash
-curl --fail http://127.0.0.1:9090/healthz
-curl --fail http://127.0.0.1:9090/readyz
-```
-
-### 3. Execute the included module
-
-The tracked `sample.wasm` calls `example.com` over HTTP and TCP and emits an event. It needs outbound network access; a capability or transport failure can appear inside an HTTP 200 result because the sample catches those guest-side errors.
-
-```bash
-curl --fail -X POST \
-  http://127.0.0.1:9090/modules/sample/execute \
-  -H 'Content-Type: application/json' \
-  -d '{"hello":"wraith"}'
-```
-
-For a network-free first request, build the minimal guest in the [plugin guide](docs/plugins.md).
-
-### 4. Inspect the result
-
-- Dashboard: `http://127.0.0.1:9090/ui`
-- Readiness: `http://127.0.0.1:9090/readyz`
-- Metrics: `http://127.0.0.1:9090/metrics`
-- Audit: `http://127.0.0.1:9090/audit/logs`
-
-> The dashboard's execute button does not attach a Bearer token, and its event socket hard-codes `ws://`. With authentication enabled or behind HTTPS, use the API/CLI or adapt the embedded UI; see [known limitations](docs/security.md#dashboard-and-wizard).
-
-## The guest contract
-
-Every plugin implements this WIT world:
-
-```wit
-world plugin {
-    import http;
-    import tcp;
-    import events;
-    export run: func(payload: string) -> result<string, string>;
-}
-```
-
-The host serializes incoming JSON to a string. The guest returns a string containing valid JSON. A minimal guest can be entirely offline:
-
-```rust
-wit_bindgen::generate!({ path: "wit", world: "plugin" });
-
-struct Empty;
-
-impl Guest for Empty {
-    fn run(_payload: String) -> Result<String, String> {
-        Ok("{}".to_string())
-    }
-}
-
-export!(Empty);
-```
-
-`Component::from_binary` expects a **Wasm component**, not an arbitrary `wasm32-unknown-unknown` core module. See [Plugins](docs/plugins.md) for complete manifests, build commands, capabilities, errors, and event rules.
-
-## API at a glance
-
-| Method | Path | Purpose |
-|---|---|---|
-| `GET` | `/healthz` | Process liveness; plain text `ok` |
-| `GET` | `/readyz` | SQLite query and available global Wasm capacity |
-| `GET` | `/metrics` | Prometheus exposition |
-| `GET` | `/debug/state` | Modules, pool, sockets, uptime |
-| `GET / POST` | `/modules` | List/upload in the default tenant |
-| `PUT / DELETE` | `/modules/{id}` | Replace/delete a module |
-| `POST` | `/modules/{id}/execute` | Execute with a JSON body |
-| `GET / PUT` | `/modules/{id}/quota` | Read/replace module quota |
-| `POST` | `/modules/build` | Compile uploaded source; disabled by default |
-| `GET` | `/audit/logs` | Latest 50 audit rows across tenants |
-| `GET` | `/ui`, `/wizard` | Embedded dashboard and setup UI |
-| `GET` | `/ws/events` | Live EventBus stream |
-
-Tenant-specific module routes use `/t/{tenant}/modules…`. Uploads use `X-Module-Id` and optional quota/capability/signature headers. The [API reference](docs/api.md) documents exact payloads, status codes, authentication behavior, and caveats.
-
-## Configuration essentials
-
-```toml
-metrics_bind = "127.0.0.1:9090"
-modules_dir = "./modules"
-db_path = "orchestrator.db"
-data_dir = "./data"
-
-max_concurrent_wasm = 2
-wasm_acquire_timeout_secs = 10
-wasm_memory_limit_mb = 256
-max_sockets = 256
-http_timeout_secs = 30
-
-require_auth = false
-enable_build = false
-enable_build_network = false
-trusted_signer_keys = []
-```
-
-These are development defaults, **not a public-internet hardening profile**. `require_auth=false` leaves tokenless tenants open. A capability header can grant permissions beyond the global fallback; it is not intersected with that fallback. Signature enforcement also has persistence gaps. Read [Configuration](docs/configuration.md) and [Security](docs/security.md) together.
-
-## Repository layout
-
-```text
-orchestrator/       Rust host, HTTP API, Wasmtime bridge, Rhai, UI, tests
-shared-types/       Manifest, capability, and quota data types
-sample-plugin/      Rust guest using HTTP, TCP, and events
-wraith-sdk/         Async Rust HTTP client
-wraith-cli/         `wraith` command-line application
-modules/default/    Checked-in sample component and quota sidecar
-deploy/             systemd, backup/restore, packaging, signing, smoke helpers
-deploy/wraithos/    x86 and ARM Buildroot trees, boot scripts, RAUC wrappers, Termux helpers
-docs/               English guides, benchmark evidence, interactive documentation
-```
-
-The [source map](docs/source-map.md) covers every file tracked at the documented baseline, including boot overlays, legacy backups, binary artifacts, and generated/vendor files.
-
-## Implementation status and trust
-
-**Present in source:** component execution; HTTP/TCP/event host bridges; lifecycle API; quota gates; tenant configuration; optional global authentication; conditional Bubblewrap source builds; signatures; dashboard/WebSocket; SDK/CLI; first-boot wizard handlers; ARM boot-state/watchdog scripts; TPM 2.0 LUKS sealing with plaintext fallback; UEFI Secure Boot x86_64 signing pipeline; RAUC health-gated rollback; release helper scripts.
-
-**Not established by this documentation:** a fresh OS image build, a reproducible benchmark rerun, independent penetration testing, complete tenant isolation, crash-safe update transactions (a health-gated RAUC rollback exists, but power-loss atomicity of the GRUB env write is not proven), or a finished setup-to-login/network/encryption integration.
-
-Some historical notes describe features as planned even though code now exists. Other notes describe successful QEMU runs that cannot be independently verified from this checkout alone. The new guides label those claims explicitly.
-
-## Verification and documentation maintenance
-
-The source contains **23 Rust unit tests and 10 HTTP integration tests**. Some integration paths require access to `example.com`; they are not a hermetic security suite. Rust tests were not run for this documentation-only update because Cargo/Rust is unavailable in the documentation workspace.
-
-The documentation site is static and can be rebuilt with:
-
-```bash
-cd docs
-npm ci
-npm run build
-npm start
-```
-
-See [Testing](docs/testing.md) for the Rust CI commands, documentation browser checks, and a release verification checklist. No runtime behavior was changed to produce these guides.
+- [`docs/quickstart.md`](docs/quickstart.md) — 5-minute local + appliance tour
+- [`docs/architecture.md`](docs/architecture.md) — guest contract, capability model, WIT
+- [`docs/api.md`](docs/api.md) — HTTP API reference
+- [`docs/configuration.md`](docs/configuration.md) — `orchestrator.toml`
+- [`docs/operations.md`](docs/operations.md) — deploy, update, troubleshoot
+- [`docs/security.md`](docs/security.md) — threat model, TPM, Secure Boot, gaps
+- [`docs/wraithos.md`](docs/wraithos.md) — appliance internals (boot, RAUC, wizard)
+- [`docs/testing.md`](docs/testing.md) — CI, local tests, verification checklist
+- [`docs/source-map.md`](docs/source-map.md) — file-by-file map of the repo
 
 ## License
 
-Copyright (c) 2026 kurohigee07.
+Dual-licensed. AGPL-3.0-or-later for open use; commercial license
+available for embedding, closed-source SaaS, or warranty terms. See
+[`LICENSE`](LICENSE) and [`LICENSE-COMMERCIAL.md`](LICENSE-COMMERCIAL.md).
 
-Wraith is dual-licensed:
-
-- **Open source:** [GNU Affero General Public License v3.0 or later](LICENSE).
-  AGPLv3 requires that modified versions served over a network make
-  the complete source available to users of that service.
-- **Commercial:** a separate proprietary license for embedding,
-  closed-source SaaS, or warranty/support terms that AGPLv3 does not
-  provide. See [LICENSE-COMMERCIAL.md](LICENSE-COMMERCIAL.md).
-
-Third-party components retain their own licenses; the documentation
-fonts include their license files in `docs/assets/fonts/`.
+Third-party components retain their own licenses.
