@@ -1,22 +1,56 @@
 # Wraith Orchestrator — Termux config
-db_path = "orchestrator.db"
-modules_dir = "./modules"
-http_timeout_secs = 30
-max_sockets = 64
-max_concurrent_wasm = 2
-wasm_acquire_timeout_secs = 10
-wasm_memory_limit_mb = 128
-log_level = "info"
-log_format = "pretty"
-metrics_bind = "127.0.0.1:9090"
-default_tenant = "default"
+# Runs on phone loopback. For production appliance, see
+# deploy/wraithos/README.md.
 
+default_tenant = "default"
+require_auth = false
+
+# Termux paths. data_dir MUST be overridden: the appliance default
+# (/var/lib/orchestrator) does not exist on Android. All paths are
+# relative to the directory containing this file (run.sh cds there
+# first). If you run orchestrator manually from another directory,
+# make these paths absolute.
+data_dir    = "./data"
+modules_dir = "./modules"
+db_path     = "./orchestrator.db"
+
+# Phone-appropriate limits. Lower than the 256 MiB / 256 socket
+# appliance defaults because Android's background-process memory
+# budget is tighter and OOM-kills without warning.
+http_timeout_secs        = 30
+max_sockets              = 64
+max_concurrent_wasm      = 2
+wasm_acquire_timeout_secs = 10
+wasm_memory_limit_mb     = 128
+max_db_connections       = 4
+
+# Loopback only. Do NOT change to "0.0.0.0:9090" unless you want
+# every device on the same WiFi to reach the API. If you do expose
+# it, set require_auth = true and rotate the default root password
+# from the terminal first.
+metrics_bind = "127.0.0.1:9090"
+
+log_level  = "info"
+log_format = "pretty"
+
+# No module signing on this profile. To enable: list the
+# hex-encoded ed25519 public keys (64 hex chars each) that will
+# sign your *.wasm files, then every module upload will require a
+# matching *.wasm.sig sidecar.
+trusted_signer_keys = []
+
+# Rhai handler runs on every event broadcast on the internal bus.
 [script]
 inline = '''
 log_info("rhai received: " + event_kind);
 emit_event("rhai.processed", "{\"source\":\"rhai\"}");
 '''
 
+# Permissive demo capability profile. Tighten before exposing to a
+# shared network:
+#   - http-get allowed_hosts = ["*"]  -> list explicit hosts
+#   - emit-event allowed_kinds = ["*"] -> list explicit kinds
+#   - tcp-connect allowed_ports = [80,443] -> trim to what you need
 [[capabilities]]
 type = "log"
 
@@ -26,9 +60,7 @@ allowed_kinds = ["*"]
 
 [[capabilities]]
 type = "http-get"
-# WARNING: ["*"] = wildcard, allows HTTP GET to ANY host.
-# Intended for dev/demo. For production, list explicit hosts.
-allowed_hosts = ["*"]
+allowed_hosts = ["*"]  # WARNING: any host. Dev only.
 
 [[capabilities]]
 type = "tcp-connect"
