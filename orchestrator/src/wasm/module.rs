@@ -13,7 +13,7 @@ use crate::context::AppContext;
 use crate::module::OrchestratorModule;
 use crate::quota::ModuleQuotaState;
 use crate::wasm::state::WasmHostState;
-use crate::wasm::{Plugin, EPOCH_DEADLINE_TICKS};
+use crate::wasm::{Plugin, EPOCH_DEADLINE_TICKS, MAX_FUEL_PER_EXECUTION};
 
 pub struct WasmModule {
     manifest: ModuleManifest,
@@ -244,6 +244,11 @@ impl WasmModule {
         );
         store.set_epoch_deadline(EPOCH_DEADLINE_TICKS);
         store.limiter(|state| &mut state.limits);
+        // H1: per-execution fuel budget. Fresh Store per execution so
+        // the budget is not shared across calls.
+        store
+            .set_fuel(MAX_FUEL_PER_EXECUTION)
+            .map_err(|e| QuotaExecError::Internal(anyhow::anyhow!("set_fuel: {e}")))?;
 
         let bindings = Plugin::instantiate_async(&mut store, &self.component, &self.linker)
             .await
@@ -257,7 +262,17 @@ impl WasmModule {
             .call_run(&mut store, &payload_str)
             .await
             .map_err(|e| {
-                QuotaExecError::Internal(anyhow::anyhow!("wasm export `run` trapped: {e}"))
+                let err_str = format!("{e}");
+                // Wasmtime signals fuel exhaustion via the trap
+                // message; surface it as a distinct error so callers
+                // can tell a runaway guest from a real guest error.
+                if err_str.contains("fuel") && err_str.contains("consum") {
+                    QuotaExecError::Internal(anyhow::anyhow!(
+                        "guest exceeded fuel budget of {MAX_FUEL_PER_EXECUTION} instructions"
+                    ))
+                } else {
+                    QuotaExecError::Internal(anyhow::anyhow!("wasm export `run` trapped: {e}"))
+                }
             })?;
 
         let result_str =

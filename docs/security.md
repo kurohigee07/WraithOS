@@ -68,6 +68,38 @@ Only ports are configurable through the current capability type. There is no des
 
 ## Execution resource limits
 
+Wasm execution is bounded by three independent mechanisms:
+
+1. **Epoch deadline** (`EPOCH_DEADLINE_TICKS = 600` at 100 ms per
+   tick = 60 s wall clock). Enforced by a background ticker that
+   bumps the Wasmtime epoch; a guest that overruns traps cleanly.
+2. **Fuel budget** (`MAX_FUEL_PER_EXECUTION = 100_000_000`
+   instructions, `config.consume_fuel(true)`). Enforced per
+   execution; a fresh `Store` is created for each `execute` call so
+   the budget is not shared. Empirical consumption on
+   `modules/default/*.wasm` (2026-11-14): `empty` ~1.2K,
+   `adversarial` ~2.7K, `sample` ~20K, `json_heavy` ~34K,
+   `cpu_heavy` ~1.59M. 100M is ~63x over the heaviest legit module
+   and bounds worst-case CPU to a few hundred milliseconds. Fuel
+   exhaustion surfaces as
+   `guest exceeded fuel budget of N instructions`.
+3. **Memory limit** (per-module `max_memory_mb`, capped at the
+   global `wasm_memory_limit_mb`). `StoreLimitsBuilder` rejects
+   allocation past the limit.
+
+Rhai scripts (the other embedded runtime) do not have a fuel or
+instruction budget in this release. A Rhai script with an infinite
+loop blocks one event-worker thread until the process is killed.
+Fix deferred to v0.52; mitigation is to run Rhai only on
+operator-controlled scripts (`docs/wraithos.md`).
+
+The HTTP capability (`http::get`) caps the response body at
+`MAX_HTTP_BODY_BYTES = 16 MiB`, enforced both on `Content-Length`
+(fast path) and on the streaming read (`bytes_stream()` cumulative
+total, decompressed). See `wasm/host_impls.rs` and
+`CHANGELOG.md` for the M2 entry.
+
+
 Implemented:
 
 - Global semaphore: default 2 concurrent executions.
