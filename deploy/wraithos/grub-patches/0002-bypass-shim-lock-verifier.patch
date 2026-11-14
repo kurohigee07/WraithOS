@@ -1,0 +1,11 @@
+--- /home/opc/buildroot-2024.02.9/output/build/grub2-2.12/grub-core/kern/efi/sb.c.orig	2026-11-13 14:31:04.791004489 +0000
++++ /home/opc/buildroot-2024.02.9/output/build/grub2-2.12/grub-core/kern/efi/sb.c	2026-11-13 14:31:04.797004703 +0000
+@@ -186,7 +186,7 @@
+   grub_efi_shim_lock_protocol_t *sl = grub_efi_locate_protocol (&shim_lock_guid, 0);
+ 
+   if (!sl)
+-    return grub_error (GRUB_ERR_ACCESS_DENIED, N_("shim_lock protocol not found"));
++    return GRUB_ERR_NONE; /* WraithOS: no shim, defer to firmware LoadImage */
+ 
+   if (sl->verify (buf, size) != GRUB_EFI_SUCCESS)
+     return grub_error (GRUB_ERR_BAD_SIGNATURE, N_("bad shim signature"));

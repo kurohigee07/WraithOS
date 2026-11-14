@@ -310,6 +310,105 @@ The post-image script writes a textual GRUB env padded with spaces, whereas the 
 
 For x86, resolve the init-system/post-image wiring gaps first, supply the binary, and use the BIOS post-image/genimage files as a reference. The repository does not include a full disk image or complete Buildroot output tree.
 
+## Building a UEFI Secure Boot x86_64 image
+
+Item 2 (v0.50.0) adds UEFI Secure Boot to the x86_64 image. Signing is
+opt-in via `WRAITH_SB_KEYS`. Without it the build produces the legacy
+BIOS-only image and prints a loud warning; with it, the image ships a
+dual boot chain (BIOS GRUB + UEFI GRUB) and the UEFI path enforces
+Secure Boot.
+
+### 1. Generate per-device keys
+
+    export WRAITH_SB_KEYPASS='<long random password>'
+    ./deploy/wraithos/uefi/gen-sb-keys.sh ~/sb-keys
+
+Produces `~/sb-keys/{PK,KEK,db}.{key,crt}`. The private keys are
+encrypted with `WRAITH_SB_KEYPASS`. **These keys are device-specific.
+Do not share between devices. Do not commit them.** Losing `db.key`
+prevents future signed updates for the deployed fleet; leaking it lets
+an attacker sign images that pass Secure Boot. Confirm encrypted-USB
+backups (two copies, different locations) and a password-manager entry
+before proceeding in production.
+
+### 2. Build with signing enabled
+
+    export WRAITH_SB_KEYS="$HOME/sb-keys"
+    export WRAITH_SB_KEYPASS='<password>'
+    make -j4
+
+`post-image.sh` signs `bzImage` and `grubx64.efi` with the db key,
+stages them on the ESP alongside the BIOS GRUB (`grub/`) and UEFI GRUB
+(`EFI/BOOT/BOOTX64.EFI`), and calls `genimage-efi.cfg` instead of
+`genimage.cfg` so the EFI tree is included. Build output is still
+`output/images/wraithos.img` (640 MiB).
+
+Without `WRAITH_SB_KEYS` the build produces the legacy BIOS-only
+image. This is intentional: dev/CI builds without keys must not fail,
+but production builds must set the variable.
+
+### 3. Enroll PK/KEK/db into OVMF for QEMU testing
+
+Signed-image testing uses OVMF with custom keys. Microsoft's default
+keys are removed so the firmware verifies only Wraith keys.
+
+    virt-fw-vars \
+      --input /usr/share/edk2/ovmf/OVMF_VARS.secboot.fd \
+      --output /tmp/wraith-vars.fd \
+      --no-microsoft \
+      --set-pk 11111111-1111-1111-1111-111111111111 ~/sb-keys/PK.crt \
+      --add-kek 22222222-2222-2222-2222-222222222222 ~/sb-keys/KEK.crt \
+      --add-db  33333333-3333-3333-3333-333333333333 ~/sb-keys/db.crt
+
+    qemu-system-x86_64 -machine q35 -m 1024 -smp 2 -enable-kvm -cpu host \
+      -drive if=pflash,format=raw,unit=0,readonly=on,file=/usr/share/edk2/ovmf/OVMF_CODE.secboot.fd \
+      -drive if=pflash,format=raw,unit=1,file=/tmp/wraith-vars.fd \
+      -drive file=output/images/wraithos.img,format=raw,if=none,id=disk0 \
+      -device virtio-blk-pci,drive=disk0,bootindex=0 \
+      -netdev user,id=net0,hostfwd=tcp::2223-:22 -device virtio-net-pci,netdev=net0 \
+      -display none -serial file:/tmp/serial.log -no-reboot
+
+`virtio-blk-pci` is required for UEFI boot: the kernel cmdline hardcodes
+`root=/dev/vda2` and only virtio block devices appear as `/dev/vda*`.
+`ide-hd` presents as `/dev/sda*` and the EFI boot hangs at
+`Waiting for root device /dev/vda2...` (the `rootwait` argument makes
+that a permanent hang rather than a panic).
+
+Expected UEFI/SB boot on signed image: GRUB menu, then kernel boots,
+then `dmesg | grep -i "Secure boot enabled"` returns the line, then
+`wraithos login:`.
+
+Expected refusal on stock OVMF (Microsoft keys still in db): firmware
+prints `BdsDxe: failed to load Boot0001 ...: Access Denied` and stops.
+
+### 4. Production image rollout
+
+The signed image is not bit-identical to the unsigned BIOS path: the
+ESP gains `EFI/BOOT/BOOTX64.EFI` (~730 KiB) and `bzImage` gains a
+~1.7 KiB PE signature. Firmware on the target must have PK/KEK/db
+provisioned before the first boot of the signed image. Provisioning
+is firmware-vendor-specific (usually a Setup menu or an offline var
+store write); this document does not prescribe a method.
+
+**Unsigned path stays bootable.** The BIOS GRUB, kernel cmdline, and
+squashfs rootfs are unchanged. Non-Secure-Boot hardware boots the
+signed image normally through the legacy BIOS path.
+
+### 5. GRUB patches
+
+Two patches under `deploy/wraithos/grub-patches/` are applied to GRUB
+at build time:
+
+- `0001-skip-shim-lock-check.patch` — forces the EFI stub loader
+  instead of falling back to the legacy loader that requires shim.
+- `0002-bypass-shim-lock-verifier.patch` — allows `grub_file_open` on
+  the kernel when no shim protocol is present (the kernel has already
+  been firmware-verified via `LoadImage`).
+
+Rationale and gap analysis are in `docs/security.md` → "UEFI Secure
+Boot (shipped in v0.50.0, x86_64 only)". The patches do not weaken
+firmware verification of GRUB or the kernel.
+
 ## Running an image
 
 For an existing x86 image:

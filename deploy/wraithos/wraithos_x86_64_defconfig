@@ -67,3 +67,7 @@ BR2_PACKAGE_JSON_C=y
 # ─── TPM 2.0 (Item 1: LUKS sealing) ───
 BR2_PACKAGE_TPM2_TSS=y
 BR2_PACKAGE_TPM2_TOOLS=y
+
+# ─── UEFI Secure Boot (Item 2) ───
+BR2_TARGET_GRUB2_X86_64_EFI=y
+BR2_TARGET_GRUB2_BUILTIN_MODULES_EFI="boot linux ext2 fat squash4 part_msdos part_gpt normal efi_gop efi_uga all_video search test loadenv configfile serial terminal echo"

@@ -37,6 +37,45 @@ rm -rf "$BOOT_STAGE"
 mkdir -p "$BOOT_STAGE/grub/i386-pc"
 
 cp "${BIN_DIR}/bzImage" "$BOOT_STAGE/bzImage"
+# ─── [1.5/6] UEFI Secure Boot signing (conditional) ─────────────────
+if [ -n "${WRAITH_SB_KEYS:-}" ]; then
+    echo "[1.5/6] UEFI Secure Boot signing enabled (keys: $WRAITH_SB_KEYS)"
+    [ -f "$WRAITH_SB_KEYS/db.key" ] || { echo "[err] missing db.key"; exit 1; }
+    [ -f "$WRAITH_SB_KEYS/db.crt" ] || { echo "[err] missing db.crt"; exit 1; }
+    [ -n "${WRAITH_SB_KEYPASS:-}" ] || { echo "[err] WRAITH_SB_KEYPASS not set"; exit 1; }
+    command -v sbsign >/dev/null 2>&1 || { echo "[err] sbsign not in PATH"; exit 1; }
+    command -v sbverify >/dev/null 2>&1 || { echo "[err] sbverify not in PATH"; exit 1; }
+    TMPKEY=$(mktemp /tmp/sb-db-XXXXXX.pem); chmod 600 "$TMPKEY"
+    trap "shred -u $TMPKEY 2>/dev/null || rm -f $TMPKEY" EXIT
+    openssl rsa -in "$WRAITH_SB_KEYS/db.key" -passin "env:WRAITH_SB_KEYPASS" -out "$TMPKEY" 2>/dev/null || { echo "[err] db.key decrypt"; exit 1; }
+    if sbverify --cert "$WRAITH_SB_KEYS/db.crt" "$BOOT_STAGE/bzImage" >/dev/null 2>&1; then
+        echo "  bzImage already signed (input was signed), skipping re-sign"
+    else
+        sbsign --key "$TMPKEY" --cert "$WRAITH_SB_KEYS/db.crt" --output "$BOOT_STAGE/bzImage.signed" "$BOOT_STAGE/bzImage" || exit 1
+        mv "$BOOT_STAGE/bzImage.signed" "$BOOT_STAGE/bzImage"
+        sbverify --cert "$WRAITH_SB_KEYS/db.crt" "$BOOT_STAGE/bzImage" || exit 1
+    fi
+    echo "  bzImage signed: $(stat -c%s "$BOOT_STAGE/bzImage") bytes"
+    cp "$BOOT_STAGE/bzImage" "${BIN_DIR}/bzImage"
+    echo "  staged signed bzImage → BIN_DIR ($(stat -c%s "${BIN_DIR}/bzImage") bytes)"
+    EFI_GRUB_CORE="${BUILD_D}/grub2-2.12/build-x86_64-efi/grub-core"
+    [ -d "$EFI_GRUB_CORE" ] || { echo "[err] no x86_64-efi GRUB build tree"; exit 1; }
+    mkdir -p "$BOOT_STAGE/EFI/BOOT"
+    "$GRUB_MKIMAGE" -d "$EFI_GRUB_CORE" -O x86_64-efi -o "$BOOT_STAGE/EFI/BOOT/BOOTX64.EFI.unsigned" -p "/EFI/BOOT" boot linux ext2 fat squash4 part_msdos part_gpt normal efi_gop efi_uga all_video search test loadenv configfile serial terminal echo || exit 1
+    sbsign --key "$TMPKEY" --cert "$WRAITH_SB_KEYS/db.crt" --output "$BOOT_STAGE/EFI/BOOT/BOOTX64.EFI" "$BOOT_STAGE/EFI/BOOT/BOOTX64.EFI.unsigned" || exit 1
+    rm -f "$BOOT_STAGE/EFI/BOOT/BOOTX64.EFI.unsigned"
+    sbverify --cert "$WRAITH_SB_KEYS/db.crt" "$BOOT_STAGE/EFI/BOOT/BOOTX64.EFI" || exit 1
+    echo "  grubx64.efi signed: $(stat -c%s "$BOOT_STAGE/EFI/BOOT/BOOTX64.EFI") bytes"
+    printf "search --file --set=root /grub/grub.cfg\nconfigfile /grub/grub.cfg\n" > "$BOOT_STAGE/EFI/BOOT/grub.cfg"
+    echo "  EFI grub.cfg staged"
+    shred -u "$TMPKEY" 2>/dev/null || rm -f "$TMPKEY"; trap - EXIT
+else
+    echo "[1.5/6] UEFI Secure Boot signing DISABLED (WRAITH_SB_KEYS not set)"
+    echo "*** WARNING: image will NOT include EFI/UEFI Secure Boot chain ***"
+    echo "*** Production release images MUST set WRAITH_SB_KEYS=</path/to/keys> ***"
+    echo "*** to sign GRUB + bzImage and enable UEFI Secure Boot. ***"
+    echo "*** Reference: deploy/wraithos/uefi/gen-sb-keys.sh ***"
+fi
 cp "${BOARD_DIR}/grub.cfg" "$BOOT_STAGE/grub/grub.cfg"
 
 # grubenv: 1024-byte GRUB env block, slot=A starts
@@ -86,17 +125,30 @@ rm -rf "${BIN_DIR}/grub"
 cp -r "${BOOT_STAGE}/grub" "${BIN_DIR}/grub"
 echo "  staged: $(ls "${BIN_DIR}/grub" | tr '\n' ' ')"
 
+if [ -n "${WRAITH_SB_KEYS:-}" ] && [ -d "${BOOT_STAGE}/EFI" ]; then
+    rm -rf "${BIN_DIR}/EFI"
+    cp -r "${BOOT_STAGE}/EFI" "${BIN_DIR}/EFI"
+    echo "  staged EFI: $(ls -R "${BIN_DIR}/EFI" | head -5 | tr '\n' ' ')"
+fi
+
 # ─── [4/6] Run genimage ─────────────────────────────────────────────
 echo "[4/6] Running genimage"
 GEN_TMP="${BUILD_D}/genimage.tmp"
 rm -rf "$GEN_TMP"
+
+if [ -n "${WRAITH_SB_KEYS:-}" ]; then
+    GENIMAGE_CFG="${BOARD_DIR}/genimage-efi.cfg"
+else
+    GENIMAGE_CFG="${BOARD_DIR}/genimage.cfg"
+fi
+echo "  genimage config: $(basename "$GENIMAGE_CFG")"
 
 "$GENIMAGE" \
     --rootpath "$BOOT_STAGE" \
     --tmppath "$GEN_TMP" \
     --inputpath "${BIN_DIR}" \
     --outputpath "${BIN_DIR}" \
-    --config "${BOARD_DIR}/genimage.cfg"
+    --config "$GENIMAGE_CFG"
 
 # genimage's DOS partition table stops writing after the last partition
 # with an image source. p4 (data) is raw, so the file would end at p3
@@ -123,7 +175,7 @@ echo "  core.img: installed"
 
 # ─── [6/6] Cleanup ──────────────────────────────────────────────────
 echo "[6/6] Cleanup"
-rm -rf "$BOOT_STAGE" "$GEN_TMP" "$CORE_IMG" "${BIN_DIR}/grub"
+rm -rf "$BOOT_STAGE" "$GEN_TMP" "$CORE_IMG" "${BIN_DIR}/grub" "${BIN_DIR}/EFI"
 
 # ─── Done ───────────────────────────────────────────────────────────
 echo ""
