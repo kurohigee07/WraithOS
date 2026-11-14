@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src=".github/wraithos-banner.svg" alt="WraithOS" width="100%">
+<img src=".github/wraithos-boot.png" alt="WraithOS boot banner" width="720">
 
 **A Wasm appliance Linux. Single binary, signed boot chain, encrypted data.**
 
