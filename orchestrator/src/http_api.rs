@@ -140,6 +140,7 @@ async fn upload_shared(
     headers: &HeaderMap,
     body: Bytes,
 ) -> Result<Response, ApiError> {
+    validate_tenant(tenant)?;
     let id = extract_id(headers)?;
     validate_id(&id)?;
 
@@ -227,6 +228,7 @@ async fn replace_shared(
     headers: &HeaderMap,
     body: Bytes,
 ) -> Result<Response, ApiError> {
+    validate_tenant(tenant)?;
     validate_id(id)?;
     let sig_bytes = verify_if_needed(s, headers, &body)?;
 
@@ -280,6 +282,7 @@ async fn replace_shared(
 }
 
 async fn delete_shared(s: &ApiState, tenant: &str, id: &str) -> Result<Response, ApiError> {
+    validate_tenant(tenant)?;
     validate_id(id)?;
     let removed = s.registry.remove(tenant, id).ok_or_else(|| {
         ApiError::NotFound(format!("module '{id}' not found in tenant '{tenant}'"))
@@ -391,6 +394,7 @@ async fn put_quota_shared(
     id: &str,
     new_quota: ModuleQuota,
 ) -> Result<Json<serde_json::Value>, ApiError> {
+    validate_tenant(tenant)?;
     validate_id(id)?;
     let old = s.registry.get(tenant, id).ok_or_else(|| {
         ApiError::NotFound(format!("module '{id}' not found in tenant '{tenant}'"))
@@ -487,6 +491,37 @@ pub(crate) fn validate_id(id: &str) -> Result<(), ApiError> {
     {
         return Err(ApiError::BadRequest(
             "module id must be [a-zA-Z0-9_-]".into(),
+        ));
+    }
+    Ok(())
+}
+
+/// Validate a tenant name from a URL segment before using it as a
+/// directory component under `modules_dir`. Axum decodes `%2e%2e` to
+/// `..` but accepts it as a single path segment, so without this
+/// validation `POST /t/%2e%2e/modules` writes outside `modules_dir`.
+/// Reject empty, `.`, `..`, path separators, and anything that is not
+/// `[a-zA-Z0-9_-]`. Length cap 64 to bound filesystem paths.
+fn validate_tenant(tenant: &str) -> Result<(), ApiError> {
+    if tenant.is_empty() {
+        return Err(ApiError::BadRequest("tenant is empty".into()));
+    }
+    if tenant.len() > 64 {
+        return Err(ApiError::BadRequest(
+            "tenant too long (max 64 chars)".into(),
+        ));
+    }
+    if tenant == "." || tenant == ".." {
+        return Err(ApiError::BadRequest(
+            "tenant cannot be '.' or '..'".into(),
+        ));
+    }
+    if !tenant
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+    {
+        return Err(ApiError::BadRequest(
+            "tenant must match [a-zA-Z0-9_-]".into(),
         ));
     }
     Ok(())

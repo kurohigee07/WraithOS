@@ -26,7 +26,12 @@ impl WasmHostState {
             .memory_size(memory_bytes)
             .trap_on_grow_failure(true)
             .build();
-        let wasi = WasiCtxBuilder::new().inherit_stdio().build();
+        // Do not inherit_stdio: guest gets dummy stdio. Any module that
+        // wants to log must use the wasm log capability, which goes
+        // through host_impls and respects CapabilitySet. Leaving
+        // inherit_stdio on lets a guest write to host stderr and read
+        // host stdin, which is unintended I/O leakage.
+        let wasi = WasiCtxBuilder::new().build();
         Self {
             ctx,
             capabilities,

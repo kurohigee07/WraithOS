@@ -16,6 +16,9 @@ pub struct RhaiWorker {
     event_rx: broadcast::Receiver<OrchestratorEvent>,
     event_bus: EventBus,
     log_allowed: bool,
+    /// CapabilitySet snapshot untuk gating emit_event di closure.
+    /// Di-clone ke closure per-run sehingga tidak bocor antar-event.
+    capabilities: Arc<crate::capabilities::CapabilitySet>,
     /// Retained agar Arc<AppContext> hidup selama worker berjalan.
     /// M5+ dapat memakai ini untuk capability DB/HTTP sync dari script.
     _ctx: Arc<AppContext>,
@@ -34,6 +37,7 @@ impl RhaiWorker {
             .map_err(|e| anyhow::anyhow!("rhai compile failed: {e}"))?;
 
         let log_allowed = ctx.capabilities.check_log().is_ok();
+        let capabilities = ctx.capabilities.clone();
         debug!(log_allowed, "rhai worker initialized");
 
         Ok(Self {
@@ -41,6 +45,7 @@ impl RhaiWorker {
             event_rx,
             event_bus,
             log_allowed,
+            capabilities,
             _ctx: ctx,
         })
     }
@@ -99,6 +104,7 @@ impl RhaiWorker {
         let kind = event.kind.clone();
 
         let log_allowed = self.log_allowed;
+        let capabilities = self.capabilities.clone();
         let sink: Arc<Mutex<Vec<OrchestratorEvent>>> = Arc::new(Mutex::new(Vec::new()));
         let sink_for_engine = sink.clone();
 
@@ -113,20 +119,27 @@ impl RhaiWorker {
             });
 
             let emit_sink = sink_for_engine;
+            let emit_caps = capabilities;
             engine.register_fn(
                 "emit_event",
-                move |k: &str, p: &str| match serde_json::from_str::<serde_json::Value>(p) {
-                    Ok(v) => {
-                        if let Ok(mut g) = emit_sink.lock() {
-                            g.push(OrchestratorEvent {
-                                kind: k.to_string(),
-                                payload: v,
-                                source_module: "rhai".to_string(),
-                            });
-                        }
+                move |k: &str, p: &str| {
+                    if emit_caps.check_emit_event(k).is_err() {
+                        error!(kind = k, "rhai emit_event: capability denied");
+                        return;
                     }
-                    Err(_) => {
-                        error!(kind = k, "rhai emit_event: payload is not json");
+                    match serde_json::from_str::<serde_json::Value>(p) {
+                        Ok(v) => {
+                            if let Ok(mut g) = emit_sink.lock() {
+                                g.push(OrchestratorEvent {
+                                    kind: k.to_string(),
+                                    payload: v,
+                                    source_module: "rhai".to_string(),
+                                });
+                            }
+                        }
+                        Err(_) => {
+                            error!(kind = k, "rhai emit_event: payload is not json");
+                        }
                     }
                 },
             );

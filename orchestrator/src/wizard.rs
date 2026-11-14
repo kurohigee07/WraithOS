@@ -626,7 +626,31 @@ async fn finish_handler(State(s): State<ApiState>) -> Response {
         .into_response()
 }
 
-async fn reset_luks_handler(State(s): State<ApiState>) -> Response {
+async fn reset_luks_handler(
+    State(s): State<ApiState>,
+    headers: axum::http::HeaderMap,
+) -> Response {
+    // Confirmation gate: LUKS erase is destructive and irreversible
+    // (removes the LUKS header on /dev/vda4, including the keyfile
+    // slot). require_auth is off by default, so anyone with loopback
+    // (or network, if metrics_bind was set to 0.0.0.0) could trigger
+    // this. A header requirement blocks accidental calls and naive
+    // scanners; a determined attacker with code access to the guest
+    // can trivially add the header, but at that point the attacker
+    // already has local code execution and this endpoint is not the
+    // escalation. See docs/wraithos.md -> "Wizard reset-luks" for
+    // the documented recovery path.
+    let confirmed = headers
+        .get("x-wizard-confirm")
+        .and_then(|v| v.to_str().ok())
+        == Some("I-understand-data-loss");
+    if !confirmed {
+        return err_response(
+            StatusCode::BAD_REQUEST,
+            "add header 'X-Wizard-Confirm: I-understand-data-loss' to confirm",
+        );
+    }
+
     let mounted = std::fs::read_to_string("/proc/mounts")
         .map(|m| {
             m.lines()
@@ -656,6 +680,12 @@ async fn reset_luks_handler(State(s): State<ApiState>) -> Response {
         );
     }
     let _ = std::fs::remove_file("/boot/luks.key");
+    info!(
+        target: "audit",
+        event = "wizard.luks_erase",
+        device = DATA_DEVICE,
+        "wizard: LUKS header erased via /wizard/reset-luks"
+    );
     let mut w = s.wizard.data.lock().await;
     w.luks_enabled = false;
     w.completed = false;
