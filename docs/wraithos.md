@@ -427,6 +427,17 @@ To reach a loopback-only guest API from the host, use QEMU host forwarding, for 
 
 The Rust wizard is present at `/wizard`, not a separate port 8080. It accepts hostname, admin password, optional encryption password, and network settings; writes state under `data_dir`; and records completion markers.
 
+**SSH is closed until the wizard completes (v0.51+).** `S50dropbear`
+refuses to start until `/var/lib/orchestrator/wizard.complete`
+exists. Reach the wizard over the serial console (default root
+password documented in README); `finish_handler` restarts
+`S50dropbear` at the end of the same wizard run, so port 22 becomes
+available without a reboot. Pre-v0.51 images started dropbear at
+boot, which exposed the documented default password on port 22
+before the operator had provisioned anything; v0.51 closes that
+window. See `docs/security.md` -> "SSH authentication" for the
+rationale and CHANGELOG v0.51.0 for the attack window description.
+
 Important boundaries:
 
 - The embedded HTML does not currently expose the encryption-password input.

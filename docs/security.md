@@ -177,6 +177,17 @@ behind the serial console, not the primary interface.
   recovered by logging in on the serial tty and clearing
   `/etc/wraith/ssh-pubkey-only` (or by re-running the wizard from a
   fresh image). There is no SSH-only lockout.
+- **Pre-wizard gate (v0.51+).** `S50dropbear` refuses to start
+  until `/var/lib/orchestrator/wizard.complete` exists. This closes
+  the pre-wizard window during which the documented default root
+  password was reachable on port 22 before the operator had
+  provisioned anything. The gate is lifted by `finish_handler`
+  (wizard.rs) restarting `S50dropbear` at the end of the same
+  wizard run; no reboot required. Serial console remains
+  password-authenticated with the same default throughout - it is
+  the primary provisioning interface and the documented recovery
+  path. Pre-v0.51 images do not have this gate; see CHANGELOG
+  v0.51.0 for the rationale and the attack window.
 
 Known gaps:
 
@@ -427,8 +438,12 @@ Why a documented default instead of per-device random generation:
   instability (bind mount on read-only squashfs, inode replacement
   semantics).
 - The console is physically isolated: `getty` binds only to the
-  serial port (`ttyS0` on x86, `ttyAMA0` on ARM). There is no
-  network-facing login (no sshd in the image).
+  serial port (`ttyS0` on x86, `ttyAMA0` on ARM). The
+  network-facing login (dropbear, port 22) is gated to post-wizard
+  as of v0.51: `S50dropbear` refuses to start until
+  `/var/lib/orchestrator/wizard.complete` exists. Pre-v0.51 images
+  did not have this gate; the exposure is closed. See "SSH
+  authentication" above.
 - Every commercial appliance OS ships a documented default
   (OpenWrt `root`/no password by default, Ubiquiti `ubnt`/`ubnt`,
   pfSense `admin`/`pfsense`). Operators are expected to change it
