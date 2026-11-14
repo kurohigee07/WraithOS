@@ -9,7 +9,8 @@ use axum::extract::State;
 use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
-use axum::{Json, Router};
+use axum::{
+    extract::DefaultBodyLimit,Json, Router};
 use metrics_exporter_prometheus::{PrometheusBuilder, PrometheusHandle};
 use std::time::Duration;
 use tokio::sync::oneshot;
@@ -126,6 +127,11 @@ pub fn build_router(state: ApiState) -> Router {
     }
 
     router
+        // 1 MiB default body limit for all routes that do not set
+        // their own (wizard, ui, ws). http_api/build_api set their
+        // own 10 MiB inner limit which takes precedence because
+        // innermost DefaultBodyLimit wins at body-read time.
+        .layer(DefaultBodyLimit::max(1024 * 1024))
         .layer(TimeoutLayer::with_status_code(
             axum::http::StatusCode::REQUEST_TIMEOUT,
             // Outer HTTP timeout must be strictly larger than the Wasm
