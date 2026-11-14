@@ -563,6 +563,41 @@ before the operator had provisioned anything; v0.51 closes that
 window. See `docs/security.md` -> "SSH authentication" for the
 rationale and CHANGELOG v0.51.0 for the attack window description.
 
+#### Wizard reset-luks recovery (destructive)
+
+`POST /wizard/reset-luks` runs `cryptsetup luksErase /dev/vda4`,
+which is irreversible: the LUKS header on `/dev/vda4` is removed,
+including the slot that holds the keyfile derived from the wizard
+encryption password. This is the last-resort recovery path when
+`S30data` cannot mount `/data` (for example: TPM cleared on a
+v0.49 device whose plaintext keyfile was removed by
+`wraith-tpm-finalize`, or a LUKS header damaged by disk failure),
+because a non-mounting `/data` means the wizard marker is not
+visible and the wizard state is re-initialized to "first boot".
+
+**As of the 2026-11-14 security batch** the endpoint requires a
+confirmation header:
+
+    curl -X POST \
+      -H 'X-Wizard-Confirm: I-understand-data-loss' \
+      http://127.0.0.1:9090/wizard/reset-luks
+
+Without the header, the endpoint returns `400 Bad Request` and
+does nothing. The handler still refuses if `/data` is currently
+mounted (`409 Conflict`). After a successful erase an `audit`
+event is logged with `event = "wizard.luks_erase"` so the action
+is visible in the orchestrator log.
+
+**This wipes `/data` permanently.** Back up the LUKS header and
+any data first (see "Backup before reflash" above). The
+`/boot/luks.key` file is also removed. Only serial console access
+is required to invoke the endpoint (any local user, or remote
+access to `metrics_bind` if it was set to `0.0.0.0`); no token is
+required because `require_auth` defaults to `false`. The
+confirmation header is a speed bump, not authentication. Do not
+set `metrics_bind = 0.0.0.0` on a production device with
+`require_auth = false`.
+
 Important boundaries:
 
 - The embedded HTML does not currently expose the encryption-password input.
