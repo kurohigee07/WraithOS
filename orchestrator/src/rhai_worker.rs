@@ -120,29 +120,26 @@ impl RhaiWorker {
 
             let emit_sink = sink_for_engine;
             let emit_caps = capabilities;
-            engine.register_fn(
-                "emit_event",
-                move |k: &str, p: &str| {
-                    if emit_caps.check_emit_event(k).is_err() {
-                        error!(kind = k, "rhai emit_event: capability denied");
-                        return;
-                    }
-                    match serde_json::from_str::<serde_json::Value>(p) {
-                        Ok(v) => {
-                            if let Ok(mut g) = emit_sink.lock() {
-                                g.push(OrchestratorEvent {
-                                    kind: k.to_string(),
-                                    payload: v,
-                                    source_module: "rhai".to_string(),
-                                });
-                            }
-                        }
-                        Err(_) => {
-                            error!(kind = k, "rhai emit_event: payload is not json");
+            engine.register_fn("emit_event", move |k: &str, p: &str| {
+                if emit_caps.check_emit_event(k).is_err() {
+                    error!(kind = k, "rhai emit_event: capability denied");
+                    return;
+                }
+                match serde_json::from_str::<serde_json::Value>(p) {
+                    Ok(v) => {
+                        if let Ok(mut g) = emit_sink.lock() {
+                            g.push(OrchestratorEvent {
+                                kind: k.to_string(),
+                                payload: v,
+                                source_module: "rhai".to_string(),
+                            });
                         }
                     }
-                },
-            );
+                    Err(_) => {
+                        error!(kind = k, "rhai emit_event: payload is not json");
+                    }
+                }
+            });
 
             let mut scope = Scope::new();
             scope.push("event_kind", kind);

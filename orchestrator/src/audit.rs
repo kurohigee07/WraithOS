@@ -80,11 +80,7 @@ impl AuditWriter {
     }
 }
 
-async fn writer_loop(
-    db: SqlitePool,
-    mut rx: mpsc::Receiver<AuditEntry>,
-    shutdown: Arc<Notify>,
-) {
+async fn writer_loop(db: SqlitePool, mut rx: mpsc::Receiver<AuditEntry>, shutdown: Arc<Notify>) {
     let mut batch: Vec<AuditEntry> = Vec::with_capacity(BATCH_MAX);
     let mut ticker = tokio::time::interval(Duration::from_millis(FLUSH_INTERVAL_MS));
     ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);

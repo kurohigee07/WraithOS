@@ -626,10 +626,7 @@ async fn finish_handler(State(s): State<ApiState>) -> Response {
         .into_response()
 }
 
-async fn reset_luks_handler(
-    State(s): State<ApiState>,
-    headers: axum::http::HeaderMap,
-) -> Response {
+async fn reset_luks_handler(State(s): State<ApiState>, headers: axum::http::HeaderMap) -> Response {
     // Confirmation gate: LUKS erase is destructive and irreversible
     // (removes the LUKS header on /dev/vda4, including the keyfile
     // slot). require_auth is off by default, so anyone with loopback

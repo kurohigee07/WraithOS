@@ -512,9 +512,7 @@ fn validate_tenant(tenant: &str) -> Result<(), ApiError> {
         ));
     }
     if tenant == "." || tenant == ".." {
-        return Err(ApiError::BadRequest(
-            "tenant cannot be '.' or '..'".into(),
-        ));
+        return Err(ApiError::BadRequest("tenant cannot be '.' or '..'".into()));
     }
     if !tenant
         .chars()
@@ -564,6 +562,17 @@ fn resolve_capabilities(
                 ApiError::BadRequest(format!("X-Module-Capabilities not json: {e}"))
             })?;
             let arc = Arc::new(CapabilitySet::from_capabilities(&parsed));
+            // Enforce the deployment-wide ceiling: the requested
+            // capability set must be a subset of ctx.capabilities.
+            // Without this check, X-Module-Capabilities bypasses the
+            // admin's configured ceiling (allow_log, allowed_hosts,
+            // allowed_kinds, ports, tables) and a caller can grant a
+            // module more authority than the deployment allowed.
+            arc.is_subset_of(&ctx.capabilities).map_err(|e| {
+                ApiError::BadRequest(format!(
+                    "X-Module-Capabilities not permitted by global ceiling: {e}"
+                ))
+            })?;
             Ok((parsed, arc))
         }
         None => Ok((vec![], ctx.capabilities.clone())),

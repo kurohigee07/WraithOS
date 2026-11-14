@@ -131,6 +131,62 @@ impl CapabilitySet {
             )))
         }
     }
+
+    /// Return Ok if every capability in `self` is permitted by `ceiling`.
+    /// Used when a caller submits X-Module-Capabilities on upload: the
+    /// requested set must be a subset of the deployment-wide ceiling,
+    /// otherwise the module would run with more authority than the
+    /// admin allowed (CVE-class: capability ceiling bypass).
+    pub fn is_subset_of(&self, ceiling: &CapabilitySet) -> std::result::Result<(), String> {
+        for req in &self.http_hosts {
+            if !ceiling.http_hosts.iter().any(|c| host_subsumes(c, req)) {
+                return Err(format!(
+                    "http host matcher {req:?} not permitted by ceiling"
+                ));
+            }
+        }
+        for port in &self.tcp_ports {
+            if !ceiling.tcp_ports.contains(port) {
+                return Err(format!("tcp port {port} not permitted by ceiling"));
+            }
+        }
+        for req in &self.tcp_hosts {
+            if !ceiling.tcp_hosts.iter().any(|c| host_subsumes(c, req)) {
+                return Err(format!("tcp host matcher {req:?} not permitted by ceiling"));
+            }
+        }
+        for table in &self.db_tables {
+            if !ceiling.db_tables.contains(table) {
+                return Err(format!("db table '{table}' not permitted by ceiling"));
+            }
+        }
+        for kind in &self.emit_kinds {
+            if !ceiling.emit_kinds.iter().any(|c| c == "*" || c == kind) {
+                return Err(format!("emit kind '{kind}' not permitted by ceiling"));
+            }
+        }
+        if self.allow_log && !ceiling.allow_log {
+            return Err("log capability not permitted by ceiling".into());
+        }
+        Ok(())
+    }
+}
+
+/// True when every host that matches `requested` is also matched by
+/// `ceiling`. Used by CapabilitySet::is_subset_of. The only asymmetric
+/// case is wildcard: a ceiling wildcard subsumes anything; a requested
+/// wildcard is only subsumed by a ceiling wildcard.
+fn host_subsumes(ceiling: &HostMatcher, requested: &HostMatcher) -> bool {
+    match (ceiling, requested) {
+        (HostMatcher::Wildcard, _) => true,
+        (_, HostMatcher::Wildcard) => false,
+        (HostMatcher::Suffix(c), HostMatcher::Suffix(r)) => c == r,
+        (HostMatcher::Suffix(c), HostMatcher::Exact(r)) => {
+            r.len() > c.len() + 1 && r.ends_with(c) && r.as_bytes()[r.len() - c.len() - 1] == b'.'
+        }
+        (HostMatcher::Exact(c), HostMatcher::Exact(r)) => c == r,
+        _ => false,
+    }
 }
 
 #[cfg(test)]
@@ -161,5 +217,29 @@ mod tests {
         assert!(caps
             .check_http(&reqwest::Url::parse("https://evil.com/").unwrap())
             .is_err());
+    }
+
+    #[test]
+    fn subset_of_enforces_ceiling() {
+        let ceiling = CapabilitySet::from_capabilities(&[
+            Capability::HttpGet {
+                allowed_hosts: vec!["api.example.com".into()],
+            },
+            Capability::TcpConnect {
+                allowed_ports: vec![443],
+            },
+        ]);
+        let subset = CapabilitySet::from_capabilities(&[Capability::HttpGet {
+            allowed_hosts: vec!["api.example.com".into()],
+        }]);
+        assert!(subset.is_subset_of(&ceiling).is_ok());
+        let over = CapabilitySet::from_capabilities(&[Capability::HttpGet {
+            allowed_hosts: vec!["*".into()],
+        }]);
+        assert!(over.is_subset_of(&ceiling).is_err());
+        let over_port = CapabilitySet::from_capabilities(&[Capability::TcpConnect {
+            allowed_ports: vec![8443],
+        }]);
+        assert!(over_port.is_subset_of(&ceiling).is_err());
     }
 }

@@ -9,8 +9,7 @@ use axum::extract::State;
 use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
-use axum::{
-    extract::DefaultBodyLimit,Json, Router};
+use axum::{extract::DefaultBodyLimit, Json, Router};
 use metrics_exporter_prometheus::{PrometheusBuilder, PrometheusHandle};
 use std::time::Duration;
 use tokio::sync::oneshot;
