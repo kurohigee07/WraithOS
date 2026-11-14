@@ -19,7 +19,12 @@
 
 set -euo pipefail
 
-OUT="${1:-/tmp/sb-keys}"
+OUT="${1:-$HOME/sb-keys}"
+FORCE_DEV=0
+if [ "${1:-}" = "--force-dev" ]; then
+    OUT="/tmp/sb-keys"
+    FORCE_DEV=1
+fi
 
 if [ -z "${WRAITH_SB_KEYPASS:-}" ]; then
     echo "FATAL: WRAITH_SB_KEYPASS is not set." >&2
@@ -31,16 +36,39 @@ if [ "${#WRAITH_SB_KEYPASS}" -lt 16 ]; then
     exit 1
 fi
 
-if [ "$OUT" != "/tmp/sb-keys" ] && [ "${OUT#/tmp/}" = "$OUT" ]; then
-    echo ""
-    echo "*** WARNING: output path is not under /tmp/ ***"
-    echo "*** Output dir: $OUT"
-    echo "*** Before you proceed: confirm encrypted-USB backup plan,"
-    echo "*** password-manager entry, and rotation policy are documented."
-    echo "*** Sleeping 5 seconds. Ctrl-C to abort."
-    echo ""
-    sleep 5
-fi
+# Warn if destination is volatile (under /tmp). Persistent paths
+# ($HOME/sb-keys or similar) do NOT warn — that is the intended target.
+case "$OUT" in
+    /tmp/*|/var/tmp/*)
+        if [ "$FORCE_DEV" != "1" ]; then
+            echo ""
+            echo "*** FATAL: refusing to write keys under /tmp/ ***"
+            echo "*** Output dir: $OUT"
+            echo "*** /tmp is wiped on reboot. Keys generated here WILL be lost."
+            echo "*** Use the default $HOME/sb-keys, or a persistent path."
+            echo "*** For throwaway test keys, pass --force-dev as the first arg."
+            echo ""
+            exit 1
+        fi
+        echo ""
+        echo "*** DEV MODE: keys will be written to $OUT and lost on reboot ***"
+        echo "*** Do NOT use these keys in production ***"
+        echo ""
+        sleep 3
+        ;;
+esac
+
+# Persistent path reminder
+echo ""
+echo "=== Key directory: $OUT ==="
+echo "Before proceeding, confirm backup plan:"
+echo "  [ ] encrypted USB x 2, different physical locations"
+echo "  [ ] password-manager entry for WRAITH_SB_KEYPASS"
+echo "  [ ] copy to offline cloud storage (OCI / Drive)"
+echo "  [ ] rotation policy documented"
+echo ""
+echo "Sleeping 5 seconds. Ctrl-C to abort."
+sleep 5
 
 if [ -d "$OUT" ] && [ -n "$(ls -A "$OUT" 2>/dev/null)" ]; then
     echo "FATAL: $OUT is not empty. Refusing to overwrite." >&2
@@ -80,7 +108,8 @@ gen_db() {
         2>/dev/null
     chmod 0600 "$OUT/db.key"
     chmod 0644 "$OUT/db.crt"
-    echo "  generated: db.key db.crt"
+    chmod 0600 "$OUT/db.key"
+echo "  generated: db.key db.crt"
 }
 
 echo "=== Generating WraithOS Secure Boot keys ==="
@@ -92,6 +121,13 @@ gen_db
 echo ""
 
 echo "=== Key fingerprints ==="
+for f in "$OUT"/*.crt; do
+    fp=$(openssl x509 -in "$f" -noout -fingerprint -sha256 | cut -d= -f2)
+    echo "  $(basename "$f"): $fp"
+done
+echo ""
+
+echo "=== Backup manifest (write this down / copy to password manager) ==="
 for f in "$OUT"/*.crt; do
     fp=$(openssl x509 -in "$f" -noout -fingerprint -sha256 | cut -d= -f2)
     echo "  $(basename "$f"): $fp"
