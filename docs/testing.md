@@ -90,6 +90,49 @@ When changing behavior, update the corresponding guide and interactive explanati
 6. Report what was actually run; do not convert a planned test into a claimed pass.
 7. For performance claims, preserve raw data and methodology alongside derived figures.
 
+## Test matrix: TPM and Secure Boot
+
+Both features ship with a test matrix that was exercised end-to-end on
+QEMU before the corresponding release. The scenarios below are the ones
+re-run before any change that touches the boot chain, the LUKS path,
+or the SB signing pipeline.
+
+### TPM 2.0 LUKS sealing (v0.49.0, both arches)
+
+Run on QEMU with `-tpmdev emulator,id=tpm0 -device tpm-tis-device,tpmdev=tpm0`.
+
+| Test | Scenario | Pass criterion |
+|------|----------|----------------|
+| T1 | Fresh image + TPM, wizard with encryption password, cold reboot | `/boot/luks.sealed.{pub,priv}` written; cold boot unseals; `/data` mounted; plaintext keyfile still present (v1 coexistence) |
+| T2 | Fresh image, no TPM, wizard with encryption password | `/boot/luks.key` written; no sealed blob; log line `TPM absent, using plaintext keyfile` |
+| T3 | Same as T1 on x86_64 | Same as T1 |
+| T4 | Same as T2 on x86_64 | Same as T2 |
+| T5 | TPM cleared externally (`tpm2_clear`), reboot | Unseal fails; plaintext fallback; `/data` mounted; log line `TPM unseal failed (rc=1), falling back to plaintext keyfile` |
+| T6 | Firmware state changed (mutate a PCR-affecting input), reboot | Sealed unseal fails; plaintext fallback; `wraith-tpm-reseal` re-seals and works |
+
+### UEFI Secure Boot x86_64 (v0.50.0)
+
+Run on QEMU with OVMF + KVM. Custom keys enrolled via `virt-fw-vars`
+(see `docs/wraithos.md` → "Building a UEFI Secure Boot x86_64 image").
+Uses `virtio-blk-pci` for the disk; `ide-hd` presents as `/dev/sda` and
+the EFI boot hangs at `Waiting for root device /dev/vda2...`.
+
+| Test | Scenario | Pass criterion |
+|------|----------|----------------|
+| T-SB0 | BIOS path, unsigned image | Boots to login; `/healthz` OK; `dmesg` does not report Secure Boot enabled |
+| T-SB1 | UEFI, custom PK, Secure Boot ON, signed image | Boots to login; `dmesg | grep -i "Secure boot enabled"` returns the line |
+| T-SB2 | UEFI, Secure Boot OFF, unsigned image | Boots to login |
+| T-SB3 | UEFI, stock OVMF (Microsoft PK), Secure Boot ON, signed image | Firmware refuses to load GRUB (`Access Denied`) |
+| T-SB4a | UEFI, custom PK, Secure Boot ON, unsigned GRUB on ESP | Firmware refuses (`Access Denied`) |
+| T-SB4b | UEFI, custom PK, Secure Boot ON, signed GRUB | GRUB menu appears; chain proceeds |
+
+### TPM + Secure Boot together
+
+Any change that touches both (e.g. the sealed keyfile path and the ESP)
+must re-run T1–T6 and T-SB0–T-SB4b before merge. The two features share
+the ESP (`/boot/luks.key`, `/boot/luks.sealed.*`, `/boot/grub/grubenv`,
+`EFI/BOOT/BOOTX64.EFI`) and are not independent in the test rig.
+
 ## Release verification
 
 Use the [operations checklist](operations.md#pre-release-operational-checklist). Security-sensitive changes additionally need negative tests for authorization, tenant data visibility, signature persistence, source extraction, resource exhaustion, and shutdown/update failure paths. The current test count alone is not a security certification.

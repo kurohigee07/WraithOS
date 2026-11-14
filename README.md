@@ -53,6 +53,27 @@
 > logged to `/data/orchestrator/healthcheck.log` (LUKS volume) as
 > well as syslog, because `/var/log` is a tmpfs and would lose the
 > trail across the rollback.
+>
+> **TPM 2.0 LUKS sealing.** On first boot, if a TPM 2.0 device is
+> present, the wizard seals `/boot/luks.key` to it under a PCR policy
+> (0, 4, 5, 7). The plaintext keyfile is kept alongside the sealed
+> blob so that any TPM failure (hardware move, firmware update, PCR
+> drift) falls back to plaintext and `/data` remains mountable.
+> Removal of the plaintext requires an explicit
+> `wraith-tpm-finalize`; auto-removal is deferred to v0.51+. See
+> [WraithOS](docs/wraithos.md) → "TPM 2.0 sealing".
+>
+> **UEFI Secure Boot (x86_64 only).** v0.50.0 adds a signed boot
+> chain on the x86_64 image: firmware verifies `grubx64.efi` against
+> a device-specific PK enrolled in the firmware, and the kernel is
+> loaded via the EFI stub loader so the firmware verifies `bzImage`
+> against the db key as well. Signing is opt-in via
+> `WRAITH_SB_KEYS`; builds without it produce the legacy BIOS-only
+> image. The v0.50.0 release ships with a single shared certificate
+> (the corresponding private keys were lost after signing; see the
+> release notes for the upgrade path). See
+> [WraithOS](docs/wraithos.md) → "Building a UEFI Secure Boot x86_64
+> image".
 
 ## What is Wraith?
 
@@ -374,7 +395,7 @@ The [source map](docs/source-map.md) covers every file tracked at the documented
 
 ## Implementation status and trust
 
-**Present in source:** component execution; HTTP/TCP/event host bridges; lifecycle API; quota gates; tenant configuration; optional global authentication; conditional Bubblewrap source builds; signatures; dashboard/WebSocket; SDK/CLI; first-boot wizard handlers; ARM boot-state/watchdog scripts; RAUC health-gated rollback; release helper scripts.
+**Present in source:** component execution; HTTP/TCP/event host bridges; lifecycle API; quota gates; tenant configuration; optional global authentication; conditional Bubblewrap source builds; signatures; dashboard/WebSocket; SDK/CLI; first-boot wizard handlers; ARM boot-state/watchdog scripts; TPM 2.0 LUKS sealing with plaintext fallback; UEFI Secure Boot x86_64 signing pipeline; RAUC health-gated rollback; release helper scripts.
 
 **Not established by this documentation:** a fresh OS image build, a reproducible benchmark rerun, independent penetration testing, complete tenant isolation, crash-safe update transactions (a health-gated RAUC rollback exists, but power-loss atomicity of the GRUB env write is not proven), or a finished setup-to-login/network/encryption integration.
 
