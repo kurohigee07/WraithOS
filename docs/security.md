@@ -369,6 +369,104 @@ policy, Secure Boot on aarch64 (requires ARM SBBR / U-Boot FIT
 measured boot which the current EFI-GRUB aarch64 image does not
 provide).
 
+### Build-process post-mortem (v0.50.0 Secure Boot key loss)
+
+v0.50.0 shipped correctly signed images. The signing key material
+that produced them was lost in a build-process incident after the
+image was built. This section documents what happened, why the
+release remains valid despite it, and what changed as a result.
+
+**Timeline.**
+
+1. `deploy/wraithos/uefi/gen-sb-keys.sh` was executed with its
+   default output directory. At the time the default was
+   `/tmp/sb-keys`.
+2. The script contained an inverted safety check: it printed a
+   warning when the output path was persistent (`$HOME/sb-keys`)
+   and silently accepted the volatile path (`/tmp/sb-keys`). The
+   intended behaviour was the opposite. The bug meant the operator
+   was not alerted that the keys were about to be written to a
+   directory that `/tmp` cleanup on most hosts (including the
+   build VPS) removes.
+3. The image was built and signed. `sbverify --cert db.crt`
+   returned `Signature verification OK` for both `bzImage` and
+   `grubx64.efi` in the resulting ESP. PE signatures are
+   self-contained; they do not depend on the private key remaining
+   available after signing.
+4. `/tmp` was wiped (either by a reboot or by cleanup). `db.key`,
+   `PK.key`, and `KEK.key` were lost. `db.crt` (public) survived
+   inside the signed PE binaries as the embedded signer
+   certificate.
+
+**What remains valid.**
+
+- The v0.50.0 image boots under Secure Boot when the target
+  firmware has `db.crt` enrolled. This was verified with QEMU
+  OVMF and custom PK/KEK/db provisioned for the release (see the
+  test matrix above).
+- `db.crt`, `bz.pkcs7`, `grub.pkcs7`, `bz.chain.pem`,
+  `grub.chain.pem`, and `SHA256SUMS` are published as release
+  assets. Their SHA-256 fingerprint matches the certificate
+  embedded in the image; independent verification with `sbverify`
+  succeeds.
+- Existing v0.50.0 devices continue to accept RAUC bundle updates
+  from later releases. RAUC bundles only write to the rootfs
+  slots (`/dev/vda2`, `/dev/vda3`); they do not touch the ESP.
+  The signed `grubx64.efi` and `bzImage` on the ESP remain valid
+  under the enrolled `db.crt` indefinitely.
+
+**What no longer works.**
+
+- A new image signed under the v0.50.0 certificate cannot be
+  produced. `db.key` is gone.
+- A v0.51+ image signed with a *different* key cannot boot on a
+  v0.50.0-provisioned device without re-enrolling the new
+  certificate. Migration steps are in `docs/wraithos.md` ->
+  "Certificate migration v0.50.0 -> v0.52+".
+
+**Why this is not a compromise.**
+
+A lost private key means the key cannot be used by anyone. A
+leaked private key means an attacker can produce a signed image
+that would pass firmware verification. The two cases have
+opposite security consequences:
+
+- Lost: the set of signed images is frozen. No new image can be
+  produced that trusts against the enrolled `db.crt`. No attacker
+  capability is added.
+- Leaked: the trust anchor is defeated. An attacker can sign a
+  modified `grubx64.efi` that loads an attacker kernel, and the
+  target firmware will accept it. Remediation requires revoking
+  the old certificate via `dbx` (destructive, bricks existing
+  devices) or re-enrolling new keys on every device.
+
+Because v0.50.0 is a *lost key* case, no revocation action is
+required. The enrolled `db.crt` continues to verify only the
+specific PE signatures that were produced before the loss.
+
+**Fix (commit `aae2af7`).**
+
+`gen-sb-keys.sh` now:
+
+- Defaults its output to `$HOME/sb-keys`, not `/tmp/sb-keys`.
+- Refuses to write under `/tmp/` or `/var/tmp/` unless the caller
+  passes `--force-dev` as the first argument. The refusal is a
+  hard `exit 1`, not a warning.
+- Prints a five-second pre-write pause with a checklist on
+  persistent paths: "encrypted USB x 2", "password-manager
+  entry", "copy to offline cloud storage", "rotation policy
+  documented". The operator can Ctrl-C before any key is
+  generated.
+- Prints the SHA-256 fingerprint of each generated certificate
+  on completion so the operator can record it alongside the
+  password-manager entry.
+
+The fix landed on `main` after the v0.50.0 tag. The tag itself is
+not modified. v0.51.0 images are unsigned (BIOS-only) by design:
+the operator decision was to not attempt signing with unrecoverable
+keys and to defer per-device keys to v0.52+.
+
+
 ## Update verification and rollback
 
 RAUC installs to the inactive slot and marks it active. The current
