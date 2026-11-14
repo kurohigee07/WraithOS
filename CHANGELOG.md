@@ -45,6 +45,31 @@ Releases before `v0.24.0` are not itemized here; see commit history.
     `writer_loop`, and a `try_recv` drain before the final flush.
     `AppContext::shutdown` calls `audit.drain()` before
     `db.close()`. Landed in `30146dd`.
+  - **M2 http::get body cap.** `wasm/host_impls.rs` read the
+    whole `http::get` response body via `resp.text().await` with
+    no size limit. A hostile host in `allowed_hosts` could
+    exhaust process memory. Now rejects `Content-Length` > 16 MiB
+    up front and enforces the same cap on the streaming read
+    (`bytes_stream()` cumulative total), so decompressed bodies
+    are bounded too. Helper `check_body_size` extracted and
+    covered by 4 unit tests. Constant
+    `MAX_HTTP_BODY_BYTES = 16 MiB`.
+  - **H1 wasm fuel budget.** Wasmtime ran with only the 60s epoch
+    deadline as a CPU bound; a CPU-bound guest could hold a Wasm
+    pool slot for the full window. Enabled
+    `config.consume_fuel(true)` and set
+    `store.set_fuel(MAX_FUEL_PER_EXECUTION = 100_000_000)` per
+    execution (fresh Store each call). Chosen empirically: the
+    heaviest legit fixture (`cpu_heavy.wasm`) consumes ~1.59M
+    fuel, `sample.wasm` ~20K, `json_heavy.wasm` ~34K,
+    `adversarial.wasm` ~2.7K, `empty.wasm` ~1.2K. 100M is ~63x
+    headroom over the heaviest and bounds worst-case CPU to a
+    few hundred ms. Fuel exhaustion is surfaced as a distinct
+    error message
+    (`guest exceeded fuel budget of N instructions`) instead of
+    the raw trap, detected by matching Wasmtime's trap text.
+    Benchmark instrumentation was a temporary test deleted in
+    the same commit (see CHANGELOG evidence below).
   - **L4 audit send failure visibility.** `wasm/module.rs` used
     `let _ = audit_tx.send(...)` and silently dropped the row if
     the writer task had exited. Now logs a `warn!` with tenant,
