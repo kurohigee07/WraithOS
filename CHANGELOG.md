@@ -35,6 +35,21 @@ Releases before `v0.24.0` are not itemized here; see commit history.
     `EmitEvent` could emit any event kind. `CapabilitySet` is now
     cloned before `spawn_blocking`, passed into the closure, and
     checked before the sink push.
+  - **L1 audit writer drain on shutdown.** `AppContext::shutdown`
+    used `self.audit.sender().closed()` which never completes
+    because the `AuditWriter` held by `AppContext` keeps the
+    channel open; the previous path was always a 2-second no-op
+    followed by `db.close()` while the writer was still running.
+    Adds `AuditWriter::drain(&self)` (Notify + Mutex-guarded
+    join handle), a `shutdown.notified()` select arm in
+    `writer_loop`, and a `try_recv` drain before the final flush.
+    `AppContext::shutdown` calls `audit.drain()` before
+    `db.close()`. Landed in `30146dd`.
+  - **L4 audit send failure visibility.** `wasm/module.rs` used
+    `let _ = audit_tx.send(...)` and silently dropped the row if
+    the writer task had exited. Now logs a `warn!` with tenant,
+    module_id, and the channel error on the `Err` branch. The
+    execute response is unchanged. Landed in `30146dd`.
   - **C2-E reset-luks confirmation header.**
     `reset_luks_handler` runs `luksErase /dev/vda4`. Full block
     on `w.completed` would break the documented recovery path
@@ -42,13 +57,19 @@ Releases before `v0.24.0` are not itemized here; see commit history.
     (`X-Wizard-Confirm: I-understand-data-loss`) plus an
     `audit` event (`wizard.luks_erase`) is used instead. See
     `docs/wraithos.md` -> "Wizard reset-luks recovery".
-- Deferred to v0.52 with documented mitigations:
-  - **C1 tar extraction before bwrap.** Build API off by default.
-    Fix requires `tar` crate + entry filter + tests. Mitigation
-    in `docs/security.md` -> "Source-build sandbox".
-  - **M4 capability ceiling intersection.** `CapabilitySet` has
-    no `intersect`; `HostMatcher` has no `PartialEq`/`Hash`. Fix
-    is ~40 lines + tests.
+- **M4 capability ceiling intersection.** `resolve_capabilities`
+  now intersects the requested `X-Module-Capabilities` header
+  with the deployment-wide ceiling: requested caps that are not a
+  subset of `ctx.capabilities` are rejected at upload time. Adds
+  `CapabilitySet::is_subset_of` + `host_subsumes` + a unit test
+  (`subset_of_enforces_ceiling`). Landed in commit `9c5f3d5`
+  (folded into a fmt commit; annotated in `c012d2a`).
+- **C1 tar extraction before bwrap.** External `tar` invocation
+  replaced with the `tar` crate. Entries with `..`, absolute
+  paths, prefixes, symlinks, hardlinks, or non-regular
+  non-directory types are rejected before any write. Three tests:
+  accept, parent-traversal reject, symlink reject. Landed in
+  commit `d160b43`.
 
 ### Documentation
 
