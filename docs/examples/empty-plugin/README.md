@@ -1,12 +1,40 @@
-# Network-free guest example
+# Empty guest example
 
-This standalone crate implements the host's `plugin` world and returns `{}` without I/O. The WIT file is a deliberate copy of `orchestrator/wit/host-capabilities.wit` at the documented baseline.
+A standalone crate that implements the host's `plugin` world and
+returns `{}` without any I/O. The WIT contract in `wit/` is a
+deliberate copy of `orchestrator/wit/host-capabilities.wit` at the
+documented baseline.
 
-```bash
-rustup target add wasm32-wasip2
-cargo build --manifest-path docs/examples/empty-plugin/Cargo.toml --target wasm32-wasip2 --release
-```
+## Build
 
-Run the second command from the repository root. Upload the resulting `empty_plugin.wasm` using `X-Module-Id`, then execute it with a JSON body. See the [plugin guide](../../plugins.md).
+From the repository root:
 
-This is behaviorally equivalent to the benchmark guest, not a byte-identical reproduction. No Cargo lockfile is supplied for this independently resolved example; record/generate a lockfile before using it as a reproducible release artifact.
+    rustup target add wasm32-wasip2
+    cargo build \
+      --manifest-path docs/examples/empty-plugin/Cargo.toml \
+      --target wasm32-wasip2 \
+      --release
+
+Output: `docs/examples/empty-plugin/target/wasm32-wasip2/release/empty_plugin.wasm`.
+
+## Upload and run
+
+    curl -X POST http://127.0.0.1:9090/modules \
+         -H 'x-module-id: empty' \
+         --data-binary @docs/examples/empty-plugin/target/wasm32-wasip2/release/empty_plugin.wasm
+
+    curl -X POST http://127.0.0.1:9090/modules/empty/execute \
+         -H 'content-type: application/json' \
+         -d '{}'
+
+Returns `{}`.
+
+See [`docs/plugins.md`](../../plugins.md) for the guest contract and
+capability model.
+
+## Reproducibility note
+
+No `Cargo.lock` is included — the example resolves dependencies at
+build time. Record or generate a lockfile before using the output as
+a reproducible release artifact. This example is behaviorally
+equivalent to the benchmark guest, not byte-identical.
