@@ -19,7 +19,8 @@
 //!   - tenant rate + concurrency respected
 //!   - 10 MB body limit
 
-use std::path::{Path as FsPath, PathBuf};
+use std::io::Cursor;
+use std::path::{Component, Path as FsPath, PathBuf};
 use std::process::Stdio;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -31,7 +32,6 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::post;
 use axum::{Json, Router};
 use shared_types::ModuleManifest;
-use tokio::io::AsyncWriteExt;
 use tokio::process::Command;
 use tracing::{info, warn};
 
@@ -279,45 +279,190 @@ async fn build_shared(
 }
 
 // ── Tar extraction (external tar, auto-detect gz) ──────────────────
-async fn extract_tar(dir: &FsPath, body: &[u8]) -> Result<(), ApiError> {
-    // GNU tar does NOT auto-detect compression on stdin (no filename suffix).
-    // Sniff gzip magic (0x1F 0x8B) and choose flags accordingly.
-    let is_gzip = body.len() >= 2 && body[0] == 0x1f && body[1] == 0x8b;
-    let mode: &[&str] = if is_gzip {
-        &["-xzf", "-", "-C"]
-    } else {
-        &["-xf", "-", "-C"]
-    };
-
-    let mut child = Command::new("tar")
-        .args(mode)
-        .arg(dir)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::null())
-        .stderr(Stdio::piped())
-        .kill_on_drop(true)
-        .spawn()
-        .map_err(|e| ApiError::Internal(format!("tar spawn: {e}")))?;
-
-    if let Some(mut stdin) = child.stdin.take() {
-        tokio::time::timeout(Duration::from_secs(30), stdin.write_all(body))
-            .await
-            .map_err(|_| ApiError::BadRequest("tar write timeout".into()))?
-            .map_err(|e| ApiError::Internal(format!("tar stdin: {e}")))?;
-    }
-
-    let out = tokio::time::timeout(Duration::from_secs(30), child.wait_with_output())
+async fn extract_tar(dir: &FsPath, body: &Bytes) -> Result<(), ApiError> {
+    // Extraction runs in `spawn_blocking` because tar-rs is synchronous.
+    // The tar crate is used instead of shelling out to the system `tar`
+    // binary: the system tar on WraithOS is BusyBox, whose path-sanitization
+    // guarantees are weaker than GNU tar's. The tar crate validates every
+    // entry path (`..`, absolute, prefix) and lets us filter entry types
+    // (symlink, hardlink, char/block device, fifo) before any filesystem
+    // write. Filtering is done explicitly here — `unpack_in` alone is not
+    // enough because it will happily extract symlinks.
+    let dir_owned = dir.to_path_buf();
+    let body_owned = body.clone(); // Bytes clone is cheap (Arc)
+    tokio::task::spawn_blocking(move || extract_tar_sync(&dir_owned, &body_owned))
         .await
-        .map_err(|_| ApiError::BadRequest("tar wait timeout".into()))?
-        .map_err(|e| ApiError::Internal(format!("tar wait: {e}")))?;
+        .map_err(|e| ApiError::Internal(format!("tar join: {e}")))?
+}
 
-    if !out.status.success() {
-        return Err(ApiError::BadRequest(format!(
-            "tar extract failed: {}",
-            tail_chars(&String::from_utf8_lossy(&out.stderr), 500)
-        )));
+fn extract_tar_sync(dir: &FsPath, body: &[u8]) -> Result<(), ApiError> {
+    // Sniff gzip magic (0x1F 0x8B); tar-rs does not auto-detect on a
+    // plain `Read` either, so we pick the decoder ourselves.
+    let is_gzip = body.len() >= 2 && body[0] == 0x1f && body[1] == 0x8b;
+    let reader: Box<dyn std::io::Read> = if is_gzip {
+        Box::new(flate2::read::GzDecoder::new(Cursor::new(body)))
+    } else {
+        Box::new(Cursor::new(body))
+    };
+    let mut archive = tar::Archive::new(reader);
+
+    let entries = archive
+        .entries()
+        .map_err(|e| ApiError::BadRequest(format!("tar entries: {e}")))?;
+
+    for entry_result in entries {
+        let mut entry =
+            entry_result.map_err(|e| ApiError::BadRequest(format!("tar entry: {e}")))?;
+
+        // Path check: reject any `..`, absolute, or prefixed component.
+        // The tar crate's unpack_in already rejects `..` and absolute
+        // paths, but we reject earlier with a specific error so the API
+        // response is actionable.
+        let path = entry
+            .path()
+            .map_err(|e| ApiError::BadRequest(format!("tar entry path: {e}")))?
+            .into_owned();
+        for comp in path.components() {
+            match comp {
+                Component::ParentDir => {
+                    return Err(ApiError::BadRequest(
+                        "tar entry contains '..' component".into(),
+                    ));
+                }
+                Component::RootDir => {
+                    return Err(ApiError::BadRequest("tar entry has absolute path".into()));
+                }
+                Component::Prefix(_) => {
+                    return Err(ApiError::BadRequest("tar entry has path prefix".into()));
+                }
+                _ => {}
+            }
+        }
+
+        // Entry type check: only regular files and directories are
+        // extracted. Symlinks and hardlinks are rejected because they
+        // are the standard tar-traversal escape (symlink to /etc/passwd
+        // followed by a file entry that writes "through" the symlink).
+        // Device nodes and fifos are rejected because they have no place
+        // in a Cargo build source tree.
+        let entry_type = entry.header().entry_type();
+        if !matches!(
+            entry_type,
+            tar::EntryType::Regular | tar::EntryType::Directory
+        ) {
+            return Err(ApiError::BadRequest(format!(
+                "tar entry type not allowed: {entry_type:?} (only regular files and directories accepted)"
+            )));
+        }
+
+        entry
+            .unpack_in(dir)
+            .map_err(|e| ApiError::BadRequest(format!("tar unpack: {e}")))?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod extract_tar_tests {
+    use super::*;
+
+    fn make_tar(entries: &[(&str, &[u8])]) -> Vec<u8> {
+        let mut buf = Vec::new();
+        {
+            let mut builder = tar::Builder::new(&mut buf);
+            for (name, content) in entries {
+                let mut header = tar::Header::new_gnu();
+                header.set_path(name).unwrap();
+                header.set_size(content.len() as u64);
+                header.set_mode(0o644);
+                header.set_cksum();
+                builder.append(&header, *content).unwrap();
+            }
+            builder.finish().unwrap();
+        }
+        buf
+    }
+
+    /// Build a tar containing a single file entry with a raw path name
+    /// that the tar crate's Header::set_path would refuse (e.g. `../x`).
+    fn make_tar_raw_path(name: &str, content: &[u8]) -> Vec<u8> {
+        let mut header = [0u8; 512];
+        let name_bytes = name.as_bytes();
+        header[..name_bytes.len()].copy_from_slice(name_bytes);
+        header[100..107].copy_from_slice(b"0000644");
+        header[107] = 0;
+        header[108..115].copy_from_slice(b"0000000");
+        header[115] = 0;
+        header[116..123].copy_from_slice(b"0000000");
+        header[123] = 0;
+        let size_oct = format!("{:011o}", content.len());
+        header[124..135].copy_from_slice(size_oct.as_bytes());
+        header[135] = 0;
+        header[136..147].copy_from_slice(b"00000000000");
+        header[147] = 0;
+        for i in 148..156 {
+            header[i] = b' ';
+        }
+        header[156] = b'0';
+        header[257..262].copy_from_slice(b"ustar");
+        header[262] = 0;
+        header[263..265].copy_from_slice(b"00");
+        let sum: u32 = header.iter().map(|&b| b as u32).sum();
+        let cksum = format!("{:06o}  ", sum);
+        header[148..156].copy_from_slice(cksum.as_bytes());
+
+        let mut out = Vec::new();
+        out.extend_from_slice(&header);
+        out.extend_from_slice(content);
+        let pad = (512 - (content.len() % 512)) % 512;
+        out.extend(std::iter::repeat(0u8).take(pad));
+        out.extend(std::iter::repeat(0u8).take(1024));
+        out
+    }
+
+    fn make_tar_with_symlink() -> Vec<u8> {
+        let mut buf = Vec::new();
+        {
+            let mut builder = tar::Builder::new(&mut buf);
+            let mut header = tar::Header::new_gnu();
+            header.set_entry_type(tar::EntryType::Symlink);
+            header.set_path("link").unwrap();
+            header.set_size(0);
+            header.set_mode(0o777);
+            header.set_link_name("/etc/passwd").unwrap();
+            header.set_cksum();
+            builder.append(&header, &[][..]).unwrap();
+            builder.finish().unwrap();
+        }
+        buf
+    }
+
+    #[tokio::test]
+    async fn extract_tar_accepts_valid() {
+        let body = make_tar(&[("Cargo.toml", b"[package]\nname = \"x\"\n")]);
+        let tmp = tempfile::tempdir().unwrap();
+        extract_tar(tmp.path(), &Bytes::from(body)).await.unwrap();
+        assert!(tmp.path().join("Cargo.toml").exists());
+    }
+
+    #[tokio::test]
+    async fn extract_tar_rejects_parent_traversal() {
+        let body = make_tar_raw_path("../evil.txt", b"evil");
+        let tmp = tempfile::tempdir().unwrap();
+        let r = extract_tar(tmp.path(), &Bytes::from(body)).await;
+        assert!(r.is_err(), "expected parent-traversal rejection, got Ok");
+        // Ensure no file landed outside the tempdir sibling.
+        assert!(!tmp.path().parent().unwrap().join("evil.txt").exists());
+    }
+
+    #[tokio::test]
+    async fn extract_tar_rejects_symlink() {
+        let body = make_tar_with_symlink();
+        let tmp = tempfile::tempdir().unwrap();
+        let r = extract_tar(tmp.path(), &Bytes::from(body)).await;
+        assert!(r.is_err(), "expected symlink rejection, got Ok");
+        assert!(!tmp.path().join("link").exists());
+    }
 }
 
 // ── Cargo build (env_clear, timeout, kill_on_drop) ─────────────────
