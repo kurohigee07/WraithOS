@@ -3,6 +3,13 @@ case "$1" in
     start)
         test -r /etc/default/dropbear && . /etc/default/dropbear
         printf "Starting dropbear sshd: "
+        # v0.51: refuse pre-wizard start. Serial console is the primary
+        # provisioning interface; finish_handler in wizard.rs restarts
+        # this script after wizard.complete is written.
+        if [ ! -f /var/lib/orchestrator/wizard.complete ]; then
+            echo "SKIPPED (wizard not complete)"
+            exit 0
+        fi
         umask 077
         if [ ! -d /etc/dropbear ]; then
             mkdir -p /var/run/dropbear 2>/dev/null

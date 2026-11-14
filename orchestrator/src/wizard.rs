@@ -604,6 +604,17 @@ async fn finish_handler(State(s): State<ApiState>) -> Response {
     }
 
     w.completed = true;
+
+    // v0.51: restart dropbear now that wizard.complete is on disk.
+    // S50dropbear refuses to start pre-wizard (the default root
+    // password would be exposed on port 22 before provisioning).
+    // Serial console remains the provisioning interface pre-wizard.
+    match Command::new("/etc/init.d/S50dropbear").arg("restart").status() {
+        Ok(st) if st.success() => info!("wizard: dropbear restarted"),
+        Ok(st) => warn!(code = ?st.code(), "wizard: dropbear restart exit non-zero"),
+        Err(e) => warn!(err = %e, "wizard: dropbear restart spawn failed"),
+    }
+
     info!("wizard: setup complete (hostname={})", hostname);
     (
         StatusCode::OK,
