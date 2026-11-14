@@ -362,109 +362,6 @@ fn extract_tar_sync(dir: &FsPath, body: &[u8]) -> Result<(), ApiError> {
     Ok(())
 }
 
-#[cfg(test)]
-mod extract_tar_tests {
-    use super::*;
-
-    fn make_tar(entries: &[(&str, &[u8])]) -> Vec<u8> {
-        let mut buf = Vec::new();
-        {
-            let mut builder = tar::Builder::new(&mut buf);
-            for (name, content) in entries {
-                let mut header = tar::Header::new_gnu();
-                header.set_path(name).unwrap();
-                header.set_size(content.len() as u64);
-                header.set_mode(0o644);
-                header.set_cksum();
-                builder.append(&header, *content).unwrap();
-            }
-            builder.finish().unwrap();
-        }
-        buf
-    }
-
-    /// Build a tar containing a single file entry with a raw path name
-    /// that the tar crate's Header::set_path would refuse (e.g. `../x`).
-    fn make_tar_raw_path(name: &str, content: &[u8]) -> Vec<u8> {
-        let mut header = [0u8; 512];
-        let name_bytes = name.as_bytes();
-        header[..name_bytes.len()].copy_from_slice(name_bytes);
-        header[100..107].copy_from_slice(b"0000644");
-        header[107] = 0;
-        header[108..115].copy_from_slice(b"0000000");
-        header[115] = 0;
-        header[116..123].copy_from_slice(b"0000000");
-        header[123] = 0;
-        let size_oct = format!("{:011o}", content.len());
-        header[124..135].copy_from_slice(size_oct.as_bytes());
-        header[135] = 0;
-        header[136..147].copy_from_slice(b"00000000000");
-        header[147] = 0;
-        for i in 148..156 {
-            header[i] = b' ';
-        }
-        header[156] = b'0';
-        header[257..262].copy_from_slice(b"ustar");
-        header[262] = 0;
-        header[263..265].copy_from_slice(b"00");
-        let sum: u32 = header.iter().map(|&b| b as u32).sum();
-        let cksum = format!("{:06o}  ", sum);
-        header[148..156].copy_from_slice(cksum.as_bytes());
-
-        let mut out = Vec::new();
-        out.extend_from_slice(&header);
-        out.extend_from_slice(content);
-        let pad = (512 - (content.len() % 512)) % 512;
-        out.extend(std::iter::repeat(0u8).take(pad));
-        out.extend(std::iter::repeat(0u8).take(1024));
-        out
-    }
-
-    fn make_tar_with_symlink() -> Vec<u8> {
-        let mut buf = Vec::new();
-        {
-            let mut builder = tar::Builder::new(&mut buf);
-            let mut header = tar::Header::new_gnu();
-            header.set_entry_type(tar::EntryType::Symlink);
-            header.set_path("link").unwrap();
-            header.set_size(0);
-            header.set_mode(0o777);
-            header.set_link_name("/etc/passwd").unwrap();
-            header.set_cksum();
-            builder.append(&header, &[][..]).unwrap();
-            builder.finish().unwrap();
-        }
-        buf
-    }
-
-    #[tokio::test]
-    async fn extract_tar_accepts_valid() {
-        let body = make_tar(&[("Cargo.toml", b"[package]\nname = \"x\"\n")]);
-        let tmp = tempfile::tempdir().unwrap();
-        extract_tar(tmp.path(), &Bytes::from(body)).await.unwrap();
-        assert!(tmp.path().join("Cargo.toml").exists());
-    }
-
-    #[tokio::test]
-    async fn extract_tar_rejects_parent_traversal() {
-        let body = make_tar_raw_path("../evil.txt", b"evil");
-        let tmp = tempfile::tempdir().unwrap();
-        let r = extract_tar(tmp.path(), &Bytes::from(body)).await;
-        assert!(r.is_err(), "expected parent-traversal rejection, got Ok");
-        // Ensure no file landed outside the tempdir sibling.
-        assert!(!tmp.path().parent().unwrap().join("evil.txt").exists());
-    }
-
-    #[tokio::test]
-    async fn extract_tar_rejects_symlink() {
-        let body = make_tar_with_symlink();
-        let tmp = tempfile::tempdir().unwrap();
-        let r = extract_tar(tmp.path(), &Bytes::from(body)).await;
-        assert!(r.is_err(), "expected symlink rejection, got Ok");
-        assert!(!tmp.path().join("link").exists());
-    }
-}
-
 // ── Cargo build (env_clear, timeout, kill_on_drop) ─────────────────
 async fn run_cargo_build(
     dir: &FsPath,
@@ -587,5 +484,108 @@ fn tail_chars(s: &str, max: usize) -> String {
     } else {
         let start = chars.len() - max;
         format!("...{}", chars[start..].iter().collect::<String>())
+    }
+}
+
+#[cfg(test)]
+mod extract_tar_tests {
+    use super::*;
+
+    fn make_tar(entries: &[(&str, &[u8])]) -> Vec<u8> {
+        let mut buf = Vec::new();
+        {
+            let mut builder = tar::Builder::new(&mut buf);
+            for (name, content) in entries {
+                let mut header = tar::Header::new_gnu();
+                header.set_path(name).unwrap();
+                header.set_size(content.len() as u64);
+                header.set_mode(0o644);
+                header.set_cksum();
+                builder.append(&header, *content).unwrap();
+            }
+            builder.finish().unwrap();
+        }
+        buf
+    }
+
+    /// Build a tar containing a single file entry with a raw path name
+    /// that the tar crate's Header::set_path would refuse (e.g. `../x`).
+    fn make_tar_raw_path(name: &str, content: &[u8]) -> Vec<u8> {
+        let mut header = [0u8; 512];
+        let name_bytes = name.as_bytes();
+        header[..name_bytes.len()].copy_from_slice(name_bytes);
+        header[100..107].copy_from_slice(b"0000644");
+        header[107] = 0;
+        header[108..115].copy_from_slice(b"0000000");
+        header[115] = 0;
+        header[116..123].copy_from_slice(b"0000000");
+        header[123] = 0;
+        let size_oct = format!("{:011o}", content.len());
+        header[124..135].copy_from_slice(size_oct.as_bytes());
+        header[135] = 0;
+        header[136..147].copy_from_slice(b"00000000000");
+        header[147] = 0;
+        for slot in header.iter_mut().take(156).skip(148) {
+            *slot = b' ';
+        }
+        header[156] = b'0';
+        header[257..262].copy_from_slice(b"ustar");
+        header[262] = 0;
+        header[263..265].copy_from_slice(b"00");
+        let sum: u32 = header.iter().map(|&b| b as u32).sum();
+        let cksum = format!("{:06o}  ", sum);
+        header[148..156].copy_from_slice(cksum.as_bytes());
+
+        let mut out = Vec::new();
+        out.extend_from_slice(&header);
+        out.extend_from_slice(content);
+        let pad = (512 - (content.len() % 512)) % 512;
+        out.extend(std::iter::repeat_n(0u8, pad));
+        out.extend(std::iter::repeat_n(0u8, 1024));
+        out
+    }
+
+    fn make_tar_with_symlink() -> Vec<u8> {
+        let mut buf = Vec::new();
+        {
+            let mut builder = tar::Builder::new(&mut buf);
+            let mut header = tar::Header::new_gnu();
+            header.set_entry_type(tar::EntryType::Symlink);
+            header.set_path("link").unwrap();
+            header.set_size(0);
+            header.set_mode(0o777);
+            header.set_link_name("/etc/passwd").unwrap();
+            header.set_cksum();
+            builder.append(&header, &[][..]).unwrap();
+            builder.finish().unwrap();
+        }
+        buf
+    }
+
+    #[tokio::test]
+    async fn extract_tar_accepts_valid() {
+        let body = make_tar(&[("Cargo.toml", b"[package]\nname = \"x\"\n")]);
+        let tmp = tempfile::tempdir().unwrap();
+        extract_tar(tmp.path(), &Bytes::from(body)).await.unwrap();
+        assert!(tmp.path().join("Cargo.toml").exists());
+    }
+
+    #[tokio::test]
+    async fn extract_tar_rejects_parent_traversal() {
+        let body = make_tar_raw_path("../evil.txt", b"evil");
+        let tmp = tempfile::tempdir().unwrap();
+        let r = extract_tar(tmp.path(), &Bytes::from(body)).await;
+        assert!(r.is_err(), "expected parent-traversal rejection, got Ok");
+        // Ensure no file landed outside the tempdir sibling.
+        assert!(!tmp.path().parent().unwrap().join("evil.txt").exists());
+    }
+
+    #[tokio::test]
+    async fn extract_tar_rejects_symlink() {
+        let body = make_tar_with_symlink();
+        let tmp = tempfile::tempdir().unwrap();
+        let r = extract_tar(tmp.path(), &Bytes::from(body)).await;
+        assert!(r.is_err(), "expected symlink rejection, got Ok");
+        assert!(!tmp.path().join("link").exists());
     }
 }
