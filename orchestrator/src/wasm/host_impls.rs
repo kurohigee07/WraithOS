@@ -1,7 +1,28 @@
 use crate::events::OrchestratorEvent;
 use crate::wasm::orchestrator::host::{events, http, tcp};
 use crate::wasm::state::WasmHostState;
+use futures::StreamExt;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+/// Hard cap on the size of an HTTP response body read by the
+/// `http::get` capability. A hostile (or misbehaving) host in
+/// `allowed_hosts` cannot allocate more than this in the orchestrator
+/// process. 16 MiB is comfortably above any realistic API response we
+/// have seen and well under the default container memory limit.
+/// See docs/security.md -> "HTTP body limit (M2)".
+const MAX_HTTP_BODY_BYTES: usize = 16 * 1024 * 1024;
+
+/// Helper extracted so the limit is unit-testable without spinning up
+/// an HTTP server. Called once per chunk in the streaming read.
+fn check_body_size(total: usize) -> Result<(), String> {
+    if total > MAX_HTTP_BODY_BYTES {
+        Err(format!(
+            "http body too large (> {MAX_HTTP_BODY_BYTES} bytes)"
+        ))
+    } else {
+        Ok(())
+    }
+}
 
 impl http::Host for WasmHostState {
     async fn get(&mut self, url: String) -> Result<String, String> {
@@ -20,9 +41,35 @@ impl http::Host for WasmHostState {
         if !status.is_success() {
             return Err(format!("http status {status}"));
         }
-        resp.text()
-            .await
-            .map_err(|e| format!("http body read failed: {e}"))
+        // Fast path: if the server advertised Content-Length, reject
+        // oversized bodies before reading a byte. This is an
+        // optimization, not the enforcement: Content-Length is
+        // optional (chunked encoding) and with gzip/brotli auto-
+        // decompression it reflects the wire size, not the
+        // decompressed size. The streaming cap below is what actually
+        // bounds the allocation.
+        if let Some(len) = resp.content_length() {
+            if len > MAX_HTTP_BODY_BYTES as u64 {
+                return Err(format!(
+                    "http body too large (content-length {len} > {MAX_HTTP_BODY_BYTES})"
+                ));
+            }
+        }
+        // Streaming read with cumulative cap. Applies to both plain
+        // and decompressed bodies (reqwest's gzip/brotli features
+        // yield decompressed chunks from `bytes_stream`), so a server
+        // that compresses 1 GiB into a few MiB on the wire cannot
+        // exhaust the process.
+        let mut stream = resp.bytes_stream();
+        let mut total = 0usize;
+        let mut body: Vec<u8> = Vec::new();
+        while let Some(chunk_result) = stream.next().await {
+            let chunk = chunk_result.map_err(|e| format!("http body chunk: {e}"))?;
+            total = total.saturating_add(chunk.len());
+            check_body_size(total)?;
+            body.extend_from_slice(&chunk);
+        }
+        String::from_utf8(body).map_err(|e| format!("http body not utf8: {e}"))
     }
 }
 
@@ -97,5 +144,30 @@ impl events::Host for WasmHostState {
             source_module: self.module_id.clone(),
         });
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod body_limit_tests {
+    use super::*;
+
+    #[test]
+    fn accepts_at_limit() {
+        assert!(check_body_size(MAX_HTTP_BODY_BYTES).is_ok());
+    }
+
+    #[test]
+    fn rejects_over_limit() {
+        assert!(check_body_size(MAX_HTTP_BODY_BYTES + 1).is_err());
+    }
+
+    #[test]
+    fn rejects_grossly_oversized() {
+        assert!(check_body_size(usize::MAX).is_err());
+    }
+
+    #[test]
+    fn accepts_small() {
+        assert!(check_body_size(1024).is_ok());
     }
 }
