@@ -115,7 +115,23 @@ The current code is substantially more defensive than the old TODO description: 
 
 Remaining concerns include:
 
-- Tar extraction occurs outside the Bubblewrap Cargo invocation and relies on the external tar implementation's path/link behavior.
+- Tar extraction occurs outside the Bubblewrap Cargo invocation and
+  relies on the external tar implementation's path/link behavior.
+  Confirmed by the 2026-11-14 audit: `extract_tar` calls
+  `Command::new("tar")` before any bwrap invocation, with no
+  entry filtering (no rejection of `..`, absolute paths, or
+  symlink entries). On WraithOS the target `tar` is BusyBox
+  (`/bin/tar -> busybox`), which is not guaranteed to sanitize
+  `..` in the same way GNU tar does. Exposure is gated by
+  `enable_build = false` (build API is only mounted when
+  explicitly enabled), and by `require_auth` when the operator
+  turns it on. **Mitigation until v0.52:** enable build API only
+  when `require_auth = true` and restrict
+  `metrics_bind` to `127.0.0.1`; only accept tarballs from
+  trusted sources. **Fix deferred to v0.52:** replace
+  `Command::new("tar")` with the `tar` Rust crate, filter entries
+  (reject `..`, absolute, symlinks), and add tests for legit
+  monorepo tarballs.
 - Archive expansion and compiler memory/CPU/disk consumption need stronger explicit budgets.
 - Network-enabled builds can execute build scripts/proc macros with outbound access.
 - A read-only offline cache must be prepared correctly; dependency resolution is not magically available offline.

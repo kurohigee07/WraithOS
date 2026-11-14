@@ -10,6 +10,46 @@ Releases before `v0.24.0` are not itemized here; see commit history.
 
 ## [Unreleased]
 
+### Security
+
+- Batch-1 fixes from the 2026-11-14 audit:
+  - **H2 tenant path validation.** `s.modules_dir.join(tenant)`
+    was called with a tenant from the `{tenant}` URL segment
+    without validation. `POST /t/%2e%2e/modules` could write
+    outside `modules_dir`. `validate_tenant()` now requires
+    `[a-zA-Z0-9_-]{1,64}` and is called at the top of
+    `upload_shared`, `replace_shared`, `delete_shared`,
+    `put_quota_shared`.
+  - **M3 default body limit on root router.** Wizard, UI, and
+    metrics routes had no body limit; a large JSON POST to
+    `/wizard/step1` could allocate unbounded memory before serde
+    rejected. `.layer(DefaultBodyLimit::max(1 MiB))` on the outer
+    router. Inner 10 MiB limits still win (innermost wins at
+    body-read time).
+  - **M5 drop `WasiCtxBuilder::inherit_stdio()`.** Guest modules
+    inherited host stdin/stdout/stderr. Host I/O leak removed.
+    Module logging goes through the log capability.
+  - **M1 rhai `emit_event` capability check.** `log_info` checked
+    `log_allowed`, but `emit_event` did not check
+    `CapabilitySet::check_emit_event`. A rhai module without
+    `EmitEvent` could emit any event kind. `CapabilitySet` is now
+    cloned before `spawn_blocking`, passed into the closure, and
+    checked before the sink push.
+  - **C2-E reset-luks confirmation header.**
+    `reset_luks_handler` runs `luksErase /dev/vda4`. Full block
+    on `w.completed` would break the documented recovery path
+    for damaged `/data`, so a header requirement
+    (`X-Wizard-Confirm: I-understand-data-loss`) plus an
+    `audit` event (`wizard.luks_erase`) is used instead. See
+    `docs/wraithos.md` -> "Wizard reset-luks recovery".
+- Deferred to v0.52 with documented mitigations:
+  - **C1 tar extraction before bwrap.** Build API off by default.
+    Fix requires `tar` crate + entry filter + tests. Mitigation
+    in `docs/security.md` -> "Source-build sandbox".
+  - **M4 capability ceiling intersection.** `CapabilitySet` has
+    no `intersect`; `HostMatcher` has no `PartialEq`/`Hash`. Fix
+    is ~40 lines + tests.
+
 ### Documentation
 
 - **Post-mortem for the v0.50.0 Secure Boot key loss** at
