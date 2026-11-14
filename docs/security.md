@@ -517,6 +517,81 @@ the operator decision was to not attempt signing with unrecoverable
 keys and to defer per-device keys to v0.52+.
 
 
+### Build-process post-mortem (v0.51 Secure Boot key loss)
+
+A second SB key incident happened during the v0.51 build cycle,
+shortly after the v0.50 post-mortem above was written. Same class of
+mistake, different iteration of it.
+
+**Timeline.**
+
+1. The v0.51 cycle generated fresh SB keys (`gen-sb-keys.sh` after
+   the `aae2af7` fix, so they were written to `$HOME/sb-keys`, not
+   `/tmp`).
+2. The keys were archived to `master-keys-20261114-034706.tar.gz.enc`
+   on the build VPS with a fresh 32-character password from
+   ​1Password.
+3. The archive was uploaded to `oci:wraith-bucket/wraithos-builds/`.
+4. **The 1Password entry was rotated** between encryption (03:47
+   UTC) and any decryption attempt. The current password for that
+   entry does not decrypt the archive (272 cipher/KDF/digest
+   combinations tested; roundtrip test with the current password
+   succeeds, so the password itself is valid — it is simply not the
+   password that was used to encrypt).
+5. No plaintext copy of the SB v0.51 keys survived on the VPS
+   (`/tmp` staging was cleaned during the same session).
+
+**Impact: zero for deployed devices.**
+
+- **No SB-enabled v0.51 image was ever published.** v0.51 was
+  tagged, a draft release was prepared, then superseded by v0.52
+  before either was published. The v0.52 image is BIOS-only (see
+  "v0.52 images are BIOS-only" in the v0.52 release notes) — the
+  ESP contains no `EFI/` directory, no signed `grubx64.efi`, no
+  signed `bzImage`.
+- **No user enrolled a v0.51 certificate.** The v0.50.0 release is
+  the only SB-enabled artifact ever published, and its `db.crt`
+  is unchanged and still available (both as a v0.50 release asset
+  and in the `sb-recovered-v0.50.0/` bundle inside
+  `master-keys-v2-*.tar.gz.enc`).
+- **RAUC CA production keys are intact.** `master-keys-v2-*.tar.gz.enc`
+  (uploaded 2026-11-14 14:46 UTC with a new password, verified by
+  roundtrip and by a subsequent `make-bundle.sh` sign) contains
+  `rauc-ca-prod/{ca.key, ca.cert.pem, dev.key, dev.cert.pem}`. RAUC
+  bundle signing for x86_64 and aarch64 continues to work
+  indefinitely, verified by `make-bundle.sh x86 recovery-check`
+  succeeding after the recovery.
+- **v0.53+ SB will use per-device keys** per
+  `docs/wraithos.md` → "Building a UEFI Secure Boot x86_64 image",
+  the same protocol as v0.50. Every v0.53+ deployment will generate
+  its own PK/KEK/db; there is no shared fleet SB key to lose.
+
+**What changed as a result.**
+
+- `.gitignore` now has global `*.bak`, `*.orig`, `*.pre-*` patterns
+  (previously only `orchestrator.toml.bak` and `Cargo.lock.bak`
+  were listed individually). Cheap hygiene, reduces the chance of
+  editing debris showing up as untracked files.
+- **Archive-and-verify-before-rotate** discipline is documented in
+  `docs/wraithos.md` → "Building a UEFI Secure Boot x86_64 image",
+  step 1 (key generation): after creating a master-keys archive,
+  decrypt it once with the password before rotating the 1Password
+  entry. Not a code change; a process change.
+- **Redundant key backups.** `master-keys-v2` (RAUC CA + SB v0.50
+  recovered cert) is stored alongside two independent encrypted
+  archives (`rauc-ca-*.tar.gz.gpg`, `ssh-keys-*.tar.gz.enc`),
+  each with a distinct 1Password entry. Losing any single archive
+  no longer compromises the recovery path.
+
+**Root cause, stated plainly.** The v0.50 incident was a bug in
+`gen-sb-keys.sh` (inverted warning logic wrote keys to `/tmp`). The
+v0.51 incident was a workflow mistake (password rotation after
+archive creation, before decryption verification). Both were caught
+by the same audit-response process that produced the fixes in this
+release. Neither shipped to users. The fixes are preventive — the
+first is code, the second is documented process — and neither
+requires a v0.53 compatibility break.
+
 ## Update verification and rollback
 
 RAUC installs to the inactive slot and marks it active. The current

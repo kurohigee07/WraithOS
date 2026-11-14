@@ -8,7 +8,7 @@ describes the change theme. `v0.30` was not released.
 Crate manifests declare `0.1.0`; the tags are the release units.
 Releases before `v0.24.0` are not itemized here; see commit history.
 
-## [Unreleased]
+## [v0.52.0-security-hardening] - 2026-11-14
 
 ### Security
 
@@ -199,6 +199,27 @@ Releases before `v0.24.0` are not itemized here; see commit history.
   `healthz` over SSH returns `ok`; no wizard prompt.
 - **T-SB0** BIOS regression: BIOS path boots, `/healthz` ok,
   dropbear opens normally when marker present.
+
+### Known gap: SB v0.51 signing keys lost
+
+The SB v0.51 keys (PK/KEK/db) were generated during the v0.51 build
+cycle but never used: v0.51 was tagged but not published (superseded
+by v0.52) and v0.52 ships **BIOS-only** (no SB chain in the ESP, see
+"v0.52 images are BIOS-only" above). After v0.52 was published, the
+`master-keys-*.enc` archive holding those v0.51 private keys could
+not be decrypted — the password had been rotated between encryption
+(2026-11-14 03:47 UTC) and recovery attempt.
+
+**Impact: zero for deployed devices.** No SB-enabled v0.51 or v0.52
+image was ever shipped, and no user enrolled a v0.51 SB certificate.
+v0.50.0 SB image + `db.crt` remain valid and unaffected. v0.53+ will
+ship per-device SB keys per `docs/wraithos.md` → "Building a UEFI
+Secure Boot x86_64 image", the same protocol as v0.50.
+
+`master-keys-v2-*.tar.gz.enc` (uploaded to OCI safe-backup with a
+fresh password) contains the intact RAUC CA production keys and the
+recovered v0.50 SB public cert, so RAUC bundle signing and v0.50 SB
+verification continue to work indefinitely.
 
 ### Not changed
 
