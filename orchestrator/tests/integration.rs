@@ -29,7 +29,14 @@ async fn state() -> (ApiState, tempfile::TempDir) {
     let caps = CapabilitySet::from_capabilities(&[
         Capability::Log,
         Capability::HttpGet {
-            allowed_hosts: vec!["example.com".into()],
+            // Expanded to include "localhost" so per_module_capability_*
+            // tests can request a restricted module capability set
+            // ("localhost" only) that is still a subset of the ceiling.
+            // Without this, the M4 capability-ceiling enforcement
+            // (resolve_capabilities intersects header with
+            // ctx.capabilities) rejects the upload with 400 before the
+            // runtime deny test ever executes. See commit 9c5f3d5.
+            allowed_hosts: vec!["example.com".into(), "localhost".into()],
         },
     ]);
     let bus = EventBus::new(16);
