@@ -16,7 +16,7 @@ bind 'set enable-bracketed-paste on' 2>/dev/null || true
 
 if [ -n "$PS1" ] && [ -z "$WRAITHOS_SHOWN" ]; then
     echo ""
-    echo "  WraithOS 0.20.6  |  type 'wraith-help' for commands"
+    echo "  WraithOS 0.53.0  |  type 'wraith-help' for commands"
     echo ""
     export WRAITHOS_SHOWN=1
 fi
