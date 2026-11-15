@@ -12,6 +12,16 @@ Releases before `v0.24.0` are not itemized here; see commit history.
 
 ### Security
 
+- **Rhai script fuel budget (H2).** Operator Rhai scripts ran on a
+  bare `Engine::new()` with no operation, memory, or recursion budget.
+  A `while true {}` typo in an event handler wedged the worker's
+  blocking thread indefinitely; a `s += "x"` loop could exhaust host
+  memory. Every Engine (compile-time and per-dispatch) now applies
+  `max_operations = 10M`, `max_string_size = 1 MiB`,
+  `max_array_size = 100k`, `max_map_size = 10k`,
+  `max_expr_depth = 64`, `max_function_expr_depth = 32`. All limits
+  configurable under `[script]` in `orchestrator.toml`.
+
 - **dm-verity runtime rootfs integrity on x86_64.** Secure Boot
   verified the boot chain but not the running rootfs. A raw disk
   attacker could replace `/dev/vda2` or `/dev/vda3` after install

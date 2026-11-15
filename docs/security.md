@@ -718,3 +718,24 @@ Before exposing a WraithOS device to any network:
 Operators who need a stronger default should fork the board overlay
 and set their own root hash before building; the image build is
 reproducible from `deploy/wraithos/`.
+
+### Rhai script sandbox (H2, v0.53.x)
+
+Operator Rhai scripts previously ran on a bare `Engine::new()`: a
+`while true {}` typo wedged the worker thread, `s += "x"` could exhaust
+host memory. Every Engine (compile-time and per-dispatch) now applies:
+
+| Limit | Default | Worst-case cost |
+|---|---|---|
+| `max_operations` | 10,000,000 | ~500 ms typical, <=2 s worst on x86_64 native; ~3-4x on Cortex-A72 emu |
+| `max_string_size` | 1,048,576 (1 MiB) | 1 MiB heap before trap |
+| `max_array_size` | 100,000 | ~1.6 MiB worst |
+| `max_map_size` | 10,000 | ~1 MiB worst |
+| `max_expr_depth` | 64 | prevents worker-stack blowout |
+| `max_function_expr_depth` | 32 | ditto |
+
+Defaults configurable under `[script]` in `orchestrator.toml`. Setting
+a field to `0` disables that limit (not recommended for production).
+
+This is separate from Wasm fuel (H1): Rhai scripts run on the host
+orchestrator, Wasm modules run inside Wasmtime.
