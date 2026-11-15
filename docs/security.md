@@ -383,11 +383,16 @@ so the EFI stub loader can run.
 
 **What is NOT verified at boot (honest gaps):**
 
-- **Rootfs tamper.** `/dev/vda2` and `/dev/vda3` are mounted from the
-  raw slot with no runtime dm-verity layer. An attacker with raw disk
-  access can replace the squashfs and the kernel will boot it. This
-  gap exists on the BIOS path too; Secure Boot narrows the attack
-  surface to "post-install rootfs write" without closing it.
+- **Rootfs tamper is now detected at boot (v0.53, x86_64 + aarch64).**
+  `/dev/vda2` and `/dev/vda3` are mounted through a dm-verity mapping
+  whose Merkle hash tree is stored inline in the same partition. Any
+  modified block halts the boot with a kernel panic; `panic=5` in the
+  cmdline reboots after 5 seconds. Trust anchor for the hash tree is
+  `grub.cfg` on the ESP: on the v0.50 Secure Boot image that chain is
+  firmware-verified; on v0.51+ BIOS-only images it is
+  trusted-by-origin, so an attacker who can write the ESP can also
+  write the hash. The BIOS-only ESP gap is tracked as v0.54 (signed
+  cmdline / signed GRUB config).
 - **IMA appraisal.** Not enabled. File-level integrity inside the
   rootfs is not verified at runtime. Deferred to v0.51.
 - **Hardware validation.** All testing is QEMU OVMF + KVM. Physical
