@@ -76,7 +76,6 @@ else
     echo "*** to sign GRUB + bzImage and enable UEFI Secure Boot. ***"
     echo "*** Reference: deploy/wraithos/uefi/gen-sb-keys.sh ***"
 fi
-cp "${BOARD_DIR}/grub.cfg" "$BOOT_STAGE/grub/grub.cfg"
 
 # grubenv: 1024-byte GRUB env block, slot=A starts
 GRUBENV="$BOOT_STAGE/grub/grubenv"
@@ -118,6 +117,29 @@ echo "  core.img: $(stat -c%s "$CORE_IMG") bytes"
 
 # ─── [3/6] Rootfs slots (direct reference, no cp) ──────────────────
 echo "[3/6] Using rootfs.squashfs directly (genimage pads to 128M)"
+
+# ─── [3.25/6] dm-verity combined rootfs + grub.cfg ──────────────
+echo "[3.25/6] Computing dm-verity tree + combined rootfs"
+VERITY_BIN=$(command -v veritysetup || echo "/usr/sbin/veritysetup")
+[ -x "$VERITY_BIN" ] || { echo "[err] veritysetup missing"; exit 1; }
+SQ="${BIN_DIR}/rootfs.squashfs"
+SZ=$(stat -c%s "$SQ")
+DB=$(( (SZ + 4095) / 4096 ))
+HS=$(( DB + 1 ))
+DL=$(( DB * 8 ))
+VERITY_OUT="$("$VERITY_BIN" format --hash=sha256 --data-block-size=4096 --hash-block-size=4096 "$SQ" "${BIN_DIR}/rootfs.verity" 2>&1)" || { echo "[err] verity: $VERITY_OUT"; exit 1; }
+HASH=$(echo "$VERITY_OUT" | grep '^Root hash:' | awk '{print $NF}')
+SALT=$(echo "$VERITY_OUT" | grep '^Salt:' | awk '{print $NF}')
+[ -n "$HASH" ] && [ -n "$SALT" ] || { echo "[err] verity parse"; exit 1; }
+echo "  data_blocks=$DB hash_start=$HS dev_len=$DL"
+COMB="${BIN_DIR}/rootfs-verity.squashfs"
+cp "$SQ" "$COMB"
+cat "${BIN_DIR}/rootfs.verity" >> "$COMB"
+echo "  combined: $(stat -c%s "$COMB") bytes"
+sed -e "s|@DATA_BLOCKS@|${DB}|g" -e "s|@HASH_START@|${HS}|g" -e "s|@DEV_LEN@|${DL}|g" \
+    -e "s|@HASH_A@|${HASH}|g" -e "s|@SALT_A@|${SALT}|g" -e "s|@HASH_B@|${HASH}|g" -e "s|@SALT_B@|${SALT}|g" \
+    "${BOARD_DIR}/grub.cfg" > "$BOOT_STAGE/grub/grub.cfg"
+echo "  grub.cfg generated"
 
 # ─── [3.5/6] Stage grub/ into inputpath (genimage resolve files from here)
 echo "[3.5/6] Staging grub/ to inputpath"
@@ -175,7 +197,7 @@ echo "  core.img: installed"
 
 # ─── [6/6] Cleanup ──────────────────────────────────────────────────
 echo "[6/6] Cleanup"
-rm -rf "$BOOT_STAGE" "$GEN_TMP" "$CORE_IMG" "${BIN_DIR}/grub" "${BIN_DIR}/EFI"
+rm -rf "$BOOT_STAGE" "$GEN_TMP" "$CORE_IMG" "${BIN_DIR}/grub" "${BIN_DIR}/EFI" "${BIN_DIR}/rootfs-padded.squashfs"
 
 # ─── Done ───────────────────────────────────────────────────────────
 echo ""
