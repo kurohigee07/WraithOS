@@ -330,9 +330,11 @@ enum SealOutcome {
 }
 
 fn tpm_seal_best_effort() -> SealOutcome {
-    let out = Command::new("/sbin/wraith-tpm-seal")
-        .arg("/boot/luks.key")
-        .output();
+    tpm_seal_best_effort_at("/sbin/wraith-tpm-seal")
+}
+
+fn tpm_seal_best_effort_at(script: &str) -> SealOutcome {
+    let out = Command::new(script).arg("/boot/luks.key").output();
     match out {
         Ok(o) if o.status.success() => SealOutcome::Sealed,
         Ok(o) if o.status.code() == Some(2) => SealOutcome::TpmAbsent,
@@ -357,7 +359,11 @@ enum FinalizeOutcome {
 }
 
 fn tpm_finalize_best_effort() -> FinalizeOutcome {
-    let out = Command::new("/sbin/wraith-tpm-finalize").output();
+    tpm_finalize_best_effort_at("/sbin/wraith-tpm-finalize")
+}
+
+fn tpm_finalize_best_effort_at(script: &str) -> FinalizeOutcome {
+    let out = Command::new(script).output();
     match out {
         Ok(o) if o.status.success() => FinalizeOutcome::Finalized,
         Ok(o) if o.status.code() == Some(1) => FinalizeOutcome::Skipped,
@@ -785,5 +791,115 @@ mod tests {
         let s = WizardState::new(tmp.path().to_path_buf());
         assert!(!s.is_completed().await);
         assert!(!s.data.lock().await.luks_enabled);
+    }
+}
+
+#[cfg(test)]
+mod h3_tests {
+    use super::*;
+    use std::io::Write;
+    use std::os::unix::fs::PermissionsExt;
+
+    // H3 tests spawn child processes; serialize to avoid filesystem
+    // contention races that intermittently fail Command::output() under
+    // parallel cargo test threads.
+    static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    fn write_exit_script(dir: &std::path::Path, name: &str, code: i32) -> std::path::PathBuf {
+        let p = dir.join(name);
+        let mut f = std::fs::File::create(&p).unwrap();
+        writeln!(f, "#!/bin/sh\nexit {}", code).unwrap();
+        // sync_all forces the file to disk + inode ready before exec.
+        // Parallel tests otherwise occasionally race here and spawn fails.
+        f.sync_all().unwrap();
+        drop(f);
+        let mut perms = std::fs::metadata(&p).unwrap().permissions();
+        perms.set_mode(0o755);
+        std::fs::set_permissions(&p, perms).unwrap();
+        p
+    }
+
+    #[test]
+    fn seal_maps_exit_zero_to_sealed() {
+        let _g = LOCK.lock().unwrap();
+        let td = tempfile::tempdir().unwrap();
+        let s = write_exit_script(td.path(), "seal", 0);
+        assert!(matches!(
+            tpm_seal_best_effort_at(s.to_str().unwrap()),
+            SealOutcome::Sealed
+        ));
+    }
+
+    #[test]
+    fn seal_maps_exit_two_to_tpm_absent() {
+        let _g = LOCK.lock().unwrap();
+        let td = tempfile::tempdir().unwrap();
+        let s = write_exit_script(td.path(), "seal", 2);
+        assert!(matches!(
+            tpm_seal_best_effort_at(s.to_str().unwrap()),
+            SealOutcome::TpmAbsent
+        ));
+    }
+
+    #[test]
+    fn seal_maps_exit_one_to_failed() {
+        let _g = LOCK.lock().unwrap();
+        let td = tempfile::tempdir().unwrap();
+        let s = write_exit_script(td.path(), "seal", 1);
+        assert!(matches!(
+            tpm_seal_best_effort_at(s.to_str().unwrap()),
+            SealOutcome::Failed(_)
+        ));
+    }
+
+    #[test]
+    fn seal_missing_script_is_failed() {
+        let _g = LOCK.lock().unwrap();
+        assert!(matches!(
+            tpm_seal_best_effort_at("/tmp/does-not-exist-wraith-seal"),
+            SealOutcome::Failed(_)
+        ));
+    }
+
+    #[test]
+    fn finalize_maps_exit_zero_to_finalized() {
+        let _g = LOCK.lock().unwrap();
+        let td = tempfile::tempdir().unwrap();
+        let s = write_exit_script(td.path(), "finalize", 0);
+        assert!(matches!(
+            tpm_finalize_best_effort_at(s.to_str().unwrap()),
+            FinalizeOutcome::Finalized
+        ));
+    }
+
+    #[test]
+    fn finalize_maps_exit_one_to_skipped() {
+        let _g = LOCK.lock().unwrap();
+        let td = tempfile::tempdir().unwrap();
+        let s = write_exit_script(td.path(), "finalize", 1);
+        assert!(matches!(
+            tpm_finalize_best_effort_at(s.to_str().unwrap()),
+            FinalizeOutcome::Skipped
+        ));
+    }
+
+    #[test]
+    fn finalize_maps_other_exit_to_failed() {
+        let _g = LOCK.lock().unwrap();
+        let td = tempfile::tempdir().unwrap();
+        let s = write_exit_script(td.path(), "finalize", 3);
+        assert!(matches!(
+            tpm_finalize_best_effort_at(s.to_str().unwrap()),
+            FinalizeOutcome::Failed(_)
+        ));
+    }
+
+    #[test]
+    fn finalize_missing_script_is_failed() {
+        let _g = LOCK.lock().unwrap();
+        assert!(matches!(
+            tpm_finalize_best_effort_at("/tmp/does-not-exist-wraith-finalize"),
+            FinalizeOutcome::Failed(_)
+        ));
     }
 }
