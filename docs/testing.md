@@ -74,12 +74,14 @@ Run on QEMU with `-tpmdev emulator,id=tpm0 -device tpm-tis-device,tpmdev=tpm0`.
 
 | Test | Scenario | Pass criterion |
 |------|----------|----------------|
-| T1 | Fresh image + TPM, wizard with encryption password, cold reboot | `/boot/luks.sealed.{pub,priv}` written; cold boot unseals; `/data` mounted; plaintext keyfile still present (v1 coexistence) |
+| T1 | Fresh image + TPM, wizard with encryption password, cold reboot | `/boot/luks.sealed.{pub,priv}` written; cold boot unseals; `/data` mounted; `/boot/luks.key` absent and `/boot/.luks-sealed-verified` present (H3 auto-finalize) |
 | T2 | Fresh image, no TPM, wizard with encryption password | `/boot/luks.key` written; no sealed blob; log line `TPM absent, using plaintext keyfile` |
 | T3 | Same as T1 on x86_64 | Same as T1 |
 | T4 | Same as T2 on x86_64 | Same as T2 |
 | T5 | TPM cleared externally (`tpm2_clear`), reboot | Unseal fails; plaintext fallback; `/data` mounted; log line `TPM unseal failed (rc=1), falling back to plaintext keyfile` |
 | T6 | Firmware state changed (mutate a PCR-affecting input), reboot | Sealed unseal fails; plaintext fallback; `wraith-tpm-reseal` re-seals and works |
+| T7 (H3) | Fresh image + TPM, wizard with encryption password; observe `/boot/luks.key` after wizard completes | Plaintext removed; `/boot/.luks-sealed-verified` present; `/data` mounted; log shows `wizard: TPM finalized` |
+| T8 (H3, negative) | TPM present but `tpm2_clear` mid-wizard (seal succeeds, unseal-verify inside finalize fails) | `wizard: TPM finalize failed (plaintext retained)`; `/boot/luks.key` still present; boot falls back normally |
 
 ### UEFI Secure Boot x86_64 (v0.50.0)
 

@@ -87,11 +87,15 @@ Wasm execution is bounded by three independent mechanisms:
    global `wasm_memory_limit_mb`). `StoreLimitsBuilder` rejects
    allocation past the limit.
 
-Rhai scripts (the other embedded runtime) do not have a fuel or
-instruction budget in this release. A Rhai script with an infinite
-loop blocks one event-worker thread until the process is killed.
-Fix deferred to v0.52; mitigation is to run Rhai only on
-operator-controlled scripts (`docs/wraithos.md`).
+Rhai scripts (the other embedded runtime) are bounded by H2
+(v0.53.x): every Engine — compile-time and per-dispatch — applies
+`max_operations = 10M`, `max_string_size = 1 MiB`,
+`max_array_size = 100k`, `max_map_size = 10k`, `max_expr_depth = 64`,
+`max_function_expr_depth = 32`. A `while true {}` or `s += "x"`
+loop now traps within ~500 ms instead of wedging the worker thread
+indefinitely. All limits are configurable under `[script]` in
+`orchestrator.toml`; the sandbox rationale and worst-case timings
+live in "Rhai script sandbox (H2)" below.
 
 The HTTP capability (`http::get`) caps the response body at
 `MAX_HTTP_BODY_BYTES = 16 MiB`, enforced both on `Content-Length`
@@ -115,7 +119,7 @@ Not equivalent to a complete container sandbox:
 - Linear-memory limits do not bound all host/JIT/DB/network allocations.
 - Epoch time is not per-module CPU accounting and cannot be configured per manifest in this checkout.
 - TCP read/connect behavior lacks a dedicated configurable operation timeout.
-- Rhai runs trusted scripts without an explicit operation/fuel/memory limit.
+- Rhai scripts are operation/memory/depth-bounded (H2, v0.53.x); see "Rhai script sandbox (H2)" above.
 - Shared process failure can affect all tenants; release builds use `panic="abort"`.
 - SQLite/event/dashboard work shares the same service resources.
 
@@ -283,14 +287,18 @@ both arches (ARM additionally `CONFIG_TCG_TIS_SPI=y`). The kernel
 resource manager `/dev/tpmrm0` is the TCTI endpoint
 (`device:/dev/tpmrm0`); `tpm2-abrmd` is not shipped.
 
-**v0.49.0 policy: sealed + plaintext coexist.** The plaintext
-keyfile is **never** auto-removed. Auto-removal requires an explicit
-operator command (`wraith-tpm-finalize`) after re-verifying that the
-sealed blob unseals successfully in the current boot. This is a
-data-safety boundary: accidentally removing the only fallback would
-brick `/data` on the next PCR change (kernel/firmware update, TPM
-clear). Auto-removal on first successful unseal is deferred to
-v0.50.0 after the TPM path has survived a production data cycle.
+**Keyfile finalize policy (v0.49 → v0.53.x).** v0.49 shipped
+"sealed + plaintext coexist": the plaintext `/boot/luks.key` was
+never auto-removed, and an operator had to run
+`wraith-tpm-finalize` manually. H3 (v0.53.x) closes the plaintext
+window: the wizard now finalizes automatically when (a) the TPM
+seal succeeded and (b) S30data restart unlocked `/data` from the
+TPM blob. `wraith-tpm-finalize` re-unseals before removing the
+plaintext, so any transient TPM failure leaves the plaintext in
+place and boot falls back normally — no new brick path. Manual
+`wraith-tpm-finalize` remains idempotent and is still the recovery
+tool for TPM-absent deployments. See "LUKS keyfile auto-finalize
+(H3)" below.
 
 **Recovery procedures.** See `docs/wraithos.md` → "TPM 2.0 sealing"
 for the operator-facing runbook (how to re-seal after a PCR change,
@@ -641,7 +649,7 @@ This is a documentation-derived recommendation, not a claim that these changes w
 3. Scope socket ownership and event/audit visibility by tenant and execution.
 4. Persist and verify signatures consistently across upload/build/restart/delete.
 5. Add archive validation, compiler resource budgets, and a durable build job model.
-6. Add Rhai limits, outbound response limits, egress controls, and shutdown drain tests.
+6. Add outbound response limits (partially done: http::get capped at 16 MiB), egress controls, and shutdown drain tests. Rhai limits are done as of H2.
 7. Complete wizard-to-OS credential/network/reboot integration and remove tracked secret material.
 8. Validate ARM boot/update/encryption through power-loss and failed-boot drills; sign update artifacts.
 
