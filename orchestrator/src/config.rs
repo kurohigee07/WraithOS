@@ -22,6 +22,13 @@ pub enum LogFormat {
 pub struct ScriptConfig {
     pub inline: Option<String>,
     pub path: Option<PathBuf>,
+    // H2: per-execution Rhai budget. None = use RhaiLimits::default().
+    pub max_operations: Option<u64>,
+    pub max_string_size: Option<usize>,
+    pub max_array_size: Option<usize>,
+    pub max_map_size: Option<usize>,
+    pub max_expr_depth: Option<usize>,
+    pub max_function_expr_depth: Option<usize>,
 }
 
 impl Default for ScriptConfig {
@@ -33,11 +40,32 @@ emit_event("rhai.processed", "{\"source\":\"rhai\"}");"#
                     .to_string(),
             ),
             path: None,
+            max_operations: None,
+            max_string_size: None,
+            max_array_size: None,
+            max_map_size: None,
+            max_expr_depth: None,
+            max_function_expr_depth: None,
         }
     }
 }
 
 impl ScriptConfig {
+    /// Materialize the Rhai budget. None fields fall back to RhaiLimits::default().
+    pub fn to_limits(&self) -> crate::rhai_worker::RhaiLimits {
+        let d = crate::rhai_worker::RhaiLimits::default();
+        crate::rhai_worker::RhaiLimits {
+            max_operations: self.max_operations.unwrap_or(d.max_operations),
+            max_string_size: self.max_string_size.unwrap_or(d.max_string_size),
+            max_array_size: self.max_array_size.unwrap_or(d.max_array_size),
+            max_map_size: self.max_map_size.unwrap_or(d.max_map_size),
+            max_expr_depth: self.max_expr_depth.unwrap_or(d.max_expr_depth),
+            max_function_expr_depth: self
+                .max_function_expr_depth
+                .unwrap_or(d.max_function_expr_depth),
+        }
+    }
+
     pub fn load(&self) -> anyhow::Result<String> {
         match (&self.inline, &self.path) {
             (Some(s), None) => Ok(s.clone()),

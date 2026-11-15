@@ -225,8 +225,15 @@ async fn main() -> anyhow::Result<()> {
 
     // ── Rhai worker ─────────────────────────────────────────────────────
     let script = config.script.load()?;
-    let worker = RhaiWorker::new(&script, bus.subscribe(), bus.clone(), ctx.clone())
-        .context("failed to build RhaiWorker")?;
+    let rhai_limits = config.script.to_limits();
+    let worker = RhaiWorker::new(
+        &script,
+        rhai_limits,
+        bus.subscribe(),
+        bus.clone(),
+        ctx.clone(),
+    )
+    .context("failed to build RhaiWorker")?;
 
     let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel::<()>();
     let worker_handle = tokio::spawn(worker.run(shutdown_rx));
