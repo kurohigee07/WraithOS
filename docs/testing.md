@@ -83,6 +83,18 @@ Run on QEMU with `-tpmdev emulator,id=tpm0 -device tpm-tis-device,tpmdev=tpm0`.
 | T7 (H3) | Fresh image + TPM, wizard with encryption password; observe `/boot/luks.key` after wizard completes | Plaintext removed; `/boot/.luks-sealed-verified` present; `/data` mounted; log shows `wizard: TPM finalized` |
 | T8 (H3, negative) | TPM present but `tpm2_clear` mid-wizard (seal succeeds, unseal-verify inside finalize fails) | `wizard: TPM finalize failed (plaintext retained)`; `/boot/luks.key` still present; boot falls back normally |
 
+**Automated coverage for H3 (v0.53.x):** the H3 decision logic and
+exit-code mapping are covered by 8 unit tests in
+`orchestrator/src/wizard.rs` -> `h3_tests` (`seal_*_maps_*`,
+`finalize_*_maps_*`, plus missing-script cases). These mock the
+`wraith-tpm-seal` and `wraith-tpm-finalize` scripts via temp paths
+and assert that `seal_ok`/`remount_ok` gating and outcome mapping
+match the runbook. T7/T8 remain as **hardware validation** checks
+for v0.54: QEMU + swtpm is documented as unreliable on the current
+VPS (QEMU 10.1 / QEMU 8.2 both hang in TPM emulator init against
+swtpm 0.7/0.8, while swtpm itself is healthy under `tpm2_getcap`).
+
+
 ### UEFI Secure Boot x86_64 (v0.50.0)
 
 Run on QEMU with OVMF + KVM. Custom keys enrolled via `virt-fw-vars`
