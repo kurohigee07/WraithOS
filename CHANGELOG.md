@@ -12,6 +12,21 @@ Releases before `v0.24.0` are not itemized here; see commit history.
 
 ### Security
 
+- **H3: auto-finalize LUKS keyfile after TPM seal verified.** Previously
+  the wizard sealed /boot/luks.key to the TPM but left the plaintext
+  keyfile on the FAT32 ESP until an operator ran `wraith-tpm-finalize`
+  manually. The plaintext keyfile fully bypasses the TPM seal (anyone
+  who can read /boot can `cryptsetup luksOpen` without the TPM), so
+  relying on operator discipline meant the "TPM-sealed LUKS" claim was
+  only true on disciplined deployments. The wizard now finalizes
+  automatically when (a) TPM seal succeeded and (b) S30data restart
+  successfully unlocked /data from the TPM blob. `wraith-tpm-finalize`
+  re-unseals the blob before removing /boot/luks.key, so any transient
+  TPM failure leaves the plaintext in place and boot falls back
+  normally — no new brick path. Manual `wraith-tpm-finalize` remains
+  idempotent and available for cases the wizard cannot cover (TPM
+  absent at wizard time, deferred operator flows).
+
 - **Rhai script fuel budget (H2).** Operator Rhai scripts ran on a
   bare `Engine::new()` with no operation, memory, or recursion budget.
   A `while true {}` typo in an event handler wedged the worker's
