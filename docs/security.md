@@ -739,3 +739,28 @@ a field to `0` disables that limit (not recommended for production).
 
 This is separate from Wasm fuel (H1): Rhai scripts run on the host
 orchestrator, Wasm modules run inside Wasmtime.
+
+### LUKS keyfile auto-finalize (H3, v0.53.x)
+
+The wizard seals `/boot/luks.key` to the TPM but, until this change,
+left the plaintext keyfile on the FAT32 ESP. `wraith-tpm-finalize`
+was the only way to remove it, and only the operator could invoke it.
+The plaintext keyfile fully bypasses the TPM: anyone who can read
+`/boot` can `cryptsetup luksOpen` without touching the TPM, so
+operator discipline was the only control on the "plaintext window"
+between wizard completion and manual finalize.
+
+`finish_handler` now finalizes automatically, gated on two runtime
+preconditions:
+
+1. `tpm_seal_best_effort()` returned `Sealed` (sealed blob written).
+2. `/etc/init.d/S30data restart` succeeded (the TPM unlock path was
+   exercised end-to-end during wizard).
+
+`wraith-tpm-finalize` re-unseals the blob before removing
+`/boot/luks.key`; if unseal fails (PCR mismatch, TPM transient) it
+refuses to remove the plaintext. Combined with the two preconditions,
+this means the plaintext keyfile is only deleted after the TPM path
+has been verified live — no new brick path is introduced. Manual
+`wraith-tpm-finalize` remains idempotent and is still the recovery
+tool for deployments where the TPM was absent at wizard time.

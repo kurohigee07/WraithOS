@@ -345,6 +345,31 @@ fn tpm_seal_best_effort() -> SealOutcome {
     }
 }
 
+/// H3: best-effort one-way finalize of the LUKS keyfile.
+/// Wraps /sbin/wraith-tpm-finalize, which re-unseals the sealed blob
+/// before removing /boot/luks.key. Any failure (TPM absent, unseal
+/// mismatch, /boot ro) leaves the plaintext keyfile in place, so the
+/// caller never ends up in a bricked boot state.
+enum FinalizeOutcome {
+    Finalized,
+    Skipped,
+    Failed(String),
+}
+
+fn tpm_finalize_best_effort() -> FinalizeOutcome {
+    let out = Command::new("/sbin/wraith-tpm-finalize").output();
+    match out {
+        Ok(o) if o.status.success() => FinalizeOutcome::Finalized,
+        Ok(o) if o.status.code() == Some(1) => FinalizeOutcome::Skipped,
+        Ok(o) => FinalizeOutcome::Failed(format!(
+            "exit={:?} stderr_tail={}",
+            o.status.code(),
+            stderr_tail(&o)
+        )),
+        Err(e) => FinalizeOutcome::Failed(format!("spawn failed: {e}")),
+    }
+}
+
 fn derive_keyfile(pwd: &str) -> [u8; 32] {
     let mut out = [0u8; 32];
     Argon2::default()
@@ -562,7 +587,9 @@ async fn finish_handler(State(s): State<ApiState>) -> Response {
             info!("wizard: LUKS data partition ready");
 
             // Item 1: best-effort TPM seal. Non-fatal.
-            match tpm_seal_best_effort() {
+            let seal_outcome = tpm_seal_best_effort();
+            let seal_ok = matches!(&seal_outcome, SealOutcome::Sealed);
+            match seal_outcome {
                 SealOutcome::Sealed => info!("wizard: TPM seal succeeded"),
                 SealOutcome::TpmAbsent => info!("wizard: TPM absent, plaintext keyfile only"),
                 SealOutcome::Failed(err) => {
@@ -574,10 +601,41 @@ async fn finish_handler(State(s): State<ApiState>) -> Response {
             // writable /data without waiting for a reboot. S30data
             // restart runs stop (unmount everything) + start (unlock
             // LUKS with the keyfile we just wrote to /boot).
-            match Command::new("/etc/init.d/S30data").arg("restart").status() {
-                Ok(st) if st.success() => info!("wizard: /data remounted from LUKS"),
-                Ok(st) => warn!(code = ?st.code(), "wizard: /data remount exit non-zero"),
-                Err(e) => warn!(err = %e, "wizard: /data remount spawn failed"),
+            let remount_ok = match Command::new("/etc/init.d/S30data").arg("restart").status() {
+                Ok(st) if st.success() => {
+                    info!("wizard: /data remounted from LUKS");
+                    true
+                }
+                Ok(st) => {
+                    warn!(code = ?st.code(), "wizard: /data remount exit non-zero");
+                    false
+                }
+                Err(e) => {
+                    warn!(err = %e, "wizard: /data remount spawn failed");
+                    false
+                }
+            };
+            // H3: auto-finalize only when the TPM path is verified.
+            // wraith-tpm-finalize re-unseals before removing the
+            // plaintext keyfile, so any transient failure leaves the
+            // keyfile in place and S30data falls back normally.
+            if seal_ok && remount_ok {
+                match tpm_finalize_best_effort() {
+                    FinalizeOutcome::Finalized => {
+                        info!("wizard: TPM finalized, plaintext keyfile removed")
+                    }
+                    FinalizeOutcome::Skipped => {
+                        info!("wizard: TPM finalize skipped (no sealed blob or already finalized)")
+                    }
+                    FinalizeOutcome::Failed(err) => {
+                        warn!(err = %err, "wizard: TPM finalize failed (plaintext retained)")
+                    }
+                }
+            } else {
+                info!(
+                    seal_ok,
+                    remount_ok, "wizard: TPM finalize skipped (preconditions not met)"
+                );
             }
         }
         Err((code, msg)) => {
