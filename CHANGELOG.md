@@ -8,6 +8,50 @@ describes the change theme. `v0.30` was not released.
 Crate manifests declare `0.1.0`; the tags are the release units.
 Releases before `v0.24.0` are not itemized here; see commit history.
 
+## [Unreleased]
+
+### Security
+
+- **dm-verity runtime rootfs integrity on x86_64.** Secure Boot
+  verified the boot chain but not the running rootfs. A raw disk
+  attacker could replace `/dev/vda2` or `/dev/vda3` after install
+  and the kernel would mount it. dm-verity closes this: a Merkle
+  hash tree is computed at build time and stored inline in each
+  rootfs partition, and the kernel verifies every block against it
+  on read. Any modified block triggers a kernel panic.
+
+  Implementation shape:
+  - The hash tree is appended to the squashfs *in the same
+    partition* (rootfs-verity.squashfs = 128M squashfs + tree +
+    zeros). No new partition, so data stays at `/dev/vda4` and
+    S30data / wizard.rs are unchanged. The v0.52 -> v0.53 RAUC
+    upgrade path works without re-partitioning.
+  - Root mounts via `/dev/dm-0` (created by the kernel from a
+    `dm-mod.create=` cmdline param; `CONFIG_DM_INIT=y` in the
+    kernel fragment). No initramfs.
+  - On corruption: panic. `panic=5` reboots. Correct behavior for
+    a tamper-detection mechanism is to fail hard, not fall through.
+  - Trust anchor: root hash + salt live in `grub.cfg` on the ESP.
+    On the v0.50 Secure Boot image that chain is firmware-verified;
+    on v0.51+ BIOS-only images it is trusted-by-origin, not
+    cryptographically anchored. An attacker who can write the ESP
+    can also write the hash. Documented in `docs/security.md`.
+
+  What this catches: any tamper of the rootfs slot after install
+  (raw disk access, silently corrupted disk, malicious RAUC bundle
+  that somehow passed signature check).
+
+  What this does *not* catch (honest list in `docs/security.md`):
+  ESP tamper on BIOS-only images, `/data` tamper (LUKS covers
+  confidentiality not integrity), and runtime kernel-level memory
+  tamper.
+
+  x86_64 shipped in this batch. aarch64 follows in the same
+  release. Tested on QEMU TCG (x86_64, `-cpu max`): happy path boots
+  to login; tampered byte triggers
+  `Kernel panic - not syncing: dm-verity device corrupted` within
+  ~3.6 s, `Rebooting in 5 seconds` (panic=5).
+
 ## [v0.52.0-security-hardening] - 2026-11-14
 
 ### Security

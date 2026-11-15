@@ -148,6 +148,55 @@ cleanly. After the update and a successful boot, run
 | `TPM unseal failed` (plaintext finalized) | `prepare-update` + `reseal` + `finalize` |
 | `no sealed blob, TPM present` | `/sbin/wraith-tpm-seal /boot/luks.key` |
 
+### dm-verity and rootfs rescue
+
+v0.53 mounts the rootfs through a dm-verity mapping. The kernel
+verifies each block against a Merkle hash tree stored inline in
+the same rootfs partition (`rootfs-verity.squashfs`). Any tampered
+or corrupted block halts the boot with a kernel panic. `panic=5`
+in the cmdline reboots after 5 seconds.
+
+**What triggers a panic:**
+
+- Raw disk tamper of `/dev/vda2` or `/dev/vda3`.
+- Silent disk corruption (sector-level bit rot, failing SSD) on
+  the active rootfs slot.
+- A RAUC bundle that somehow passed signature check but whose
+  rootfs content does not match the hash tree in the slot (would
+  only happen if the post-image step was skipped on the build
+  side).
+
+**Rescue, in order of least invasive:**
+
+1. **Try the other slot.** If the device has a committed
+   last-known-good slot on the other side (vda2 vs vda3), it will
+   still mount cleanly. Boot it from the GRUB menu and run
+   `rauc status` to confirm.
+2. **Reinstall via RAUC from a known-good device or rescue
+   environment.** The hash tree for the new bundle is generated
+   by `post-image.sh` from the new squashfs; installing a fresh
+   bundle fixes the slot.
+3. **Reflash the disk image.** No data recovery from the tampered
+   slot; that is the point. `/data` is a separate LUKS partition
+   and is unaffected by dm-verity failures on the rootfs.
+
+**Rebuild the hash tree after intentional rootfs edits:**
+
+If you modify `/dev/vda2` or `/dev/vda3` by hand (unsupported,
+but sometimes used in development), the hash tree in that
+partition no longer matches the content. The next boot will
+panic. Re-run `post-image.sh` on the build side to regenerate
+`rootfs-verity.squashfs` and reinstall the image.
+
+**Not covered by dm-verity:**
+
+- ESP tamper (grub.cfg, bzImage, GRUB) on BIOS-only images. The
+  hash tree is trusted by origin, not by signature. Tracked as
+  v0.54 (signed cmdline / signed GRUB config).
+- `/data` integrity. LUKS provides confidentiality; it does not
+  detect active tampering with the LUKS header or ciphertext.
+- Runtime memory tamper through a kernel exploit.
+
 ### Kernel/initramfs update procedure (finalized state)
 
 1. `/sbin/wraith-tpm-prepare-update` — restores plaintext.

@@ -55,6 +55,29 @@ GRUB_EFI="${BIN_DIR}/EFI/BOOT/BOOTAA64.EFI"
 
 echo "[2] BOOTAA64.EFI: $(stat -c%s "$GRUB_EFI") bytes"
 
+# ─── [1.5] dm-verity combined rootfs + grub.cfg ──────────────────
+echo "[1.5] Computing dm-verity tree + combined rootfs"
+VERITY_BIN=$(command -v veritysetup || echo "/usr/sbin/veritysetup")
+[ -x "$VERITY_BIN" ] || { echo "[err] veritysetup missing"; exit 1; }
+SQ="${BIN_DIR}/rootfs.squashfs"
+SZ=$(stat -c%s "$SQ")
+DB=$(( (SZ + 4095) / 4096 ))
+HS=$(( DB + 1 ))
+DL=$(( DB * 8 ))
+VERITY_OUT="$("$VERITY_BIN" format --hash=sha256 --data-block-size=4096 --hash-block-size=4096 "$SQ" "${BIN_DIR}/rootfs.verity" 2>&1)" || { echo "[err] verity: $VERITY_OUT"; exit 1; }
+HASH=$(echo "$VERITY_OUT" | grep '^Root hash:' | awk '{print $NF}')
+SALT=$(echo "$VERITY_OUT" | grep '^Salt:' | awk '{print $NF}')
+[ -n "$HASH" ] && [ -n "$SALT" ] || { echo "[err] verity parse"; exit 1; }
+echo "  data_blocks=$DB hash_start=$HS dev_len=$DL"
+COMB="${BIN_DIR}/rootfs-verity.squashfs"
+cp "$SQ" "$COMB"
+cat "${BIN_DIR}/rootfs.verity" >> "$COMB"
+echo "  combined: $(stat -c%s "$COMB") bytes"
+sed -e "s|@DATA_BLOCKS@|${DB}|g" -e "s|@HASH_START@|${HS}|g" -e "s|@DEV_LEN@|${DL}|g" \
+    -e "s|@HASH_A@|${HASH}|g" -e "s|@SALT_A@|${SALT}|g" -e "s|@HASH_B@|${HASH}|g" -e "s|@SALT_B@|${SALT}|g" \
+    "${BOARD_DIR}/grub-arm.cfg" > "${BIN_DIR}/grub/grub.cfg"
+echo "  grub.cfg generated"
+
 GEN_TMP="${BUILD_D}/genimage-arm.tmp"
 rm -rf "$GEN_TMP"
 
