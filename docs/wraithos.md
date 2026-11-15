@@ -104,15 +104,23 @@ U-Boot shipped on this image); runtime modification of `/dev/vda2`
 or `/dev/vda3` after boot (dm-verity on RAUC bundles covers transport
 only); firmware replacement combined with matching PCRs.
 
-### v0.49.0 policy: sealed + plaintext coexist
+### Keyfile finalize policy (v0.49 → v0.53.x)
 
-The plaintext `/boot/luks.key` is **never auto-removed** in v0.49.0.
-Auto-removal requires explicit operator action via
-`/sbin/wraith-tpm-finalize`, which re-verifies the sealed blob unseals
-in the current boot, removes the plaintext, writes
-`/boot/.luks-sealed-verified`, and logs a one-way transition. If the
-sealed blob does not unseal, `finalize` refuses and exits non-zero.
-If already finalized, it is idempotent (exit 0).
+v0.49 shipped "sealed + plaintext coexist": the plaintext
+`/boot/luks.key` was never auto-removed, and an operator had to run
+`/sbin/wraith-tpm-finalize` manually. H3 (v0.53.x) closes the
+plaintext window: the wizard now calls `wraith-tpm-finalize`
+automatically when (a) the TPM seal succeeded and (b) S30data
+restart unlocked `/data` from the TPM blob. `finalize` re-verifies
+that the sealed blob unseals in the current boot before removing the
+plaintext, writes `/boot/.luks-sealed-verified`, and logs a one-way
+transition. If the sealed blob does not unseal, `finalize` refuses
+and exits non-zero, leaving the plaintext in place. If already
+finalized, it is idempotent (exit 0).
+
+Manual `wraith-tpm-finalize` is still the recovery tool for
+deployments where the TPM was absent at wizard time, or where an
+operator deliberately kept the plaintext (e.g. update window).
 
 Once finalized, run `/sbin/wraith-tpm-prepare-update` **before** any
 PCR-affecting operation (kernel/GRUB update, firmware update, RAUC
