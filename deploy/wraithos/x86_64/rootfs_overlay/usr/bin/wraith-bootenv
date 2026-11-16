@@ -1,7 +1,10 @@
 #!/bin/sh
 # Wraith Boot Contract: 1024-byte GRUB env block on ESP.
 ENV_FILE=/boot/grub/grubenv
-ENV_TMP=/run/wraith/grubenv.tmp
+# Tmp MUST be on the same filesystem as ENV_FILE so the final step is an
+# atomic rename. A tmp under /run (tmpfs) would make mv a cross-fs copy+
+# truncate, reintroducing the power-loss corruption window.
+ENV_TMP=/boot/grub/.grubenv.tmp
 mkdir -p /run/wraith
 
 ensure_mount() {
@@ -55,8 +58,14 @@ env_write() {
     if [ "$n" -gt 0 ]; then
         dd if=/dev/zero bs=1 count="$n" 2>/dev/null | tr '\000' '#' >> "$ENV_TMP"
     fi
-    cat "$ENV_TMP" > "$ENV_FILE"
-    rm -f "$ENV_TMP"
+    # Atomic rename: old grubenv stays intact until rename succeeds. If
+    # power loss hits mid-write, the tmp file is lost and the old block
+    # is untouched. vfat on Linux treats rename as an atomic directory
+    # operation within one fs.
+    mv "$ENV_TMP" "$ENV_FILE" || {
+        rm -f "$ENV_TMP"
+        return 1
+    }
     sync
 }
 

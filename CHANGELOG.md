@@ -32,6 +32,24 @@ Releases before `v0.24.0` are not itemized here; see commit history.
      the log. Fixed by capturing output + exit code separately, then
      logging a WARN on non-zero rc.
 
+### Fixed
+
+- **wraith-bootenv atomic grubenv write.** The GRUB env block was
+  written with `cat "$ENV_TMP" > "$ENV_FILE"` — the shell truncates
+  the target first, then writes. A power loss mid-write would leave
+  a partial 1024-byte block; GRUB reads garbage and may not find a
+  valid slot, causing a boot loop. `ENV_TMP` also lived under
+  `/run` (tmpfs), so even a `mv` would have been cross-fs
+  copy+truncate. Fixed: tmp lives in `/boot/grub/` (same fs as the
+  target) and the final step is `mv`, an atomic rename on vfat.
+  Old env stays valid until the rename commits.
+- **S30data mount failure cleanup.** After a successful TPM
+  unseal, if the ext4 mount failed (corrupt fs, transient I/O),
+  the LUKS mapper was left open. The plaintext fallback then
+  failed with "mapper already exists", so `/data` stayed
+  unmounted until reboot. Fixed: close mapper on mount failure
+  so the fallback path can re-open.
+
 ### Security
 
 - **H3: auto-finalize LUKS keyfile after TPM seal verified.** Previously
