@@ -19,6 +19,14 @@ case "$1" in
                             echo -n "TPM unseal OK. "
                             if cryptsetup luksOpen --key-file "$TPM_KEYFILE" /dev/vda4 wraith-data 2>/dev/null; then
                                 mount -t ext4 /dev/mapper/wraith-data /data 2>/dev/null && MOUNTED=1
+                                if [ "$MOUNTED" = "0" ]; then
+                                    # Mount failed but mapper is open. Close it
+                                    # so plaintext fallback can re-open with the
+                                    # same name; otherwise luksOpen would fail
+                                    # with "already exists" and /data stays
+                                    # unmounted for no reason.
+                                    cryptsetup luksClose wraith-data 2>/dev/null
+                                fi
                             fi
                             rm -f "$TPM_KEYFILE"
                             ;;
