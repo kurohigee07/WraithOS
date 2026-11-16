@@ -27,6 +27,17 @@ Releases before `v0.24.0` are not itemized here; see commit history.
   idempotent and available for cases the wizard cannot cover (TPM
   absent at wizard time, deferred operator flows).
 
+  **Verification status:** 8 unit tests in `wizard::h3_tests` cover
+  exit-code mapping (`Sealed/TpmAbsent/Failed`,
+  `Finalized/Skipped/Failed`) and missing-script paths. The
+  end-to-end TPM path (T7/T8 in `docs/testing.md`) is scheduled
+  for v0.54 hardware validation: QEMU's TPM emulator backend
+  aborts in init across QEMU 10.1 and 8.2 in the reference build
+  host, and swtpm cannot be exercised from QEMU in this
+  environment. WraithOS code and shell scripts are unchanged
+  from v0.53 in the finalize logic — H3 only adds a caller that
+  invokes the existing `/sbin/wraith-tpm-finalize`.
+
 - **Rhai script fuel budget (H2).** Operator Rhai scripts ran on a
   bare `Engine::new()` with no operation, memory, or recursion budget.
   A `while true {}` typo in an event handler wedged the worker's

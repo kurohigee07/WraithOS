@@ -90,9 +90,11 @@ exit-code mapping are covered by 8 unit tests in
 `wraith-tpm-seal` and `wraith-tpm-finalize` scripts via temp paths
 and assert that `seal_ok`/`remount_ok` gating and outcome mapping
 match the runbook. T7/T8 remain as **hardware validation** checks
-for v0.54: QEMU + swtpm is documented as unreliable on the current
-VPS (QEMU 10.1 / QEMU 8.2 both hang in TPM emulator init against
-swtpm 0.7/0.8, while swtpm itself is healthy under `tpm2_getcap`).
+for v0.54: QEMU's TPM emulator backend aborts in TPM emulator
+init across QEMU 10.1 (Alma) and QEMU 8.2 (Ubuntu) against swtpm
+0.7/0.8 — QEMU connects, writes a 4-byte length prefix, then closes
+without sending the body; swtpm standalone is healthy under
+`tpm2_getcap`. This is a QEMU-side abort, not a WraithOS issue.
 
 
 ### UEFI Secure Boot x86_64 (v0.50.0)
