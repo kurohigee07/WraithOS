@@ -10,6 +10,28 @@ Releases before `v0.24.0` are not itemized here; see commit history.
 
 ## [Unreleased]
 
+### Fixed
+
+- **RAUC trial-boot healthcheck reliability.** Three defects in
+  `wraith-rauc-healthcheck` could rollback a healthy trial boot or
+  corrupt slot state on a busy system:
+  1. `wget` had no `-T` timeout. If `/readyz` accepted the
+     connection but stalled (DB locked, handler wedged), the busybox
+     `wget` blocked on the default socket timeout (900s+), far past
+     the script's own 60s budget. The trial boot would always
+     rollback even with a healthy orchestrator. Fixed by adding
+     `-T 5` per attempt; 30 attempts * (5s + 2s) stays bounded.
+  2. No singleton lock. `S99wraith-init` is re-run by
+     `wraith-watchdog` on crash/restart; a second healthcheck could
+     spawn mid-run. Two instances racing `rauc status
+     mark-good` / `mark-bad` would corrupt slot state. Fixed with
+     an atomic `mkdir` lock under `/run/wraith/`.
+  3. `rauc status` / `wraith-bootenv` failures were silently
+     dropped inside the pipe `cmd | while read ...`. A failing
+     `rauc status mark-good` looked identical to a succeeding one in
+     the log. Fixed by capturing output + exit code separately, then
+     logging a WARN on non-zero rc.
+
 ### Security
 
 - **H3: auto-finalize LUKS keyfile after TPM seal verified.** Previously
