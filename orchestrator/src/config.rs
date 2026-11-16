@@ -202,7 +202,18 @@ impl Config {
             .with_context(|| format!("read config {}", path.display()))?;
         let cfg: Config =
             toml::from_str(&content).with_context(|| format!("parse config {}", path.display()))?;
+        cfg.validate()?;
         Ok(cfg)
+    }
+
+    fn validate(&self) -> anyhow::Result<()> {
+        if self.max_concurrent_wasm == 0 {
+            anyhow::bail!("max_concurrent_wasm must be >= 1");
+        }
+        if self.max_sockets == 0 {
+            anyhow::bail!("max_sockets must be >= 1");
+        }
+        Ok(())
     }
 
     pub fn to_app_context(&self) -> AppContextConfig {
@@ -215,5 +226,28 @@ impl Config {
             wasm_acquire_timeout: Duration::from_secs(self.wasm_acquire_timeout_secs),
             wasm_memory_limit_mb: self.wasm_memory_limit_mb,
         }
+    }
+}
+
+#[cfg(test)]
+mod cfg_tests {
+    use super::*;
+
+    #[test]
+    fn rejects_zero_max_concurrent_wasm() {
+        let td = tempfile::tempdir().unwrap();
+        let p = td.path().join("c.toml");
+        std::fs::write(&p, "max_concurrent_wasm = 0\n").unwrap();
+        let err = Config::load(&p).unwrap_err();
+        assert!(format!("{err}").contains("max_concurrent_wasm"));
+    }
+
+    #[test]
+    fn rejects_zero_max_sockets() {
+        let td = tempfile::tempdir().unwrap();
+        let p = td.path().join("c.toml");
+        std::fs::write(&p, "max_sockets = 0\n").unwrap();
+        let err = Config::load(&p).unwrap_err();
+        assert!(format!("{err}").contains("max_sockets"));
     }
 }
