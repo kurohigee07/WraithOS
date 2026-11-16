@@ -329,21 +329,25 @@ enum SealOutcome {
     Failed(String),
 }
 
-fn tpm_seal_best_effort() -> SealOutcome {
-    tpm_seal_best_effort_at("/sbin/wraith-tpm-seal")
+async fn tpm_seal_best_effort() -> SealOutcome {
+    tpm_seal_best_effort_at("/sbin/wraith-tpm-seal").await
 }
 
-fn tpm_seal_best_effort_at(script: &str) -> SealOutcome {
-    let out = Command::new(script).arg("/boot/luks.key").output();
-    match out {
-        Ok(o) if o.status.success() => SealOutcome::Sealed,
-        Ok(o) if o.status.code() == Some(2) => SealOutcome::TpmAbsent,
-        Ok(o) => SealOutcome::Failed(format!(
+async fn tpm_seal_best_effort_at(script: &str) -> SealOutcome {
+    let fut = tokio::process::Command::new(script)
+        .arg("/boot/luks.key")
+        .kill_on_drop(true)
+        .output();
+    match tokio::time::timeout(std::time::Duration::from_secs(60), fut).await {
+        Err(_) => SealOutcome::Failed("timeout after 60s".into()),
+        Ok(Ok(o)) if o.status.success() => SealOutcome::Sealed,
+        Ok(Ok(o)) if o.status.code() == Some(2) => SealOutcome::TpmAbsent,
+        Ok(Ok(o)) => SealOutcome::Failed(format!(
             "exit={:?} stderr_tail={}",
             o.status.code(),
             stderr_tail(&o)
         )),
-        Err(e) => SealOutcome::Failed(format!("spawn failed: {e}")),
+        Ok(Err(e)) => SealOutcome::Failed(format!("spawn failed: {e}")),
     }
 }
 
@@ -358,21 +362,24 @@ enum FinalizeOutcome {
     Failed(String),
 }
 
-fn tpm_finalize_best_effort() -> FinalizeOutcome {
-    tpm_finalize_best_effort_at("/sbin/wraith-tpm-finalize")
+async fn tpm_finalize_best_effort() -> FinalizeOutcome {
+    tpm_finalize_best_effort_at("/sbin/wraith-tpm-finalize").await
 }
 
-fn tpm_finalize_best_effort_at(script: &str) -> FinalizeOutcome {
-    let out = Command::new(script).output();
-    match out {
-        Ok(o) if o.status.success() => FinalizeOutcome::Finalized,
-        Ok(o) if o.status.code() == Some(1) => FinalizeOutcome::Skipped,
-        Ok(o) => FinalizeOutcome::Failed(format!(
+async fn tpm_finalize_best_effort_at(script: &str) -> FinalizeOutcome {
+    let fut = tokio::process::Command::new(script)
+        .kill_on_drop(true)
+        .output();
+    match tokio::time::timeout(std::time::Duration::from_secs(120), fut).await {
+        Err(_) => FinalizeOutcome::Failed("timeout after 120s".into()),
+        Ok(Ok(o)) if o.status.success() => FinalizeOutcome::Finalized,
+        Ok(Ok(o)) if o.status.code() == Some(1) => FinalizeOutcome::Skipped,
+        Ok(Ok(o)) => FinalizeOutcome::Failed(format!(
             "exit={:?} stderr_tail={}",
             o.status.code(),
             stderr_tail(&o)
         )),
-        Err(e) => FinalizeOutcome::Failed(format!("spawn failed: {e}")),
+        Ok(Err(e)) => FinalizeOutcome::Failed(format!("spawn failed: {e}")),
     }
 }
 
@@ -492,12 +499,22 @@ fn setup_luks(pwd: &str, data_dir: &std::path::Path) -> LuksResult<()> {
             let d = mnt.join(sub);
             std::fs::create_dir_all(&d).map_err(|e| internal(format!("mnt sub mkdir: {e}")))?;
         }
-        let _ = Command::new("cp")
+        let cp_status = Command::new("cp")
             .arg("-a")
             .arg(format!("{}/.", stage.display()))
             .arg(mnt)
             .status();
         let _ = Command::new("umount").arg(mnt).status();
+        match cp_status {
+            Ok(s) if s.success() => {}
+            Ok(s) => {
+                return Err(internal(format!(
+                    "cp -a stage to /data failed: exit={:?}",
+                    s.code()
+                )))
+            }
+            Err(e) => return Err(internal(format!("cp -a spawn: {e}"))),
+        }
     }
 
     let close = luks_cmd(&["luksClose", MAPPER_NAME], None).map_err(internal)?;
@@ -593,7 +610,7 @@ async fn finish_handler(State(s): State<ApiState>) -> Response {
             info!("wizard: LUKS data partition ready");
 
             // Item 1: best-effort TPM seal. Non-fatal.
-            let seal_outcome = tpm_seal_best_effort();
+            let seal_outcome = tpm_seal_best_effort().await;
             let seal_ok = matches!(&seal_outcome, SealOutcome::Sealed);
             match seal_outcome {
                 SealOutcome::Sealed => info!("wizard: TPM seal succeeded"),
@@ -607,26 +624,35 @@ async fn finish_handler(State(s): State<ApiState>) -> Response {
             // writable /data without waiting for a reboot. S30data
             // restart runs stop (unmount everything) + start (unlock
             // LUKS with the keyfile we just wrote to /boot).
-            let remount_ok = match Command::new("/etc/init.d/S30data").arg("restart").status() {
-                Ok(st) if st.success() => {
-                    info!("wizard: /data remounted from LUKS");
-                    true
-                }
-                Ok(st) => {
-                    warn!(code = ?st.code(), "wizard: /data remount exit non-zero");
-                    false
-                }
-                Err(e) => {
-                    warn!(err = %e, "wizard: /data remount spawn failed");
-                    false
-                }
-            };
+            let remount_fut = tokio::process::Command::new("/etc/init.d/S30data")
+                .arg("restart")
+                .kill_on_drop(true)
+                .status();
+            let remount_ok =
+                match tokio::time::timeout(std::time::Duration::from_secs(60), remount_fut).await {
+                    Err(_) => {
+                        warn!("wizard: /data remount timeout after 60s");
+                        false
+                    }
+                    Ok(Ok(st)) if st.success() => {
+                        info!("wizard: /data remounted from LUKS");
+                        true
+                    }
+                    Ok(Ok(st)) => {
+                        warn!(code = ?st.code(), "wizard: /data remount exit non-zero");
+                        false
+                    }
+                    Ok(Err(e)) => {
+                        warn!(err = %e, "wizard: /data remount spawn failed");
+                        false
+                    }
+                };
             // H3: auto-finalize only when the TPM path is verified.
             // wraith-tpm-finalize re-unseals before removing the
             // plaintext keyfile, so any transient failure leaves the
             // keyfile in place and S30data falls back normally.
             if seal_ok && remount_ok {
-                match tpm_finalize_best_effort() {
+                match tpm_finalize_best_effort().await {
                     FinalizeOutcome::Finalized => {
                         info!("wizard: TPM finalized, plaintext keyfile removed")
                     }
@@ -673,13 +699,15 @@ async fn finish_handler(State(s): State<ApiState>) -> Response {
     // S50dropbear refuses to start pre-wizard (the default root
     // password would be exposed on port 22 before provisioning).
     // Serial console remains the provisioning interface pre-wizard.
-    match Command::new("/etc/init.d/S50dropbear")
+    let dropbear_fut = tokio::process::Command::new("/etc/init.d/S50dropbear")
         .arg("restart")
-        .status()
-    {
-        Ok(st) if st.success() => info!("wizard: dropbear restarted"),
-        Ok(st) => warn!(code = ?st.code(), "wizard: dropbear restart exit non-zero"),
-        Err(e) => warn!(err = %e, "wizard: dropbear restart spawn failed"),
+        .kill_on_drop(true)
+        .status();
+    match tokio::time::timeout(std::time::Duration::from_secs(30), dropbear_fut).await {
+        Err(_) => warn!("wizard: dropbear restart timeout after 30s"),
+        Ok(Ok(st)) if st.success() => info!("wizard: dropbear restarted"),
+        Ok(Ok(st)) => warn!(code = ?st.code(), "wizard: dropbear restart exit non-zero"),
+        Ok(Err(e)) => warn!(err = %e, "wizard: dropbear restart spawn failed"),
     }
 
     info!("wizard: setup complete (hostname={})", hostname);
@@ -803,7 +831,7 @@ mod h3_tests {
     // H3 tests spawn child processes; serialize to avoid filesystem
     // contention races that intermittently fail Command::output() under
     // parallel cargo test threads.
-    static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    static LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
     fn write_exit_script(dir: &std::path::Path, name: &str, code: i32) -> std::path::PathBuf {
         let p = dir.join(name);
@@ -819,86 +847,86 @@ mod h3_tests {
         p
     }
 
-    #[test]
-    fn seal_maps_exit_zero_to_sealed() {
-        let _g = LOCK.lock().unwrap();
+    #[tokio::test]
+    async fn seal_maps_exit_zero_to_sealed() {
+        let _g = LOCK.lock().await;
         let td = tempfile::tempdir().unwrap();
         let s = write_exit_script(td.path(), "seal", 0);
         assert!(matches!(
-            tpm_seal_best_effort_at(s.to_str().unwrap()),
+            tpm_seal_best_effort_at(s.to_str().unwrap()).await,
             SealOutcome::Sealed
         ));
     }
 
-    #[test]
-    fn seal_maps_exit_two_to_tpm_absent() {
-        let _g = LOCK.lock().unwrap();
+    #[tokio::test]
+    async fn seal_maps_exit_two_to_tpm_absent() {
+        let _g = LOCK.lock().await;
         let td = tempfile::tempdir().unwrap();
         let s = write_exit_script(td.path(), "seal", 2);
         assert!(matches!(
-            tpm_seal_best_effort_at(s.to_str().unwrap()),
+            tpm_seal_best_effort_at(s.to_str().unwrap()).await,
             SealOutcome::TpmAbsent
         ));
     }
 
-    #[test]
-    fn seal_maps_exit_one_to_failed() {
-        let _g = LOCK.lock().unwrap();
+    #[tokio::test]
+    async fn seal_maps_exit_one_to_failed() {
+        let _g = LOCK.lock().await;
         let td = tempfile::tempdir().unwrap();
         let s = write_exit_script(td.path(), "seal", 1);
         assert!(matches!(
-            tpm_seal_best_effort_at(s.to_str().unwrap()),
+            tpm_seal_best_effort_at(s.to_str().unwrap()).await,
             SealOutcome::Failed(_)
         ));
     }
 
-    #[test]
-    fn seal_missing_script_is_failed() {
-        let _g = LOCK.lock().unwrap();
+    #[tokio::test]
+    async fn seal_missing_script_is_failed() {
+        let _g = LOCK.lock().await;
         assert!(matches!(
-            tpm_seal_best_effort_at("/tmp/does-not-exist-wraith-seal"),
+            tpm_seal_best_effort_at("/tmp/does-not-exist-wraith-seal").await,
             SealOutcome::Failed(_)
         ));
     }
 
-    #[test]
-    fn finalize_maps_exit_zero_to_finalized() {
-        let _g = LOCK.lock().unwrap();
+    #[tokio::test]
+    async fn finalize_maps_exit_zero_to_finalized() {
+        let _g = LOCK.lock().await;
         let td = tempfile::tempdir().unwrap();
         let s = write_exit_script(td.path(), "finalize", 0);
         assert!(matches!(
-            tpm_finalize_best_effort_at(s.to_str().unwrap()),
+            tpm_finalize_best_effort_at(s.to_str().unwrap()).await,
             FinalizeOutcome::Finalized
         ));
     }
 
-    #[test]
-    fn finalize_maps_exit_one_to_skipped() {
-        let _g = LOCK.lock().unwrap();
+    #[tokio::test]
+    async fn finalize_maps_exit_one_to_skipped() {
+        let _g = LOCK.lock().await;
         let td = tempfile::tempdir().unwrap();
         let s = write_exit_script(td.path(), "finalize", 1);
         assert!(matches!(
-            tpm_finalize_best_effort_at(s.to_str().unwrap()),
+            tpm_finalize_best_effort_at(s.to_str().unwrap()).await,
             FinalizeOutcome::Skipped
         ));
     }
 
-    #[test]
-    fn finalize_maps_other_exit_to_failed() {
-        let _g = LOCK.lock().unwrap();
+    #[tokio::test]
+    async fn finalize_maps_other_exit_to_failed() {
+        let _g = LOCK.lock().await;
         let td = tempfile::tempdir().unwrap();
         let s = write_exit_script(td.path(), "finalize", 3);
         assert!(matches!(
-            tpm_finalize_best_effort_at(s.to_str().unwrap()),
+            tpm_finalize_best_effort_at(s.to_str().unwrap()).await,
             FinalizeOutcome::Failed(_)
         ));
     }
 
-    #[test]
-    fn finalize_missing_script_is_failed() {
-        let _g = LOCK.lock().unwrap();
+    #[tokio::test]
+    async fn finalize_missing_script_is_failed() {
+        let _g = LOCK.lock().await;
         assert!(matches!(
-            tpm_finalize_best_effort_at("/tmp/does-not-exist-wraith-finalize"),
+            tpm_finalize_best_effort_at("/tmp/does-not-exist-wraith-finalize").await,
             FinalizeOutcome::Failed(_)
         ));
     }
