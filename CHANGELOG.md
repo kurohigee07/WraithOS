@@ -12,6 +12,26 @@ Releases before `v0.24.0` are not itemized here; see commit history.
 
 ### Security
 
+- **D1-completion: bound the LUKS setup chain and bwrap probe.**
+  The earlier D1 fix wrapped `tpm_seal_best_effort`,
+  `tpm_finalize_best_effort`, `S30data restart`, and
+  `S50dropbear restart` in `tokio::time::timeout`, but
+  `finish_handler` still called `setup_luks()` synchronously while
+  holding the `wizard.data` mutex. `setup_luks` shells out to
+  `cryptsetup luksFormat`, `mkfs.ext4`, `cp -a`, `mount`, `umount`.
+  A wedged disk would hang any of those and lock the wizard mutex
+  forever — same failure mode as D1, different call path.
+  `setup_luks` now runs via `spawn_blocking` behind a 300 s timeout;
+  on timeout the handler returns 500 with a "disk wedged? reboot"
+  hint. `main.rs`'s bwrap startup probe (only when
+  `enable_build=true`) is likewise wrapped in a 10 s
+  `tokio::process::Command` + timeout; previously it used
+  `std::process::Command` with no timeout and could stall startup
+  indefinitely, leaving the watchdog to restart a process that never
+  reports why.
+
+### Security
+
 - **In-place update guard for dm-verity images.** The root hash and
   salt that drive dm-verity live in `grub.cfg` on the ESP and are
   baked at build time (post-image.sh, v0.53). Neither `wraith-update`

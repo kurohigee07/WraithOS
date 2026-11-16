@@ -113,18 +113,24 @@ async fn main() -> anyhow::Result<()> {
         info!(cargo_home = %cargo_home.display(), "build pipeline ready");
     }
 
-    // Startup: verify build sandbox (bwrap) if build enabled
+    // Startup: verify build sandbox (bwrap) if build enabled.
+    // Wrap each probe in a 10 s timeout: a wedged kernel or SELinux
+    // denial that hangs bwrap would otherwise hang startup forever
+    // and leave the watchdog restarting us with no actionable error.
     if config.enable_build {
-        match std::process::Command::new("bwrap")
+        let ver_fut = tokio::process::Command::new("bwrap")
             .arg("--version")
-            .output()
-        {
-            Ok(out) if out.status.success() => {
+            .kill_on_drop(true)
+            .output();
+        match tokio::time::timeout(std::time::Duration::from_secs(10), ver_fut).await {
+            Err(_) => {
+                anyhow::bail!(
+                    "config.enable_build=true but `bwrap --version` timed out after 10 s"
+                );
+            }
+            Ok(Ok(out)) if out.status.success() => {
                 let version = String::from_utf8_lossy(&out.stdout).trim().to_string();
-                // --version alone is insufficient: user namespaces may be
-                // disabled even though the binary is installed. Probe an
-                // actual unshare so we fail at startup, not at first build.
-                let probe = std::process::Command::new("bwrap")
+                let probe_fut = tokio::process::Command::new("bwrap")
                     .args([
                         "--unshare-all",
                         "--die-with-parent",
@@ -133,18 +139,22 @@ async fn main() -> anyhow::Result<()> {
                         "/",
                         "/bin/true",
                     ])
+                    .kill_on_drop(true)
                     .output();
-                match probe {
-                    Ok(p) if p.status.success() => {
+                match tokio::time::timeout(std::time::Duration::from_secs(10), probe_fut).await {
+                    Err(_) => anyhow::bail!(
+                        "config.enable_build=true but bwrap functional probe timed out after 10 s"
+                    ),
+                    Ok(Ok(p)) if p.status.success() => {
                         info!(bwrap = %version, "build sandbox (bwrap) available");
                     }
-                    Ok(p) => {
+                    Ok(Ok(p)) => {
                         let stderr = String::from_utf8_lossy(&p.stderr).trim().to_string();
                         anyhow::bail!(
                             "config.enable_build=true but bwrap functional probe failed: {stderr}. Check /proc/sys/user/max_user_namespaces and SELinux policy. Or set enable_build=false."
                         );
                     }
-                    Err(e) => {
+                    Ok(Err(e)) => {
                         anyhow::bail!("config.enable_build=true but bwrap spawn failed: {e}");
                     }
                 }
