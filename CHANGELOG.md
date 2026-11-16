@@ -30,8 +30,6 @@ Releases before `v0.24.0` are not itemized here; see commit history.
   indefinitely, leaving the watchdog to restart a process that never
   reports why.
 
-### Security
-
 - **In-place update guard for dm-verity images.** The root hash and
   salt that drive dm-verity live in `grub.cfg` on the ESP and are
   baked at build time (post-image.sh, v0.53). Neither `wraith-update`
@@ -43,49 +41,6 @@ Releases before `v0.24.0` are not itemized here; see commit history.
   and tell the operator to flash a full image over USB. A
   post-install hook that recomputes the hash and rewrites grub.cfg
   is scheduled for v0.54.
-
-
-### Fixed
-
-- **RAUC trial-boot healthcheck reliability.** Three defects in
-  `wraith-rauc-healthcheck` could rollback a healthy trial boot or
-  corrupt slot state on a busy system:
-  1. `wget` had no `-T` timeout. If `/readyz` accepted the
-     connection but stalled (DB locked, handler wedged), the busybox
-     `wget` blocked on the default socket timeout (900s+), far past
-     the script's own 60s budget. The trial boot would always
-     rollback even with a healthy orchestrator. Fixed by adding
-     `-T 5` per attempt; 30 attempts * (5s + 2s) stays bounded.
-  2. No singleton lock. `S99wraith-init` is re-run by
-     `wraith-watchdog` on crash/restart; a second healthcheck could
-     spawn mid-run. Two instances racing `rauc status
-     mark-good` / `mark-bad` would corrupt slot state. Fixed with
-     an atomic `mkdir` lock under `/run/wraith/`.
-  3. `rauc status` / `wraith-bootenv` failures were silently
-     dropped inside the pipe `cmd | while read ...`. A failing
-     `rauc status mark-good` looked identical to a succeeding one in
-     the log. Fixed by capturing output + exit code separately, then
-     logging a WARN on non-zero rc.
-
-### Fixed
-
-- **wraith-bootenv atomic grubenv write.** The GRUB env block was
-  written with `cat "$ENV_TMP" > "$ENV_FILE"` — the shell truncates
-  the target first, then writes. A power loss mid-write would leave
-  a partial 1024-byte block; GRUB reads garbage and may not find a
-  valid slot, causing a boot loop. `ENV_TMP` also lived under
-  `/run` (tmpfs), so even a `mv` would have been cross-fs
-  copy+truncate. Fixed: tmp lives in `/boot/grub/` (same fs as the
-  target) and the final step is `mv`, an atomic rename on vfat.
-  Old env stays valid until the rename commits.
-- **S30data mount failure cleanup.** After a successful TPM
-  unseal, if the ext4 mount failed (corrupt fs, transient I/O),
-  the LUKS mapper was left open. The plaintext fallback then
-  failed with "mapper already exists", so `/data` stayed
-  unmounted until reboot. Fixed: close mapper on mount failure
-  so the fallback path can re-open.
-
-### Security
 
 - **H3: auto-finalize LUKS keyfile after TPM seal verified.** Previously
   the wizard sealed /boot/luks.key to the TPM but left the plaintext
@@ -162,6 +117,44 @@ Releases before `v0.24.0` are not itemized here; see commit history.
   to login; tampered byte triggers
   `Kernel panic - not syncing: dm-verity device corrupted` within
   ~3.6 s, `Rebooting in 5 seconds` (panic=5).
+
+### Fixed
+
+- **RAUC trial-boot healthcheck reliability.** Three defects in
+  `wraith-rauc-healthcheck` could rollback a healthy trial boot or
+  corrupt slot state on a busy system:
+  1. `wget` had no `-T` timeout. If `/readyz` accepted the
+     connection but stalled (DB locked, handler wedged), the busybox
+     `wget` blocked on the default socket timeout (900s+), far past
+     the script's own 60s budget. The trial boot would always
+     rollback even with a healthy orchestrator. Fixed by adding
+     `-T 5` per attempt; 30 attempts * (5s + 2s) stays bounded.
+  2. No singleton lock. `S99wraith-init` is re-run by
+     `wraith-watchdog` on crash/restart; a second healthcheck could
+     spawn mid-run. Two instances racing `rauc status
+     mark-good` / `mark-bad` would corrupt slot state. Fixed with
+     an atomic `mkdir` lock under `/run/wraith/`.
+  3. `rauc status` / `wraith-bootenv` failures were silently
+     dropped inside the pipe `cmd | while read ...`. A failing
+     `rauc status mark-good` looked identical to a succeeding one in
+     the log. Fixed by capturing output + exit code separately, then
+     logging a WARN on non-zero rc.
+
+- **wraith-bootenv atomic grubenv write.** The GRUB env block was
+  written with `cat "$ENV_TMP" > "$ENV_FILE"` — the shell truncates
+  the target first, then writes. A power loss mid-write would leave
+  a partial 1024-byte block; GRUB reads garbage and may not find a
+  valid slot, causing a boot loop. `ENV_TMP` also lived under
+  `/run` (tmpfs), so even a `mv` would have been cross-fs
+  copy+truncate. Fixed: tmp lives in `/boot/grub/` (same fs as the
+  target) and the final step is `mv`, an atomic rename on vfat.
+  Old env stays valid until the rename commits.
+- **S30data mount failure cleanup.** After a successful TPM
+  unseal, if the ext4 mount failed (corrupt fs, transient I/O),
+  the LUKS mapper was left open. The plaintext fallback then
+  failed with "mapper already exists", so `/data` stayed
+  unmounted until reboot. Fixed: close mapper on mount failure
+  so the fallback path can re-open.
 
 ## [v0.52.0-security-hardening] - 2026-11-14
 
