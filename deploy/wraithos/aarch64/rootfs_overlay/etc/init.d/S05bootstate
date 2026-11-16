@@ -11,5 +11,4 @@ if [ "$SLOT" = A ]; then OTHER=B; else OTHER=A; fi
     printf 'other=%s\n' "$OTHER"
     printf 'env=/boot/grub/grubenv\n'
 } > /run/wraith/boot
-/usr/bin/wraith-bootenv show >> /run/wraith/boot 2>/dev/null || true
 echo "Wraith boot: slot=$SLOT other=$OTHER"

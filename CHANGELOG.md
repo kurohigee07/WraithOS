@@ -120,6 +120,32 @@ Releases before `v0.24.0` are not itemized here; see commit history.
 
 ### Fixed
 
+- **P0 reboot loop: `wraith-bootcheck` sourced `/run/wraith/boot`.**
+  S05bootstate wrote `slot/other/env` then appended
+  `wraith-bootenv show` output, whose last line is `ORDER=A B`.
+  `wraith-bootcheck` sourced that file: the shell reads
+  `ORDER=A B` as "run command B with env ORDER=A", which is 127
+  (not found), so the `|| exit 1` on the source line fired on
+  **every** boot. The watchdog then demoted to the other slot,
+  rebooted after `sleep 20`, and the next boot demoted back — an
+  A↔B reboot loop every ~200 s, starting pre-wizard, before any
+  user action. Because `-no-reboot` was set in the smoke test
+  harness, we only ever saw the first half of the cycle; a
+  production boot on real hardware would flap indefinitely.
+
+  Two-layer fix:
+  1. `wraith-bootcheck` no longer sources the file. It parses
+     `slot=` via `sed`, then proceeds with its existing
+     `[ -n "$slot" ] || exit 1`. A malformed file still hard-fails
+     (by design), but well-formed files cannot spuriously demote
+     via unrelated lines.
+  2. `S05bootstate` no longer appends `wraith-bootenv show` to
+     `/run/wraith/boot`. The file stays a simple
+     `slot=/other=/env=` block.
+
+  Bug existed since v0.43.0 (commit `1089188`). Verified post-fix:
+  fresh image boots, wizard completes with `slot=A`, cold reboot
+  unlocks `/data` via plaintext, dropbear starts, no demote.
 - **RAUC trial-boot healthcheck reliability.** Three defects in
   `wraith-rauc-healthcheck` could rollback a healthy trial boot or
   corrupt slot state on a busy system:

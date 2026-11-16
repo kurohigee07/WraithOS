@@ -1,6 +1,13 @@
 #!/bin/sh
 # Exit 0 only on full liveness proof.
-. /run/wraith/boot 2>/dev/null || exit 1
+# Do NOT source /run/wraith/boot. If any line there is not a valid
+# shell assignment (e.g. "ORDER=A B" written by `wraith-bootenv show`),
+# sourcing returns the exit code of the last failed command and the
+# `|| exit 1` below would demote on every boot. Parse the slot line
+# instead; a missing or malformed file is a hard fail by design, but
+# well-formed files cannot trigger a spurious demote via unrelated
+# lines.
+slot=$(sed -n 's/^slot=//p' /run/wraith/boot 2>/dev/null | head -1)
 [ -n "$slot" ] || exit 1
 [ -e /dev/watchdog ] || exit 1
 b=$(/usr/bin/wraith-bootenv get booted)
