@@ -603,7 +603,31 @@ async fn finish_handler(State(s): State<ApiState>) -> Response {
             )
         }
     };
-    match setup_luks(&luks_pwd, &s.data_dir) {
+    // D1-completion: setup_luks blocks on luksFormat / mkfs.ext4 /
+    // cp -a. A wedged disk or hung cryptsetup would hold the
+    // wizard.data mutex forever, blocking every subsequent wizard
+    // request. Run it on the blocking pool behind a hard timeout.
+    // 300 s is generous: LUKS format + mkfs on the 256 MiB /data
+    // partition finishes in <30 s even on slow SD cards.
+    let pwd_for_blocking = luks_pwd.clone();
+    let data_dir_for_blocking = s.data_dir.clone();
+    let setup_result = match tokio::time::timeout(
+        std::time::Duration::from_secs(300),
+        tokio::task::spawn_blocking(move || setup_luks(&pwd_for_blocking, &data_dir_for_blocking)),
+    )
+    .await
+    {
+        Err(_) => Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "LUKS setup timeout after 300 s (disk wedged?). Reboot to recover.".to_string(),
+        )),
+        Ok(Err(join_err)) => Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("LUKS setup task panic: {join_err}"),
+        )),
+        Ok(Ok(r)) => r,
+    };
+    match setup_result {
         Ok(()) => {
             w.luks_enabled = true;
             w.encryption_password = None;
