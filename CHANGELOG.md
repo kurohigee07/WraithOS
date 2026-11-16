@@ -10,6 +10,21 @@ Releases before `v0.24.0` are not itemized here; see commit history.
 
 ## [Unreleased]
 
+### Security
+
+- **In-place update guard for dm-verity images.** The root hash and
+  salt that drive dm-verity live in `grub.cfg` on the ESP and are
+  baked at build time (post-image.sh, v0.53). Neither `wraith-update`
+  (dd-based) nor `rauc install` recomputes them when writing a new
+  squashfs into the inactive slot, so any update to a v0.53+ image
+  produced a rootfs that mismatched the baked hash; the kernel
+  panicked at boot and the trial rolled back. Both entry points now
+  refuse on a dm-verity boot (`grep dm-mod.create= /proc/cmdline`)
+  and tell the operator to flash a full image over USB. A
+  post-install hook that recomputes the hash and rewrites grub.cfg
+  is scheduled for v0.54.
+
+
 ### Fixed
 
 - **RAUC trial-boot healthcheck reliability.** Three defects in
