@@ -1,20 +1,6 @@
 #!/bin/sh
 set -e
 
-# v0.53 dm-verity guard: the root hash + salt live in grub.cfg on the
-# ESP, baked at build time. Neither this script nor RAUC updates that
-# block, so writing a different squashfs to the inactive slot would
-# mismatch the baked hash, panic at boot, and roll back. Refuse unless
-# dm-verity is off the cmdline. v0.54 adds a post-install hook that
-# recomputes the hash and rewrites grub.cfg; until then, update by
-# flashing a full image over USB.
-if grep -q 'dm-mod.create=' /proc/cmdline 2>/dev/null; then
-    echo "ERROR: dm-verity is active on this image." >&2
-    echo "In-place updates are not supported on v0.53+." >&2
-    echo "Flash a full image over USB instead. See docs/wraithos.md." >&2
-    exit 1
-fi
-
 NEW_IMAGE="$1"
 if [ ! -f "$NEW_IMAGE" ]; then
     echo "Usage: wraith-update /path/to/rootfs.squashfs"
@@ -48,25 +34,29 @@ echo "Target:  $NEXT ($TARGET_DEV)"
 echo "Image:   $NEW_IMAGE ($SIZE bytes)"
 echo ""
 
-echo "[1/3] Writing squashfs to $TARGET_DEV..."
+echo "[1/4] Writing squashfs to $TARGET_DEV..."
 dd if="$NEW_IMAGE" of="$TARGET_DEV" bs=1M conv=fsync 2>&1 | tail -1
 sync
 
-echo "[2/3] Arming trial boot..."
+echo "[2/4] Recomputing dm-verity tree for slot $NEXT..."
+/usr/bin/wraith-verity-rehash "$TARGET_DEV" "$NEXT" || {
+    echo "ERROR: rehash failed; slot not armed" >&2
+    exit 1
+}
+
+echo "[3/4] Arming trial boot..."
 mkdir -p /boot
 grep -q ' /boot ' /proc/mounts || mount -t vfat -o rw /dev/vda1 /boot
 rm -f /boot/boot_a /boot/boot_b
 /usr/bin/wraith-bootenv trial "$NEXT"
 
-# Marker for S99wraith-init's health gate. The wrapper
-# wraith-rauc-healthcheck runs on the next boot and either commits
-# the slot (readyz 200 within 60 s) or rolls back (mark-bad + reboot).
+# Arm health gate for next boot
 mkdir -p /data/orchestrator 2>/dev/null
 printf 'armed %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
     > /data/orchestrator/rauc.pending 2>/dev/null
 sync
 
-echo "[3/3] Done"
+echo "[4/4] Done"
 echo ""
 echo "Update staged for slot $NEXT (3 boot attempts)"
 echo "Reboot to activate: reboot"

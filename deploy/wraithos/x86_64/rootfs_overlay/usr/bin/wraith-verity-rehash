@@ -1,0 +1,90 @@
+#!/bin/sh
+# Recompute dm-verity tree for an inactive slot and update its grub.cfg entry.
+# Usage: wraith-verity-rehash /dev/vdaN <A|B>
+set -eu
+
+TARGET="${1:-}"
+BOOTNAME="${2:-}"
+[ -n "$TARGET" ] && [ -n "$BOOTNAME" ] || { echo "usage: $0 /dev/vdaN <A|B>" >&2; exit 1; }
+[ -b "$TARGET" ] || { echo "not a block device: $TARGET" >&2; exit 1; }
+case "$BOOTNAME" in A|B) ;; *) echo "bootname must be A or B" >&2; exit 1 ;; esac
+
+ACTIVE=$(sed -n 's/.*slot=\([AB]\).*/\1/p' /proc/cmdline 2>/dev/null | head -1)
+[ -z "$ACTIVE" ] || [ "$ACTIVE" != "$BOOTNAME" ] || { echo "refusing to rehash active slot $BOOTNAME" >&2; exit 1; }
+
+VERITY_BIN=$(command -v veritysetup 2>/dev/null || echo /usr/sbin/veritysetup)
+[ -x "$VERITY_BIN" ] || { echo "veritysetup missing" >&2; exit 1; }
+
+# squashfs bytes_used @ offset 40, u64 LE
+SZ=$(dd if="$TARGET" bs=1 skip=40 count=8 2>/dev/null | od -An -t u8 | tr -d ' ')
+case "$SZ" in ''|*[!0-9]*) echo "cannot read squashfs superblock" >&2; exit 1 ;; esac
+[ "$SZ" -gt 0 ] && [ $(( SZ % 4096 )) -eq 0 ] || { echo "bad squashfs size: $SZ" >&2; exit 1; }
+
+DB=$(( SZ / 4096 ))
+HS=$(( DB + 1 ))
+DL=$(( DB * 8 ))
+echo "rehash: $TARGET slot=$BOOTNAME sz=$SZ db=$DB hs=$HS dl=$DL"
+
+TMPD=/run/wraith/verity-rehash
+mkdir -p "$TMPD"
+SQ="$TMPD/sq"
+TREE="$TMPD/tree"
+rm -f "$SQ" "$TREE"
+die() { echo "rehash: $*" >&2; rm -rf "$TMPD"; exit 1; }
+
+dd if="$TARGET" of="$SQ" bs=4096 count="$DB" 2>/dev/null
+[ -s "$SQ" ] || die "extract failed"
+
+OUT=$("$VERITY_BIN" format --hash=sha256 --data-block-size=4096 --hash-block-size=4096 "$SQ" "$TREE" 2>&1) \
+    || die "veritysetup format failed: $OUT"
+HASH=$(printf '%s\n' "$OUT" | sed -n 's/^Root hash:[[:space:]]*//p' | head -1)
+SALT=$(printf '%s\n' "$OUT" | sed -n 's/^Salt:[[:space:]]*//p' | head -1)
+[ -n "$HASH" ] && [ -n "$SALT" ] || die "cannot parse veritysetup output"
+
+"$VERITY_BIN" verify "$SQ" "$TREE" >/dev/null 2>&1 || die "verify failed, refusing to write"
+
+dd if="$TREE" of="$TARGET" bs=4096 seek="$DB" conv=fsync,notrunc 2>/dev/null \
+    || die "tree write to $TARGET failed"
+sync
+echo "rehash: tree written at block $DB"
+
+grep -q ' /boot ' /proc/mounts 2>/dev/null || mount -t vfat -o rw /dev/vda1 /boot 2>/dev/null \
+    || die "cannot mount /boot"
+GRUB_CFG=/boot/grub/grub.cfg
+[ -f "$GRUB_CFG" ] || die "$GRUB_CFG missing"
+
+TMP_GRUB=/boot/grub/.grub.cfg.new
+rm -f "$TMP_GRUB"
+
+set +e
+awk -v boot="$BOOTNAME" -v db="$DB" -v hs="$HS" -v dl="$DL" \
+    -v hash="$HASH" -v salt="$SALT" '
+BEGIN { in_slot = 0; changed = 0 }
+/^menuentry / {
+    if (index($0, "--id \"" boot "\"") > 0) in_slot = 1
+    else in_slot = 0
+    print; next
+}
+in_slot && /dm-mod\.create=/ {
+    sub(/0 [0-9]+ verity 1 /, "0 " dl " verity 1 ")
+    sub(/ 4096 4096 [0-9]+ [0-9]+ sha256 /, " 4096 4096 " db " " hs " sha256 ")
+    sub(/ sha256 [0-9a-f]+ [0-9a-f]+ 1 /, " sha256 " hash " " salt " 1 ")
+    changed = 1
+    print; next
+}
+{ print }
+END { exit changed ? 0 : 2 }
+' "$GRUB_CFG" > "$TMP_GRUB"
+AWK_RC=$?
+set -e
+
+if [ "$AWK_RC" -ne 0 ]; then
+    rm -f "$TMP_GRUB"
+    die "grub.cfg rewrite failed (rc=$AWK_RC), slot $BOOTNAME not found"
+fi
+
+sync
+mv "$TMP_GRUB" "$GRUB_CFG"
+sync
+rm -rf "$TMPD"
+echo "rehash: grub.cfg updated for slot $BOOTNAME"
