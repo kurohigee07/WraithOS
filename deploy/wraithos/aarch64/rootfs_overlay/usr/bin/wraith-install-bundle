@@ -9,19 +9,6 @@
 # bootenv, and reboots into the last-known-good slot.
 set -u
 
-# v0.53 dm-verity guard: the root hash + salt live in grub.cfg on the
-# ESP, baked at build time. Neither this script nor RAUC updates that
-# block, so writing a different squashfs to the inactive slot would
-# mismatch the baked hash, panic at boot, and roll back. Refuse unless
-# dm-verity is off the cmdline. v0.54 adds a post-install hook that
-# recomputes the hash and rewrites grub.cfg; until then, update by
-# flashing a full image over USB.
-if grep -q 'dm-mod.create=' /proc/cmdline 2>/dev/null; then
-    echo "ERROR: dm-verity is active on this image." >&2
-    echo "In-place updates are not supported on v0.53+." >&2
-    echo "Flash a full image over USB instead. See docs/wraithos.md." >&2
-    exit 1
-fi
 
 if [ "$#" -ne 1 ]; then
     echo "usage: $0 /path/to/bundle.raucb" >&2
