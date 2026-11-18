@@ -687,3 +687,41 @@ ARM inittab/fstab add `nosuid,nodev,noexec` to several writable tmpfs mounts. Th
 - [ ] Wizard credentials/network actually applied by the intended image integration.
 - [ ] LUKS unlock/reboot tested only on disposable, correctly partitioned storage.
 - [ ] Console access and credential material reviewed before distribution.
+
+## Update flow (v0.54+)
+
+Two paths, both work on dm-verity images:
+
+### RAUC bundle (preferred)
+
+    wraith-install-bundle /path/to/bundle.raucb
+    reboot
+
+Sequence: RAUC copies to inactive slot -> post-install handler
+`wraith-verity-rehash` recomputes verity tree + rewrites grub.cfg entry ->
+`wraith-bootenv trial <other>` -> reboot -> healthcheck polls `/readyz` 60s
+-> `rauc status mark-good --override-boot-slot=<booted>` + commit -> done.
+
+Failure path: healthcheck timeout -> `mark-bad` + `wraith-bootenv demote`
+-> reboot into last-known-good.
+
+### Raw squashfs (advanced)
+
+    wraith-update /path/to/rootfs.squashfs
+    reboot
+
+Same rehash+rewrite but bypasses RAUC bundle signing. Only for
+lab/debug — production should use signed bundles.
+
+### Pre-0.54 images
+
+Not supported. Flash full image over USB. The v0.53 guard existed
+because there was no hook yet.
+
+### Verify after update
+
+    rauc -c /etc/rauc/system.conf status --override-boot-slot=A
+
+`Booted from: rootfs.1 (B)` confirms slot switch.
+`grep dm-mod.create /boot/grub/grub.cfg` — slot A hash unchanged,
+slot B hash different from A (recomputed).

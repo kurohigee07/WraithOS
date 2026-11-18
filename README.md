@@ -155,3 +155,11 @@ available for embedding, closed-source SaaS, or warranty terms. See
 [`LICENSE`](LICENSE) and [`LICENSE-COMMERCIAL.md`](LICENSE-COMMERCIAL.md).
 
 Third-party components retain their own licenses.
+
+## v0.54.0 (2026-11-18)
+
+In-place dm-verity updates. A-to-B update flow now recomputes the rootfs
+verity tree and rewrites the target slot's grub.cfg entry, so the kernel
+accepts the new squashfs without USB reflash. Verified end-to-end on
+ARM QEMU (bundle install -> hook recompute -> slot B boot -> healthcheck
+commit -> persists). x86 E2E deferred to v0.55. See `CHANGELOG.md`.

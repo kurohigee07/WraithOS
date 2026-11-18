@@ -123,3 +123,31 @@ the ESP (`/boot/luks.key`, `/boot/luks.sealed.*`, `/boot/grub/grubenv`,
 ## Release verification
 
 Use the [operations checklist](operations.md#pre-release-operational-checklist). Security-sensitive changes additionally need negative tests for authorization, tenant data visibility, signature persistence, source extraction, resource exhaustion, and shutdown/update failure paths. The current test count alone is not a security certification.
+
+## v0.54.0 verification (ARM QEMU, 2026-11-18)
+
+### T7 — ARM fresh boot + wizard + dropbear
+- Status: PASS
+- Expected: boot log shows `dm-0 (wraith-verity) is ready`, `Wraith boot:
+  slot=A other=B`, wizard `completed:true` after LUKS format, dropbear
+  active, `/data` mounted ext4.
+- Evidence: `/tmp/arm-v054-serial-*.log` (session logs), wizard status
+  endpoint returns `{"completed":true,"step":3,"luks_enabled":true}`.
+
+### T8 — ARM in-place RAUC update (A to B)
+- Status: PASS
+- Steps:
+  1. `wraith-install-bundle /tmp/bundle.raucb`
+  2. Verify: post-install handler output shows `rehash: tree written at
+     block 6564` + `rehash: grub.cfg updated for slot B`. Hash B changes
+     from `97a9167d...` to `1da58250...`.
+  3. Power cycle (docker restart QEMU).
+  4. Boot: `slot=B`, verity chain OK, `rauc status` shows rootfs.1 booted,
+     healthcheck logs `readyz 200 after 4s, marking good` +
+     `Marked slot rootfs.1 as good`.
+  5. Power cycle again: slot B persists, no demote, marker gone.
+
+### T9 — x86_64 in-place update
+- Status: DEFERRED to v0.55.
+- Same code path as ARM (post-install handler, rehash, override-boot-slot).
+  x86 build + fresh boot verified; RAUC cycle pending hardware/CI window.
