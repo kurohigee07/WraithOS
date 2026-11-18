@@ -13,6 +13,9 @@
 # last-known-good slot.
 set -u
 
+BOOTED=$(sed -n 's/.*slot=\([AB]\).*/\1/p' /proc/cmdline 2>/dev/null | head -1)
+[ -n "$BOOTED" ] || { logger -t rauc-health "cannot detect booted slot"; exit 1; }
+
 # Singleton lock: S99wraith-init can be re-run by the watchdog (crash,
 # restart) while a trial boot is still in progress. Two concurrent
 # healthchecks would race on `rauc status mark-good/bad` and corrupt
@@ -52,7 +55,7 @@ while [ "$i" -le "$ATTEMPTS" ]; do
         | awk '/HTTP\//{c=$2} END{print c}')
     if [ "$code" = "200" ]; then
         log "readyz 200 after $((i * INTERVAL_SECS))s, marking good"
-        out=$(rauc status mark-good 2>&1); rc=$?
+        out=$(rauc status mark-good --override-boot-slot="$BOOTED" 2>&1); rc=$?
         printf '%s\n' "$out" | while read -r line; do log "$line"; done
         [ "$rc" -eq 0 ] || log "WARN: rauc status mark-good failed (rc=$rc)"
         out=$(/usr/bin/wraith-bootenv commit 2>&1); rc=$?
@@ -66,7 +69,7 @@ while [ "$i" -le "$ATTEMPTS" ]; do
 done
 
 log "readyz timeout after ${TIMEOUT_SECS}s, marking bad and rebooting"
-out=$(rauc status mark-bad 2>&1); rc=$?
+out=$(rauc status mark-bad --override-boot-slot="$BOOTED" 2>&1); rc=$?
 printf '%s\n' "$out" | while read -r line; do log "$line"; done
 [ "$rc" -eq 0 ] || log "WARN: rauc status mark-bad failed (rc=$rc)"
 out=$(/usr/bin/wraith-bootenv demote 2>&1); rc=$?

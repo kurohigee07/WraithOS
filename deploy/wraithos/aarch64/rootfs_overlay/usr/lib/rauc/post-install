@@ -1,0 +1,16 @@
+#!/bin/sh
+# RAUC post-install: recompute dm-verity for the just-written slot.
+# RAUC 1.11 only supports global post-install (no per-slot env).
+set -eu
+
+ACTIVE=$(sed -n 's/.*slot=\([AB]\).*/\1/p' /proc/cmdline 2>/dev/null | head -1)
+[ -n "$ACTIVE" ] || { echo "post-install: cannot detect active slot" >&2; exit 1; }
+
+case "$ACTIVE" in
+    A) TARGET=B; DEV=/dev/vda3 ;;
+    B) TARGET=A; DEV=/dev/vda2 ;;
+    *) echo "post-install: invalid active slot '$ACTIVE'" >&2; exit 1 ;;
+esac
+
+echo "post-install: active=$ACTIVE target=$TARGET dev=$DEV"
+exec /usr/bin/wraith-verity-rehash "$DEV" "$TARGET"
