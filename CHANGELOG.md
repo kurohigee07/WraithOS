@@ -8,6 +8,39 @@ describes the change theme. `v0.30` was not released.
 Crate manifests declare `0.1.0`; the tags are the release units.
 Releases before `v0.24.0` are not itemized here; see commit history.
 
+## [0.54.0] - 2026-11-18
+
+### Added — in-place dm-verity update hook
+- `wraith-verity-rehash`: recompute squashfs verity tree + rewrite target slot's
+  grub.cfg menuentry. Mirrors post-image.sh formula (DB=ceil(sz/4096), HS=DB+1,
+  DL=DB*8). Runs before trial arm in `wraith-update`, and via RAUC handler
+  in `wraith-install-bundle`.
+- RAUC `[handlers] post-install` entry -> `/usr/lib/rauc/post-install`
+- `--override-boot-slot` on RAUC install/status (dm-verity root `/dev/dm-0`
+  isn't matched to slot device; required for mark-good/mark-bad too)
+
+### Fixed
+- `wraith-verity-rehash`: pad squashfs `bytes_used` (offset 40) up to 4096.
+  Raw superblock value isn't block-aligned; padding matches `stat -c%s` used
+  at build time.
+- `wraith-verity-rehash`: `veritysetup verify` needs 3rd positional
+  `<root_hash>` arg (was missing -> always usage-error exit).
+
+### Removed
+- v0.53 guards (`grep dm-mod.create=`) in `wraith-update` and
+  `wraith-install-bundle`. Superseded by recompute hook.
+
+### Verified (ARM QEMU)
+- wizard complete -> bundle install -> post-install hook recompute -> slot B
+  boot with new verity hash -> healthcheck `readyz 200` mark-good succeeds ->
+  power cycle -> slot B persists.
+- x86_64: build + boot verified; full E2E deferred to v0.55 hardware cycle.
+
+### Known v0.55+
+- x86_64 E2E RAUC cycle (parity with ARM)
+- H3 TPM final sign-off
+- Bare metal boot / real hardware validation
+
 ## [Unreleased]
 
 ### Security

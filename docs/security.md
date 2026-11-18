@@ -772,3 +772,43 @@ this means the plaintext keyfile is only deleted after the TPM path
 has been verified live — no new brick path is introduced. Manual
 `wraith-tpm-finalize` remains idempotent and is still the recovery
 tool for deployments where the TPM was absent at wizard time.
+
+## In-place update hook (v0.54)
+
+### Design
+
+`/usr/lib/rauc/post-install` (RAUC global post-install handler, RAUC 1.11
+does not support per-slot handlers) calls `wraith-verity-rehash <dev> <slot>`:
+
+1. Read `bytes_used` at offset 40 (u64 LE). Pad up to 4096
+   (superblock value is not block-aligned; post-image.sh uses `stat -c%s`).
+2. `dd` squashfs region to temp file. `veritysetup format --salt=random`
+   against temp. Parse `Root hash` + `Salt`.
+3. `veritysetup verify <sq> <tree> <root_hash>`. If mismatch: abort,
+   do not write.
+4. `dd` tree back to slot at block `DB` (`seek=DB`). fsync.
+5. `awk` rewrite grub.cfg menuentry `--id <slot>`. Only the target slot's
+   `dm-mod.create=` fields change (`DL`, `DB`, `HS`, `ROOT_HASH`, `SALT`).
+6. Atomic `mv` over `/boot/grub/grub.cfg`.
+
+`wraith-update` (raw squashfs path) calls rehash directly before trial
+arm. `wraith-install-bundle` relies on the RAUC handler.
+
+### Safety invariants
+
+- Refuse if slot being rehashed == active slot (`/proc/cmdline`).
+- Refuse to write if `veritysetup verify` fails.
+- Rehash runs before `wraith-bootenv trial` in `wraith-update`. If
+  rehash fails -> trial not armed -> next boot stays on old slot.
+- Writes target non-active slot only. Power loss mid-write -> trial not
+  armed -> old slot boots.
+
+### Known limitations
+
+- RAUC `post-install` is global, not per-slot. Handler derives target
+  from `/proc/cmdline` (other-of-active).
+- `--override-boot-slot=<A|B>` required on all RAUC commands because the
+  dm-verity root `/dev/dm-0` isn't matched to `/dev/vdaN`.
+- No rollback of verity tree if power loss occurs between tree write
+  and grub.cfg rewrite. Window is <1s in practice; slot would panic on
+  verity mismatch and rollback via trial/healthcheck.

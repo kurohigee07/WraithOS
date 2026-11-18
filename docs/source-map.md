@@ -236,3 +236,14 @@ wraithos/aarch64-br2-ext/board/wraithos/rootfs_overlay/sbin/wraith-init
 ```
 
 These identify checked-in artifacts, not the supplied benchmark binary or a signed-release claim.
+
+## v0.54.0 additions
+
+| File | Purpose |
+|------|---------|
+| `deploy/wraithos/{arch}/rootfs_overlay/usr/bin/wraith-verity-rehash` | Recompute verity tree + rewrite grub.cfg menuentry for target slot |
+| `deploy/wraithos/{arch}/rootfs_overlay/usr/lib/rauc/post-install` | RAUC post-install handler wrapper (calls rehash) |
+| `deploy/wraithos/{arch}/rootfs_overlay/etc/rauc/system.conf` | `[handlers] post-install=` entry |
+| `deploy/wraithos/{arch}/rootfs_overlay/usr/bin/wraith-install-bundle` | Added `--override-boot-slot`; guard removed |
+| `deploy/wraithos/{arch}/rootfs_overlay/usr/bin/wraith-rauc-healthcheck` | Added `--override-boot-slot` on mark-good/mark-bad |
+| `deploy/wraithos/{arch}/rootfs_overlay/usr/bin/wraith-update` | Guard removed; rehash before trial arm |
