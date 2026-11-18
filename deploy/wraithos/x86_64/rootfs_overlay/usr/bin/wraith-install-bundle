@@ -26,8 +26,11 @@ if [ ! -d /data ]; then
     exit 1
 fi
 
-echo "── rauc install $BUNDLE"
-if ! rauc install "$BUNDLE"; then
+ACTIVE=$(sed -n 's/.*slot=\([AB]\).*/\1/p' /proc/cmdline 2>/dev/null | head -1)
+[ -n "$ACTIVE" ] || { echo "cannot detect active slot" >&2; exit 1; }
+
+echo "── rauc install $BUNDLE (override-boot-slot=$ACTIVE)"
+if ! rauc install --override-boot-slot="$ACTIVE" "$BUNDLE"; then
     echo "rauc install failed; not arming health check" >&2
     exit 1
 fi

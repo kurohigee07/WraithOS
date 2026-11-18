@@ -16,9 +16,13 @@ VERITY_BIN=$(command -v veritysetup 2>/dev/null || echo /usr/sbin/veritysetup)
 [ -x "$VERITY_BIN" ] || { echo "veritysetup missing" >&2; exit 1; }
 
 # squashfs bytes_used @ offset 40, u64 LE
-SZ=$(dd if="$TARGET" bs=1 skip=40 count=8 2>/dev/null | od -An -t u8 | tr -d ' ')
-case "$SZ" in ''|*[!0-9]*) echo "cannot read squashfs superblock" >&2; exit 1 ;; esac
-[ "$SZ" -gt 0 ] && [ $(( SZ % 4096 )) -eq 0 ] || { echo "bad squashfs size: $SZ" >&2; exit 1; }
+SZ_RAW=$(dd if="$TARGET" bs=1 skip=40 count=8 2>/dev/null | od -An -t u8 | tr -d ' ')
+case "$SZ_RAW" in ''|*[!0-9]*) echo "cannot read squashfs superblock" >&2; exit 1 ;; esac
+[ "$SZ_RAW" -gt 0 ] || { echo "empty squashfs: $SZ_RAW" >&2; exit 1; }
+
+# bytes_used is not 4096-aligned. Pad up to match post-image.sh's
+# stat -c%s (file size, block-aligned).
+SZ=$(( ((SZ_RAW + 4095) / 4096) * 4096 ))
 
 DB=$(( SZ / 4096 ))
 HS=$(( DB + 1 ))
@@ -41,7 +45,7 @@ HASH=$(printf '%s\n' "$OUT" | sed -n 's/^Root hash:[[:space:]]*//p' | head -1)
 SALT=$(printf '%s\n' "$OUT" | sed -n 's/^Salt:[[:space:]]*//p' | head -1)
 [ -n "$HASH" ] && [ -n "$SALT" ] || die "cannot parse veritysetup output"
 
-"$VERITY_BIN" verify "$SQ" "$TREE" >/dev/null 2>&1 || die "verify failed, refusing to write"
+"$VERITY_BIN" verify "$SQ" "$TREE" "$HASH" >/dev/null 2>&1 || die "verify failed, refusing to write"
 
 dd if="$TREE" of="$TARGET" bs=4096 seek="$DB" conv=fsync,notrunc 2>/dev/null \
     || die "tree write to $TARGET failed"
