@@ -1,6 +1,7 @@
 #!/bin/sh
-# RAUC post-install: recompute dm-verity for the just-written slot.
-# RAUC 1.11 only supports global post-install (no per-slot env).
+# RAUC post-install handler: recompute dm-verity for the just-written slot.
+# RAUC 1.11 only supports global post-install (no per-slot env). Derive
+# target from /proc/cmdline: inactive slot is always the other one.
 set -eu
 
 ACTIVE=$(sed -n 's/.*slot=\([AB]\).*/\1/p' /proc/cmdline 2>/dev/null | head -1)
