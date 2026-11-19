@@ -399,7 +399,7 @@ so the EFI stub loader can run.
   `grub.cfg` on the ESP: on the v0.50 Secure Boot image that chain is
   firmware-verified; on v0.51+ BIOS-only images it is
   trusted-by-origin, so an attacker who can write the ESP can also
-  write the hash. The BIOS-only ESP gap is tracked as v0.54 (signed
+  write the hash. The BIOS-only ESP gap is tracked as v0.53.1 (signed
   cmdline / signed GRUB config).
 - **IMA appraisal.** Not enabled. File-level integrity inside the
   rootfs is not verified at runtime. Deferred to v0.51.
@@ -773,7 +773,7 @@ has been verified live — no new brick path is introduced. Manual
 `wraith-tpm-finalize` remains idempotent and is still the recovery
 tool for deployments where the TPM was absent at wizard time.
 
-## In-place update hook (v0.54)
+## In-place update hook (v0.53.1)
 
 ### Design
 

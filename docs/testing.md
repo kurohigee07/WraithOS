@@ -90,7 +90,7 @@ exit-code mapping are covered by 8 unit tests in
 `wraith-tpm-seal` and `wraith-tpm-finalize` scripts via temp paths
 and assert that `seal_ok`/`remount_ok` gating and outcome mapping
 match the runbook. T7/T8 remain as **hardware validation** checks
-for v0.54: QEMU's TPM emulator backend aborts in TPM emulator
+for v0.53.1: QEMU's TPM emulator backend aborts in TPM emulator
 init across QEMU 10.1 (Alma) and QEMU 8.2 (Ubuntu) against swtpm
 0.7/0.8 — QEMU connects, writes a 4-byte length prefix, then closes
 without sending the body; swtpm standalone is healthy under
@@ -124,7 +124,7 @@ the ESP (`/boot/luks.key`, `/boot/luks.sealed.*`, `/boot/grub/grubenv`,
 
 Use the [operations checklist](operations.md#pre-release-operational-checklist). Security-sensitive changes additionally need negative tests for authorization, tenant data visibility, signature persistence, source extraction, resource exhaustion, and shutdown/update failure paths. The current test count alone is not a security certification.
 
-## v0.54.0 verification (ARM QEMU, 2026-11-18)
+## v0.53.1 verification (ARM QEMU, 2026-11-18)
 
 ### T7 — ARM fresh boot + wizard + dropbear
 - Status: PASS

@@ -8,7 +8,7 @@ describes the change theme. `v0.30` was not released.
 Crate manifests declare `0.1.0`; the tags are the release units.
 Releases before `v0.24.0` are not itemized here; see commit history.
 
-## [0.54.0] - 2026-11-18
+## [0.53.1] - 2026-11-18
 
 ### Added — in-place dm-verity update hook
 - `wraith-verity-rehash`: recompute squashfs verity tree + rewrite target slot's
@@ -73,7 +73,7 @@ Releases before `v0.24.0` are not itemized here; see commit history.
   refuse on a dm-verity boot (`grep dm-mod.create= /proc/cmdline`)
   and tell the operator to flash a full image over USB. A
   post-install hook that recomputes the hash and rewrites grub.cfg
-  is scheduled for v0.54.
+  is scheduled for v0.53.1.
 
 - **H3: auto-finalize LUKS keyfile after TPM seal verified.** Previously
   the wizard sealed /boot/luks.key to the TPM but left the plaintext
@@ -94,7 +94,7 @@ Releases before `v0.24.0` are not itemized here; see commit history.
   exit-code mapping (`Sealed/TpmAbsent/Failed`,
   `Finalized/Skipped/Failed`) and missing-script paths. The
   end-to-end TPM path (T7/T8 in `docs/testing.md`) is scheduled
-  for v0.54 hardware validation: QEMU's TPM emulator backend
+  for v0.53.1 hardware validation: QEMU's TPM emulator backend
   aborts in init across QEMU 10.1 and 8.2 in the reference build
   host, and swtpm cannot be exercised from QEMU in this
   environment. WraithOS code and shell scripts are unchanged

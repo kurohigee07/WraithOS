@@ -200,7 +200,7 @@ panic. Re-run `post-image.sh` on the build side to regenerate
 
 - ESP tamper (grub.cfg, bzImage, GRUB) on BIOS-only images. The
   hash tree is trusted by origin, not by signature. Tracked as
-  v0.54 (signed cmdline / signed GRUB config).
+  v0.53.1 (signed cmdline / signed GRUB config).
 - `/data` integrity. LUKS provides confidentiality; it does not
   detect active tampering with the LUKS header or ciphertext.
 - Runtime memory tamper through a kernel exploit.
@@ -688,7 +688,7 @@ ARM inittab/fstab add `nosuid,nodev,noexec` to several writable tmpfs mounts. Th
 - [ ] LUKS unlock/reboot tested only on disposable, correctly partitioned storage.
 - [ ] Console access and credential material reviewed before distribution.
 
-## Update flow (v0.54+)
+## Update flow (v0.53.1+)
 
 Two paths, both work on dm-verity images:
 
@@ -713,7 +713,7 @@ Failure path: healthcheck timeout -> `mark-bad` + `wraith-bootenv demote`
 Same rehash+rewrite but bypasses RAUC bundle signing. Only for
 lab/debug — production should use signed bundles.
 
-### Pre-0.54 images
+### Pre-0.53.1 images
 
 Not supported. Flash full image over USB. The v0.53 guard existed
 because there was no hook yet.
