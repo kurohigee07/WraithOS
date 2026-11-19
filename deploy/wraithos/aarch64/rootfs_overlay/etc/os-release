@@ -1,6 +1,6 @@
 NAME="WraithOS"
-VERSION="0.54.0 (Wasm Appliance)"
+VERSION="0.53.1 (Wasm Appliance)"
 ID=wraithos
-VERSION_ID="0.54.0"
-PRETTY_NAME="WraithOS 0.54.0 (Wasm Appliance)"
+VERSION_ID="0.53.1"
+PRETTY_NAME="WraithOS 0.53.1 (Wasm Appliance)"
 HOME_URL="https://github.com/kurohigee07/WraithOS"

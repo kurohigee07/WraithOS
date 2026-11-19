@@ -1,10 +1,10 @@
 # State
 
-**Version:** 0.54.0 (tag `v0.54.0`, commit `98632c4`)
+**Version:** 0.53.1 (tag `v0.53.1`, commit `98632c4`)
 
 ## What works (verified)
 
-### ARM aarch64 (QEMU, v0.54.0)
+### ARM aarch64 (QEMU, v0.53.1)
 - Fresh boot: dm-verity chain OK, root squashfs mounted read-only
 - Wizard: complete via `/wizard/step1|step2|finish`, LUKS format `/dev/vda4`,
   `/data` bind-mounted, dropbear active
@@ -15,7 +15,7 @@
     `readyz 200` -> `rauc status mark-good` -> commit -> second power cycle
     persists slot B.
 
-### x86_64 (BIOS, v0.54.0)
+### x86_64 (BIOS, v0.53.1)
 - Image builds, boots, dm-verity OK. E2E RAUC cycle deferred to v0.55
   (parity with ARM, same code path expected to work).
 

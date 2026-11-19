@@ -237,7 +237,7 @@ wraithos/aarch64-br2-ext/board/wraithos/rootfs_overlay/sbin/wraith-init
 
 These identify checked-in artifacts, not the supplied benchmark binary or a signed-release claim.
 
-## v0.54.0 additions
+## v0.53.1 additions
 
 | File | Purpose |
 |------|---------|
