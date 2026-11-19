@@ -79,13 +79,13 @@ files, and capability model in [`docs/architecture.md`](docs/architecture.md).
 The appliance is not a cloud image. It's a disk image that boots to a
 wizard on serial console, then provisions itself from there.
 
-    curl -LO https://github.com/kurohigee07/WraithOS/releases/latest/download/wraithos-x86_64-v0.52.0-security-hardening.img
+    curl -LO https://github.com/kurohigee07/WraithOS/releases/download/v0.53.1-update-hook/wraithos-x86_64-v0.53.1-update-hook.img
 
     qemu-system-x86_64 -machine pc -cpu max -m 1024 -smp 2 \
-      -drive file=wraithos-x86_64-v0.52.0-security-hardening.img,format=raw,if=virtio \
-      -netdev user,id=net0,hostfwd=tcp::2223-:22 \
-      -device virtio-net-pci,netdev=net0 \
-      -serial mon:stdio -no-reboot
+    -drive file=wraithos-x86_64-v0.53.1-update-hook.img,format=raw,if=virtio \
+    -netdev user,id=net0,hostfwd=tcp::2223-:22 \
+    -device virtio-net-pci,netdev=net0 \
+    -serial mon:stdio -no-reboot
 
 On serial console, log in as `root` with `wraithos-admin-change-me`
 (documented, intentional, rotate it) and follow the wizard at
