@@ -91,18 +91,9 @@ Source, configuration and scripts were inspected for behavior. Lockfiles, minifi
 
 | File | Purpose / caution |
 |---|---|
-| [deploy/backup.sh](https://github.com/kurohigee07/WraithOS/blob/main/deploy/backup.sh) | SQLite-aware snapshot plus config/modules archive to hardcoded OCI remote; seven-generation pruning. |
-| [deploy/install.sh](https://github.com/kurohigee07/WraithOS/blob/main/deploy/install.sh) | Builds x86 musl, installs/enables user units/timer and checks health. |
-| [deploy/logrotate.conf](https://github.com/kurohigee07/WraithOS/blob/main/deploy/logrotate.conf) | Historical absolute log path; daily seven-generation copytruncate rotation. |
-| [deploy/orchestrator-backup.service](https://github.com/kurohigee07/WraithOS/blob/main/deploy/orchestrator-backup.service) | Oneshot backup unit with hardcoded project directory. |
-| [deploy/orchestrator-backup.timer](https://github.com/kurohigee07/WraithOS/blob/main/deploy/orchestrator-backup.timer) | Persistent daily 03:00 backup timer. |
-| [deploy/orchestrator.service](https://github.com/kurohigee07/WraithOS/blob/main/deploy/orchestrator.service) | User service with hardcoded project paths, file logs and SIGTERM policy. |
 | [deploy/package.sh](https://github.com/kurohigee07/WraithOS/blob/main/deploy/package.sh) | Two-architecture tarball packager; hardcoded v0.18.0 and cleans dist output. |
-| [deploy/restore.sh](https://github.com/kurohigee07/WraithOS/blob/main/deploy/restore.sh) | Destructive restore from hardcoded OCI remote; replaces project assets and restarts user service. |
 | [deploy/run-wraithos.sh](https://github.com/kurohigee07/WraithOS/blob/main/deploy/run-wraithos.sh) | Boots an existing x86 image using KVM or TCG; does not build an image. |
 | [deploy/sign.sh](https://github.com/kurohigee07/WraithOS/blob/main/deploy/sign.sh) | GPG-signs checksum manifest and release tarballs using an existing private key. |
-| [deploy/smoke.sh](https://github.com/kurohigee07/WraithOS/blob/main/deploy/smoke.sh) | Restarts user service; six historical checks assume sample and activity-created metrics. |
-| [deploy/test-ws.sh](https://github.com/kurohigee07/WraithOS/blob/main/deploy/test-ws.sh) | websocat/CLI event test; broad pkill cleanup needs review. |
 | [deploy/verify-signature.sh](https://github.com/kurohigee07/WraithOS/blob/main/deploy/verify-signature.sh) | Temporary-keyring public-key verification and checksum checks. |
 | [deploy/wraith-release.pub](https://github.com/kurohigee07/WraithOS/blob/main/deploy/wraith-release.pub) | Release public key only; fingerprint trust must be established out of band. |
 

@@ -70,7 +70,7 @@ emit_event("rhai.processed", "{\"source\":\"rhai\"}");
 # Build pipeline (M19). Cargo home used to invoke `cargo build`.
 # Default: $HOME/.cargo. Override if orchestrator runs under a user
 # whose cargo install lives elsewhere.
-# cargo_home = "/home/opc/.cargo"
+# cargo_home = "~/.cargo"
 
 [[capabilities]]
 type = "emit-event"

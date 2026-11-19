@@ -1,5 +1,5 @@
---- /home/opc/buildroot-2024.02.9/output/build/grub2-2.12/grub-core/loader/efi/linux.c.orig	2026-11-13 14:12:07.307476833 +0000
-+++ /home/opc/buildroot-2024.02.9/output/build/grub2-2.12/grub-core/loader/efi/linux.c	2026-11-13 14:12:07.316477154 +0000
+--- a/grub-core/loader/efi/linux.c
++++ b/grub-core/loader/efi/linux.c
 @@ -462,7 +462,7 @@
  
    grub_dl_ref (my_mod);

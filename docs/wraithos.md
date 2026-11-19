@@ -225,7 +225,7 @@ The checked-in `wraithos_x86_64_defconfig` selects **systemd**, while the overla
 
 The file named `wraithos_x86_64_final.config` is only one line setting a download mirror; it is **not a complete final Buildroot configuration**. The x86 defconfig also does not wire the post-image script or host genimage/GRUB tools in the same explicit way as ARM. Treat the x86 build as a reconstructable historical recipe requiring configuration review, not a one-command guaranteed image pipeline.
 
-Hardcoded `/home/opc/...` overlay/fragment paths must be adapted to your checkout. The x86 overlay does not contain the host binary; cross-compile and copy it before building.
+Hardcoded `/path/to/...` overlay/fragment paths must be adapted to your checkout. The x86 overlay does not contain the host binary; cross-compile and copy it before building.
 
 ## ARM boot contract
 
@@ -349,7 +349,7 @@ This is an outline for an experienced Linux/Buildroot operator, not a verified c
 1. Obtain Buildroot 2024.02.9 from a trusted source and verify its release integrity.
 2. Use a separate output directory and copy `wraithos_aarch64_defconfig` into Buildroot's configs.
 3. Copy `aarch64-br2-ext` to a stable external-tree path.
-4. Edit hardcoded `/home/opc/wraithos-aarch64-br2-ext` paths in the defconfig to that path.
+4. Edit hardcoded `/path/to/wraithos-aarch64-br2-ext` paths in the defconfig to that path.
 5. Cross-compile the current orchestrator for `aarch64-unknown-linux-musl` and replace the external tree's `rootfs_overlay/sbin/wraith-init` with the new executable. The tracked binary will not update itself from Rust source changes.
 6. Review rootfs credential material, config, kernel fragment, and enabled packages.
 7. Configure and build with the external tree:

@@ -1,4 +1,4 @@
-# Benchmark: batched audit writer on Oracle Cloud
+# Benchmark: batched audit writer on benchmark host
 
 **Evidence status:** maintainer-run measurement on **2026-11-12 14:30-15:15 UTC** on the same host as the [v0.27.1 baseline](benchmarks.md). Raw `hey` output, per-module metric snapshots, and the aggregation JSON are checked in under [`docs/evidence/benchmarks-v0.47.0/`](evidence/benchmarks-v0.47.0/).
 
@@ -77,7 +77,7 @@ Both new fixtures are checked in as source (no `target/`, no `.wasm`) so they ca
 ## Environment
 
 ```text
-Host:               Oracle Cloud VPS
+Host:               benchmark host
 Platform:           AlmaLinux 9 (kernel 6.9.0-207)
 CPU:                8 cores (shared vCPU)
 Orchestrator label: v0.47.0-x86-luks-fixes + audit-batching patch

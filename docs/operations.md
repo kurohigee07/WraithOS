@@ -77,12 +77,11 @@ If your checkout path differs, edit the unit and backup unit first. `install.sh`
 ```bash
 bash deploy/install.sh
 systemctl --user status orchestrator.service
-systemctl --user list-timers orchestrator-backup.timer
 ```
 
 For a user service to survive logout, the host may need lingering enabled by an administrator (`loginctl enable-linger <user>`). This is an OS policy decision, not performed by the script.
 
-The logrotate example is hardcoded to `/home/opc/orchestrator-project/logs/orchestrator.log`, rotates daily, keeps seven compressed generations, and uses copytruncate. Adapt the path and install it through your system's logrotate mechanism if desired.
+The logrotate example is hardcoded to `/path/to/project/logs/orchestrator.log`, rotates daily, keeps seven compressed generations, and uses copytruncate. Adapt the path and install it through your system's logrotate mechanism if desired.
 
 ## Smoke checks: know their assumptions
 
@@ -113,7 +112,7 @@ Counters are process-local and reset at restart. Use Prometheus rate/increase fu
 `deploy/backup.sh` hardcodes:
 
 ```text
-Remote: oci:wraith-bucket/daily
+Remote: BACKUP_REMOTE
 Working directory: repository root determined from script location
 Expected files: orchestrator.db and orchestrator.toml
 ```
@@ -130,7 +129,7 @@ Prerequisites: working rclone remote, permissions, and preferably the `sqlite3` 
 ```bash
 command -v rclone
 command -v sqlite3
-rclone lsf oci:wraith-bucket/daily
+rclone lsf BACKUP_REMOTE
 bash deploy/backup.sh
 ```
 
@@ -213,7 +212,7 @@ Confirm that fingerprint through a trusted maintainer channel, not only this rep
 
 ## Verified drill (2026-11-08)
 
-Full backup + restore drill against oci:wraith-bucket/daily.
+Full backup + restore drill against BACKUP_REMOTE.
 
 Backup: bash deploy/backup.sh uploaded orchestrator-20261108-093713.tar.gz
 (78 KiB, 120 entries). Retention kept 7. Contents: orchestrator.db via

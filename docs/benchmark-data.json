@@ -3,7 +3,7 @@
   "date_utc": "2026-11-04T08:07:39Z",
   "reported_orchestrator_version": "v0.27.1",
   "checkout_crate_version": "0.1.0",
-  "platform": "Oracle Cloud VPS",
+  "platform": "benchmark host",
   "kernel": "6.9.0-207.111.5.4.el9uek.x86_64",
   "binary": "x86_64-unknown-linux-musl, static, stripped",
   "runtime": "wasmtime 48.0.8 (Cranelift JIT)",

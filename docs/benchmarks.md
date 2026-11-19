@@ -1,4 +1,4 @@
-# Benchmark: an empty component on Oracle Cloud
+# Benchmark: an empty component on benchmark host
 
 > **See also:** [`benchmarks-v0.47.0.md`](benchmarks-v0.47.0.md) -- 2026-11-12 measurement with a batched audit writer. `/execute` throughput rises from ~950 req/s to ~9,800 req/s at concurrency 5-10 on the same host, with the empty guest as the fixture. The v0.27.1 numbers below are preserved as-is.
 
@@ -22,7 +22,7 @@ The interactive benchmark explorer displays these scopes separately. It does not
 
 ```text
 Orchestrator label: v0.27.1
-Platform:          Oracle Cloud VPS
+Platform:          benchmark host
 Kernel:            6.9.0-207.111.5.4.el9uek.x86_64
 Binary target:     x86_64-unknown-linux-musl, static, stripped
 Runtime:           Wasmtime 48.0.8, Cranelift JIT

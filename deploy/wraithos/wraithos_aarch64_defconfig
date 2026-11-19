@@ -14,14 +14,14 @@ BR2_TARGET_GENERIC_GETTY_PORT="ttyAMA0"
 BR2_INIT_BUSYBOX=y
 
 # Rootfs overlay
-BR2_ROOTFS_OVERLAY="/home/opc/wraithos-aarch64-br2-ext/board/wraithos/rootfs_overlay"
+BR2_ROOTFS_OVERLAY="/path/to/wraithos-aarch64-br2-ext/board/wraithos/rootfs_overlay"
 
 # Kernel 6.6 + fragment
 BR2_LINUX_KERNEL=y
 BR2_LINUX_KERNEL_CUSTOM_VERSION=y
 BR2_LINUX_KERNEL_CUSTOM_VERSION_VALUE="6.6"
 BR2_LINUX_KERNEL_USE_ARCH_DEFAULT_CONFIG=y
-BR2_LINUX_KERNEL_CONFIG_FRAGMENT_FILES="/home/opc/wraithos-aarch64-br2-ext/board/wraithos/kernel.fragment"
+BR2_LINUX_KERNEL_CONFIG_FRAGMENT_FILES="/path/to/wraithos-aarch64-br2-ext/board/wraithos/kernel.fragment"
 BR2_LINUX_KERNEL_IMAGE=y
 
 # Rootfs ext4 (test boot; squashfs+AB later)
@@ -57,8 +57,8 @@ BR2_PACKAGE_HOST_GENIMAGE=y
 BR2_PACKAGE_HOST_DOSFSTOOLS=y
 BR2_PACKAGE_HOST_MTOOLS=y
 BR2_PACKAGE_HOST_GENEXT2FS=y
-BR2_ROOTFS_POST_IMAGE_SCRIPT="/home/opc/wraithos-aarch64-br2-ext/board/wraithos/post-image-arm.sh"
-BR2_ROOTFS_POST_BUILD_SCRIPT="/home/opc/wraithos-aarch64-br2-ext/board/wraithos/post-build-arm.sh"
+BR2_ROOTFS_POST_IMAGE_SCRIPT="/path/to/wraithos-aarch64-br2-ext/board/wraithos/post-image-arm.sh"
+BR2_ROOTFS_POST_BUILD_SCRIPT="/path/to/wraithos-aarch64-br2-ext/board/wraithos/post-build-arm.sh"
 BR2_PACKAGE_CRYPTSETUP=y
 BR2_PACKAGE_E2FSPROGS=y
 BR2_PACKAGE_LIBGCRYPT=y

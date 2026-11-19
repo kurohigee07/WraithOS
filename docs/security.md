@@ -544,7 +544,7 @@ mistake, different iteration of it.
 2. The keys were archived to `master-keys-20261114-034706.tar.gz.enc`
    on the build VPS with a fresh 32-character password from
    ​1Password.
-3. The archive was uploaded to `oci:wraith-bucket/wraithos-builds/`.
+3. The archive was uploaded to `BUILD_REMOTE`.
 4. **The 1Password entry was rotated** between encryption (03:47
    UTC) and any decryption attempt. The current password for that
    entry does not decrypt the archive (272 cipher/KDF/digest

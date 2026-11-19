@@ -101,7 +101,7 @@ async fn main() -> anyhow::Result<()> {
 
     let tenant_acquire_timeout = config.to_app_context().wasm_acquire_timeout;
     let cargo_home = config.cargo_home.clone().unwrap_or_else(|| {
-        let home = std::env::var("HOME").unwrap_or_else(|_| "/home/opc".to_string());
+        let home = std::env::var("HOME").unwrap_or_else(|_| "/root".to_string());
         std::path::PathBuf::from(format!("{home}/.cargo"))
     });
     if !cargo_home.join("bin").join("cargo").exists() {

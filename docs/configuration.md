@@ -30,7 +30,7 @@ Do not infer the appliance's effective config from the root file. Mounts and wor
 | `require_auth` | `false` | Adds global default-token middleware except on health/readiness. |
 | `enable_build` | `false` | Registers source-build routes and requires Bubblewrap at startup. |
 | `enable_build_network` | `false` | Shares network namespace in the build sandbox; otherwise Cargo offline mode. |
-| `cargo_home` | `$HOME/.cargo` | Cargo installation/cache root. If HOME is missing, main falls back to `/home/opc/.cargo`. |
+| `cargo_home` | `$HOME/.cargo` | Cargo installation/cache root. If HOME is missing, main falls back to `~/.cargo`. |
 | `trusted_signer_keys` | `[]` | Ed25519 public keys as 64-character hex strings; nonempty enables component signature checks. |
 | `[script]` | Inline logging + emission | Exactly one of `inline` or `path` must resolve to a script. |
 | `[tenants.<name>]` | Empty map plus default entry | Token and optional tenant resource caps. |

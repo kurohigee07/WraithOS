@@ -44,7 +44,7 @@ Expected artifacts depend on the final configuration and post-image pipeline. `b
 
 ## Historical build notes
 
-- Oracle Linux repository timeouts were worked around with an AlmaLinux mirror.
+- Linux repository timeouts were worked around with an AlmaLinux mirror.
 - Legacy Buildroot options required `BR2_SKIP_LEGACY=y` or option renames.
 - Slow downloads were redirected through `BR2_PRIMARY_SITE="https://mirrors.kernel.org/sources/"`.
 

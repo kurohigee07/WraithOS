@@ -30,8 +30,6 @@ package_target() {
     cp LICENSE LICENSE-COMMERCIAL.md "${STAGE_DIR}/"
     cp deploy/orchestrator.service "${STAGE_DIR}/deploy/"
     cp deploy/logrotate.conf "${STAGE_DIR}/deploy/"
-    cp deploy/orchestrator-backup.service "${STAGE_DIR}/deploy/"
-    cp deploy/orchestrator-backup.timer "${STAGE_DIR}/deploy/"
     cp deploy/backup.sh "${STAGE_DIR}/deploy/"
     cp deploy/install.sh "${STAGE_DIR}/deploy/"
     
