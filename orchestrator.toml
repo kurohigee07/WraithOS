@@ -1,15 +1,15 @@
-# Orchestrator runtime config. Semua field punya default jika dihilangkan.
+# Orchestrator runtime config. All fields have defaults.
 
 db_path = "orchestrator.db"
 modules_dir = "./modules"
 http_timeout_secs = 30
 max_sockets = 256
-# Batasi Wasm paralel. Rule of thumb: < CPU count, agar tokio worker
-# tetap tersedia untuk HTTP/metrics/signal handling.
+# Max parallel wasm executions. Keep < CPU count so tokio workers stay
+# free for HTTP/metrics/signals.
 max_concurrent_wasm = 2
-# Timeout menunggu slot Wasm pool. Jika habis, execute() return error.
+# Wasm pool slot acquire timeout. On expiry, execute() returns error.
 wasm_acquire_timeout_secs = 10
-# Batas linear memory per Wasm instance. Guest yang melebihi akan trap.
+# Max linear memory per wasm instance. Over-quota guest traps.
 wasm_memory_limit_mb = 256
 max_db_connections = 8
 log_level = "info"
@@ -21,7 +21,7 @@ enable_build_network = false
 
 trusted_signer_keys = []
 [script]
-# Pilih salah satu: inline atau path.
+# Use either inline or path.
 inline = '''
 log_info("rhai received: " + event_kind);
 emit_event("rhai.processed", "{\"source\":\"rhai\"}");
@@ -37,30 +37,30 @@ emit_event("rhai.processed", "{\"source\":\"rhai\"}");
 # max_expr_depth = 64
 # max_function_expr_depth = 32
 
-# Ed25519 pubkeys (hex, 64 chars). Jika tidak kosong, setiap .wasm
-# WAJIB punya .wasm.sig sibling (64-byte raw ed25519 signature).
-# Kosongkan untuk skip verifikasi (dev only).
-# Quota default untuk modul yang di-upload tanpa X-Module-Quota header.
-# Field 0 = inherit global / unlimited. Lihat docs di shared-types.
+# Ed25519 pubkeys (hex, 64 chars). If non-empty, each .wasm requires
+# a sibling .wasm.sig (64-byte raw ed25519 signature).
+# Leave empty to skip verification (dev only).
+# Default quota for modules uploaded without X-Module-Quota header.
+# Field 0 = inherit global / unlimited. See shared-types docs.
 # [default_quota]
 # max_memory_mb = 0
 # max_concurrent = 0
 # rate_limit_per_sec = 0
 
 # ── Multi-tenant (M17) ─────────────────────────────────────────────
-# default_tenant dipakai untuk route /modules (backward compat) dan
-# subdir modules/{default_tenant}/. Default: "default" (no auth).
+# default_tenant used by /modules route (backward compat) and
+# modules/{default_tenant}/ subdir. Default: "default" (no auth).
 # default_tenant = "default"
 # require_auth = true  # all endpoints except /healthz /readyz need Bearer
 
-# Tenant tambahan. Route: /t/{tenant}/modules. Storage: modules/{tenant}/.
+# Additional tenants. Route: /t/{tenant}/modules. Storage: modules/{tenant}/.
 # token_hash: argon2 PHC string (production). Generate:
 #   python3 -c "from argon2 import PasswordHasher; print(PasswordHasher().hash('mytoken'))"
 # token_plain: plaintext (dev only; logs warning)
 # [tenants.alice]
 # token_hash = "$argon2id$v=19$m=19456,t=2,p=1$..."
-# Per-tenant resource caps (M18) — omit any field for unlimited:
-# max_modules = 10            # max # of modules per tenant
+# Per-tenant resource caps (M18) — omit for unlimited:
+# max_modules = 10            # max modules per tenant
 # max_concurrent_wasm = 4     # max concurrent wasm execs per tenant
 # rate_limit_per_sec = 100    # aggregate rate limit across tenant's modules
 #

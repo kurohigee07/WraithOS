@@ -1,8 +1,8 @@
-# Binary — sync dari orchestrator-project sebelum build (lihat sync-wraith-init.sh)
+# Binary — synced from orchestrator-project before build (see sync-wraith-init.sh)
 x86_64/rootfs_overlay/sbin/wraith-init
 aarch64/rootfs_overlay/sbin/wraith-init
 
-# Backup artefacts
+# Backup artifacts
 *.bak
 *.bak-*
 x86_64/post-image.sh.bak

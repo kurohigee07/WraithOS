@@ -43,9 +43,9 @@ async fn main() -> anyhow::Result<()> {
         return Ok(());
     }
 
-    // Sanity: bila max_concurrent_wasm >= CPU count, tokio worker pool bisa
-    // starve saat guest CPU-bound. Ini warning, bukan error — user boleh
-    // override jika tahu apa yang dilakukan.
+    // Sanity: if max_concurrent_wasm >= CPU count, tokio worker pool may
+    // starve when guest is CPU-bound. This is a warning, not error - user may
+    // override if they know what they are doing.
     let cpus = std::thread::available_parallelism()
         .map(|n| n.get())
         .unwrap_or(1);
@@ -59,7 +59,7 @@ async fn main() -> anyhow::Result<()> {
 
     // ── Wasmtime engine (shared, epoch-enabled) + ticker ────────────────
     // Metrics recorder MUST be installed before any metrics::* macro.
-    // Probe loop di bawah akan me-emit wasm_executions_total.
+    // Probe loop below will emit wasm_executions_total.
     let prom_handle = telemetry::install().context("install metrics recorder")?;
 
     let started_at = std::time::Instant::now();

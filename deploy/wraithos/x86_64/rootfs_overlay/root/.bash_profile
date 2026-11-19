@@ -1,17 +1,17 @@
-# WraithOS — login shell startup
-# Login shell baca .bash_profile, BUKAN .bashrc
-# Standard pattern: source .bashrc dari .bash_profile
+# WraithOS — login shell startup.
+# Login shell reads .bash_profile, not .bashrc.
+# Standard pattern: source .bashrc from .bash_profile.
 
 if [ -f ~/.bashrc ]; then
     . ~/.bashrc
 fi
 
-# Fallback PS1 kalau .bashrc gagal load
+# Fallback PS1 if .bashrc failed to load.
 if [ -z "$PS1" ] || [ "$PS1" = '\s-\v\$ ' ]; then
     PS1='\[\e[0;37m\]\u@\h\[\e[0m\]:\[\e[1;37m\]\w\[\e[0m\]\$ '
 fi
 
-# Fallback bracketed paste (kalau .bashrc gagal)
+# Fallback bracketed paste if .bashrc failed.
 bind 'set enable-bracketed-paste on' 2>/dev/null || true
 
 if [ -n "$PS1" ] && [ -z "$WRAITHOS_SHOWN" ]; then

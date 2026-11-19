@@ -5,7 +5,7 @@ resolver = "2"
 
 [workspace.package]
 edition = "2021"
-rust-version = "1.85"          # tokio 1.54.x membutuhkan Rust 1.85+
+rust-version = "1.85"          # tokio 1.54 requires Rust 1.85+
 license = "AGPL-3.0-or-later"
 
 [workspace.dependencies]
@@ -23,8 +23,8 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 
 # ── HTTP / TLS ──────────────────────────────────────────────────────────
 # default-features = false WAJIB: reqwest 0.13 default-nya menarik native-tls
-# dan aws-lc-rs. Kita paksa rustls-no-provider agar provider ring dari
-# workspace rustls yang dipakai, bukan aws-lc-rs.
+# and aws-lc-rs. Force rustls-no-provider so the ring provider from
+# the workspace rustls is used, not aws-lc-rs.
 reqwest = { version = "0.13", default-features = false, features = [
     "rustls-no-provider",
     "json",
@@ -34,7 +34,7 @@ reqwest = { version = "0.13", default-features = false, features = [
 ] }
 
 # Provider kripto tunggal: ring. default-features = false menghapus
-# dependensi implisit aws-lc-rs yang butuh cmake/nasm.
+# implicit aws-lc-rs dependency that needs cmake/nasm.
 rustls = { version = "0.23", default-features = false, features = [
     "ring",
     "std",
@@ -46,9 +46,9 @@ rustls = { version = "0.23", default-features = false, features = [
 socket2 = { version = "0.5", features = ["all"] }
 
 # ── Database ────────────────────────────────────────────────────────────
-# Feature "sqlite" di sqlx 0.8 sudah mengaktifkan sqlite-bundled:
-# libsqlite3 dikompilasi dari source dan di-link statis. Tidak ada TLS
-# untuk SQLite karena ini embedded DB.
+# sqlx 0.8 "sqlite" feature already enables sqlite-bundled:
+# libsqlite3 is compiled from source and linked statically. No TLS
+# for SQLite (embedded DB).
 sqlx = { version = "0.8", default-features = false, features = [
     "runtime-tokio",
     "sqlite",
@@ -57,8 +57,8 @@ sqlx = { version = "0.8", default-features = false, features = [
 ] }
 
 # ── Wasmtime (Component Model + Async Host Functions) ───────────────────
-# wasmtime 48 adalah LTS. component-model-async wajib untuk bindgen!
-# dengan async: true. runtime + cranelift + std juga diperlukan.
+# wasmtime 48 is LTS. component-model-async is required for bindgen!
+# with async: true. runtime + cranelift + std also needed.
 wasmtime = { version = "48.0", default-features = false, features = [
     "async",
     "component-model",

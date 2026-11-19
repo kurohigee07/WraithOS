@@ -45,9 +45,9 @@ impl Default for AppContextConfig {
 }
 
 // ─── WasmPool ──────────────────────────────────────────────────────────
-/// Batasi berapa banyak eksekusi Wasm boleh paralel. Semaphore ini
-/// memastikan guest CPU-bound (yang menahan tokio worker hingga epoch
-/// trap 60s) tidak menghabiskan worker pool.
+/// Limit how many Wasm executions may run in parallel. This semaphore
+/// ensures a CPU-bound guest (one that holds a tokio worker until the epoch
+/// trap at 60s) does not exhaust the worker pool.
 pub struct WasmPool {
     sem: Arc<Semaphore>,
     inflight: Arc<AtomicUsize>,
@@ -435,7 +435,7 @@ mod tests {
         let p2 = pool.acquire().await.expect("acquire 2");
         assert_eq!(pool.available(), 0);
 
-        // Kapasitas penuh: acquire ke-3 harus timeout.
+        // Full capacity: 3rd acquire must time out.
         let err = pool.acquire().await.err().expect("must saturate");
         match err {
             OrchestratorError::WasmPoolTimeout {

@@ -1,5 +1,5 @@
 //! EventBus berbasis tokio::sync::broadcast.
-//! publish() sengaja sinkron sehingga aman dipanggil dari spawn_blocking
+//! publish() is intentionally synchronous so it is safe from spawn_blocking
 //! maupun async context.
 
 use std::sync::Arc;
@@ -21,13 +21,13 @@ pub struct EventBus {
 
 impl EventBus {
     pub fn new(capacity: usize) -> Self {
-        // Receiver awal dibuang; send() akan return Err(0 subscribers),
-        // bukan panic, sehingga aman sebelum subscriber terpasang.
+        // Initial receiver is dropped; send() returns Err(0 subscribers),
+        // not a panic, so it is safe before a subscriber attaches.
         let (tx, _rx) = broadcast::channel(capacity);
         Self { tx: Arc::new(tx) }
     }
 
-    /// Return jumlah subscriber yang menerima. 0 jika tidak ada.
+    /// Return the number of subscribers that received. 0 if none.
     pub fn publish(&self, event: OrchestratorEvent) -> usize {
         self.tx.send(event).unwrap_or_default()
     }

@@ -24,7 +24,7 @@ BR2_LINUX_KERNEL_USE_ARCH_DEFAULT_CONFIG=y
 BR2_LINUX_KERNEL_CONFIG_FRAGMENT_FILES="/home/opc/wraithos-aarch64-br2-ext/board/wraithos/kernel.fragment"
 BR2_LINUX_KERNEL_IMAGE=y
 
-# Rootfs ext4 (test boot; squashfs+AB nanti)
+# Rootfs ext4 (test boot; squashfs+AB later)
 # BR2_TARGET_ROOTFS_EXT2 is not set
 # BR2_TARGET_ROOTFS_EXT2_4 is not set
 # BR2_TARGET_ROOTFS_EXT2_SIZE="300M"

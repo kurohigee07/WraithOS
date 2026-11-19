@@ -7,7 +7,7 @@ DIST_DIR="dist"
 mkdir -p "$DIST_DIR"
 rm -rf "$DIST_DIR"/*
 
-# Fungsi buat build + package per target
+# Build + package per target
 package_target() {
     local TARGET=$1
     local ARCH_NAME=$2
@@ -35,7 +35,7 @@ package_target() {
     cp deploy/backup.sh "${STAGE_DIR}/deploy/"
     cp deploy/install.sh "${STAGE_DIR}/deploy/"
     
-    # Bikin file README khusus distribusi
+    # Generate distribution README
     cat > "${STAGE_DIR}/INSTALL.txt" << 'EOF'
 Wraith Orchestrator - Installation
 ==================================
@@ -46,17 +46,17 @@ Wraith Orchestrator - Installation
 5. systemctl --user enable --now orchestrator.service
 EOF
 
-    # Bikin tarball
+    # Build tarball
     echo "=== Packaging ${PKG_NAME}.tar.gz ==="
     tar -czf "${DIST_DIR}/${PKG_NAME}.tar.gz" -C "$DIST_DIR" "$PKG_NAME"
     rm -rf "$STAGE_DIR"
 }
 
-# Eksekusi build
+# Run build
 package_target "x86_64-unknown-linux-musl" "x86_64"
 package_target "aarch64-unknown-linux-musl" "aarch64"
 
-# Generate checksum
+# Generate checksums
 echo "=== Generating SHA256 ==="
 cd "$DIST_DIR"
 sha256sum *.tar.gz > SHA256SUMS

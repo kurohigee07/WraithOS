@@ -3,7 +3,11 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-REMOTE="oci:wraith-bucket/daily"
+REMOTE="${WRAITH_BACKUP_REMOTE:-}"
+if [ -z "$REMOTE" ]; then
+    echo "[backup] FATAL: WRAITH_BACKUP_REMOTE not set (e.g. rclone_remote:path)" >&2
+    exit 1
+fi
 STAMP=$(date +%Y%m%d-%H%M%S)
 FILENAME="orchestrator-$STAMP.tar.gz"
 TMP=$(mktemp -d)

@@ -1,4 +1,4 @@
-//! Konfigurasi runtime. Dimuat dari TOML; semua field punya default.
+//! Runtime configuration. Loaded from TOML; all fields have defaults.
 
 use std::path::PathBuf;
 use std::time::Duration;
@@ -136,7 +136,7 @@ pub struct Config {
     pub max_db_connections: u32,
     pub log_level: String,
     pub log_format: LogFormat,
-    /// Bind address untuk /metrics. Empty string disables.
+    /// Bind address for /metrics. Empty string disables.
     pub metrics_bind: Option<String>,
     pub script: ScriptConfig,
     pub capabilities: Vec<Capability>,

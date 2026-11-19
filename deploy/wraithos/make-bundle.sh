@@ -18,15 +18,15 @@ case "$ARCH" in
     *) echo "usage: $0 <x86|arm> <version>"; exit 1 ;;
 esac
 
-[ -f "$IMG" ] || { echo "FATAL: rootfs.squashfs tidak ada: $IMG"; exit 1; }
+[ -f "$IMG" ] || { echo "FATAL: rootfs.squashfs not found: $IMG"; exit 1; }
 
 # ── Production CA — MUST exist, no fallback ─────────────────────────────
 CERT="$CA_PROD/dev.cert.pem"
 KEY="$CA_PROD/dev.key"
 CA_CERT="$CA_PROD/ca.cert.pem"
-[ -f "$CA_CERT" ] || { echo "FATAL: CA cert tidak ada: $CA_CERT"; exit 1; }
-[ -f "$CERT"    ] || { echo "FATAL: signing cert tidak ada: $CERT"; exit 1; }
-[ -f "$KEY"     ] || { echo "FATAL: signing key tidak ada: $KEY"; exit 1; }
+[ -f "$CA_CERT" ] || { echo "FATAL: CA cert not found: $CA_CERT"; exit 1; }
+[ -f "$CERT"    ] || { echo "FATAL: signing cert not found: $CERT"; exit 1; }
+[ -f "$KEY"     ] || { echo "FATAL: signing key not found: $KEY"; exit 1; }
 
 # ── Verify CA fingerprint matches expected production CA ───────────────
 EXPECTED_FP="5C:75:AC:3B:03:12:B1:6D:15:AF:30:0D:98:1B:6E:55:F6:D0:BC:CC:16:BE:40:D9:A7:FF:97:48:EB:98:FD:38"

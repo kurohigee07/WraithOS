@@ -20,8 +20,8 @@ bindgen!({
 /// Interval tick epoch. 100ms → resolusi timeout guest 100ms.
 pub const EPOCH_TICK: Duration = Duration::from_millis(100);
 
-/// Batas eksekusi guest dalam jumlah tick. 600 * 100ms = 60s.
-/// Set lebih besar dari HTTP timeout (30s) untuk headroom.
+/// Guest execution limit in ticks. 600 * 100ms = 60s.
+/// Set larger than HTTP timeout (30s) for headroom.
 pub const EPOCH_DEADLINE_TICKS: u64 = 600;
 
 /// Per-execution fuel budget. Fuel is Wasmtime's deterministic
@@ -55,8 +55,8 @@ pub fn build_engine() -> anyhow::Result<Arc<Engine>> {
     Ok(Arc::new(engine))
 }
 
-/// Background thread yang menaikkan epoch tiap EPOCH_TICK.
-/// Guest yang melewati deadline akan trap dengan "epoch deadline reached".
+/// Background thread that increments epoch every EPOCH_TICK.
+/// Guest that exceeds deadline traps with "epoch deadline reached".
 pub struct EpochTicker {
     shutdown: Arc<AtomicBool>,
     handle: Option<JoinHandle<()>>,
@@ -83,7 +83,7 @@ impl Drop for EpochTicker {
     fn drop(&mut self) {
         self.shutdown.store(true, Ordering::Relaxed);
         if let Some(h) = self.handle.take() {
-            // Thread butuh hingga `tick` untuk wake; 100ms shutdown lag acceptable.
+            // Thread may need up to `tick` to wake; 100ms shutdown lag acceptable.
             let _ = h.join();
         }
     }

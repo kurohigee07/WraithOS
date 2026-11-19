@@ -1,4 +1,4 @@
-//! Error library-level dengan thiserror.
+//! Library-level errors via thiserror.
 
 #[derive(Debug, thiserror::Error)]
 pub enum OrchestratorError {
