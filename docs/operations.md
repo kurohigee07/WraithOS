@@ -51,46 +51,6 @@ For the root development config:
 
 Create parent directories for nondefault DB paths before startup. The module writer creates tenant directories as needed. Protect configuration and data directories because they can contain tokens, modules, and guest error details.
 
-## systemd user service
-
-`deploy/orchestrator.service` assumes:
-
-```text
-WorkingDirectory = %h/orchestrator-project
-Binary = %h/orchestrator-project/target/x86_64-unknown-linux-musl/release/orchestrator
-Config = %h/orchestrator-project/orchestrator.toml
-Logs = %h/orchestrator-project/logs/orchestrator.log
-```
-
-It restarts on failure after three seconds, sends SIGTERM, and allows 15 seconds for stop. It appends stdout/stderr to a log file.
-
-Before installation:
-
-```bash
-mkdir -p logs
-sed -n '1,160p' deploy/orchestrator.service
-sed -n '1,160p' deploy/install.sh
-```
-
-If your checkout path differs, edit the unit and backup unit first. `install.sh` builds x86 musl, copies all service/timer units, enables the service and backup timer, restarts the service, and polls health. It does not install Rust/Zig/rclone or create an OCI remote for you.
-
-```bash
-bash deploy/install.sh
-systemctl --user status orchestrator.service
-```
-
-For a user service to survive logout, the host may need lingering enabled by an administrator (`loginctl enable-linger <user>`). This is an OS policy decision, not performed by the script.
-
-The logrotate example is hardcoded to `/path/to/project/logs/orchestrator.log`, rotates daily, keeps seven compressed generations, and uses copytruncate. Adapt the path and install it through your system's logrotate mechanism if desired.
-
-## Smoke checks: know their assumptions
-
-`deploy/smoke.sh` restarts the user service and checks health, metrics, debug state, and a module named/containing `sample`. It expects `wasm_executions_total` and `wasm_pool_in_flight` metrics to exist. Those series are emitted by activity, so a freshly restarted service with no executions can fail that assertion even when healthy.
-
-Run a trusted sample execution first, or treat the script as a historical smoke helper rather than a complete readiness test. It restarts a service; do not run it casually against production.
-
-`deploy/test-ws.sh` requires websocat and the `wraith` CLI, subscribes to events, executes `sample`, and looks for `sample.emitted`/`rhai.processed`. Its cleanup uses a broad `pkill -f "tail -f /dev/null"` pattern that can affect unrelated processes. Review/replace that cleanup before using it on a shared machine.
-
 ## Metrics and operational signals
 
 | Signal | Interpretation |
@@ -106,59 +66,6 @@ Run a trusted sample execution first, or treat the script as a historical smoke 
 | Audit stops growing while executions succeed | Audit insert errors are ignored; check DB independently |
 
 Counters are process-local and reset at restart. Use Prometheus rate/increase functions over persisted time series rather than comparing raw restarted counters. Histogram quantiles in the supplied benchmark report zero at sub-millisecond scales; use sum/count and understand exporter resolution.
-
-## Backup to OCI
-
-`deploy/backup.sh` hardcodes:
-
-```text
-Remote: BACKUP_REMOTE
-Working directory: repository root determined from script location
-Expected files: orchestrator.db and orchestrator.toml
-```
-
-Prerequisites: working rclone remote, permissions, and preferably the `sqlite3` CLI. The script:
-
-1. Fails if DB/config are missing.
-2. Uses `sqlite3 .backup` for a WAL-safe snapshot when available.
-3. Otherwise copies DB/WAL/SHM files, explicitly noting that this fallback is not transactionally consistent.
-4. Archives config, modules, the user service file if present, and deploy directory.
-5. Streams tar.gz to `rclone rcat`.
-6. Keeps the seven newest lexically sorted filenames.
-
-```bash
-command -v rclone
-command -v sqlite3
-rclone lsf BACKUP_REMOTE
-bash deploy/backup.sh
-```
-
-The timer runs daily at 03:00 with `Persistent=true`; time zone is the host/user manager's local time. The script's fixed names mean custom DB/config/module paths need a revised backup procedure. It does not prove remote object integrity or perform a restore drill.
-
-## Restore procedure
-
-`deploy/restore.sh <filename.tar.gz>` downloads from the same hardcoded remote, stops the user service, extracts into a temporary directory, replaces DB/config/modules/service/deploy files, reloads systemd, starts the service, and checks health.
-
-**Destructive:** it removes existing `modules/` and `deploy/` before copying archived versions. It assumes the current directory is the intended project root and does not make a pre-restore safety copy.
-
-Recommended manual wrapper:
-
-1. Announce downtime and stop writes.
-2. Save the current config/module tree and a fresh consistent DB snapshot elsewhere.
-3. Download and inspect the archive before extraction.
-4. Verify checksum/provenance if your backup process records it.
-5. Run restore from the exact intended directory.
-6. Check `/readyz`, module list, a trusted execution, audit, and expected configuration.
-
-```bash
-cd "$HOME/orchestrator-project"
-bash deploy/restore.sh orchestrator-YYYYMMDD-HHMMSS.tar.gz
-curl --fail http://127.0.0.1:9090/readyz
-```
-
-If the service was stopped and old WAL files remain while only a snapshot DB is copied, recovery semantics deserve explicit verification. Prefer a controlled restore into a clean directory or a tested procedure that removes stale WAL siblings only while the service is stopped and after preserving evidence.
-
-A backup is not verified until restore succeeds. Perform drills away from production.
 
 ## Package releases
 
@@ -209,35 +116,6 @@ Confirm that fingerprint through a trusted maintainer channel, not only this rep
 - [ ] Verify release signatures using an independently trusted fingerprint.
 - [ ] For appliance releases, test both slots, failed updates, persistent data, and device-specific wizard paths.
 - [ ] Document actual binary/image sizes and benchmark environment; do not reuse stale headline numbers.
-
-## Verified drill (2026-11-08)
-
-Full backup + restore drill against BACKUP_REMOTE.
-
-Backup: bash deploy/backup.sh uploaded orchestrator-20261108-093713.tar.gz
-(78 KiB, 120 entries). Retention kept 7. Contents: orchestrator.db via
-sqlite3 .backup snapshot, orchestrator.toml, modules/, deploy/,
-orchestrator.service.
-
-Archive inspection: PRAGMA integrity_check on extracted DB = ok. Table
-execution_logs matches docs/architecture.md. All 8 module files sha256
-identical to pre-backup. orchestrator.toml sha256 identical to pre-backup.
-
-Restore: state modified (added drill-test.wasm, set log_level debug),
-then bash deploy/restore.sh orchestrator-20261108-093713.tar.gz
-completed with healthz OK in about 3 seconds.
-
-Post-restore: drill-test.wasm removed (not in archive). log_level
-reverted to info. 8 module files sha256 identical to pre-modify. DB
-integrity ok, execution_logs 95 rows. deploy/ tree byte-identical to
-git HEAD.
-
-Caveats: DB file sha256 differs pre-backup vs post-restore because
-sqlite3 .backup flushes WAL deterministically; logical content is
-identical. Do not compare raw DB file hashes across backup boundaries.
-Stale -wal/-shm warning still applies if service not stopped cleanly
-before restore. Drill in a clean environment still recommended before
-relying on this for real DR.
 
 ## Metrics cardinality (2026-11-08)
 

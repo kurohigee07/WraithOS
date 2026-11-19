@@ -18,7 +18,6 @@ package_target() {
     cargo zigbuild --release --target "$TARGET"
 
     echo "=== Staging $PKG_NAME ==="
-    mkdir -p "${STAGE_DIR}/deploy"
     
     # Copy binary
     cp "target/${TARGET}/release/orchestrator" "${STAGE_DIR}/orchestrator"
@@ -28,10 +27,6 @@ package_target() {
     cp README.md "${STAGE_DIR}/"
     cp CHANGELOG.md "${STAGE_DIR}/"
     cp LICENSE LICENSE-COMMERCIAL.md "${STAGE_DIR}/"
-    cp deploy/orchestrator.service "${STAGE_DIR}/deploy/"
-    cp deploy/logrotate.conf "${STAGE_DIR}/deploy/"
-    cp deploy/backup.sh "${STAGE_DIR}/deploy/"
-    cp deploy/install.sh "${STAGE_DIR}/deploy/"
     
     # Generate distribution README
     cat > "${STAGE_DIR}/INSTALL.txt" << 'EOF'
@@ -39,9 +34,8 @@ Wraith Orchestrator - Installation
 ==================================
 1. Extract this tarball.
 2. Move 'orchestrator' to /usr/local/bin/ (or keep in directory).
-3. Copy deploy/orchestrator.service to ~/.config/systemd/user/
-4. Edit orchestrator.toml as needed.
-5. systemctl --user enable --now orchestrator.service
+3. Edit orchestrator.toml as needed.
+4. Run: orchestrator --config orchestrator.toml
 EOF
 
     # Build tarball
