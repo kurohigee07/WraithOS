@@ -1,9 +1,0 @@
-[Unit]
-Description=Orchestrator backup to OCI
-Wants=network-online.target
-After=network-online.target
-
-[Service]
-Type=oneshot
-WorkingDirectory=%h/orchestrator-project
-ExecStart=%h/orchestrator-project/deploy/backup.sh
