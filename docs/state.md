@@ -1,6 +1,6 @@
 # State
 
-**Version:** 0.53.1 (tag `v0.53.1`, commit `98632c4`)
+**Version:** 0.53.1 (tag `v0.53.1-update-hook`)
 
 ## What works (verified)
 

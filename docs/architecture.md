@@ -1,6 +1,6 @@
 # Architecture: follow a request to the source
 
-This is a source-level description of commit `f71294a`, not an aspirational design document. The interactive request lab simplifies timing for teaching; the sequence below describes the actual code.
+This is a source-level description of `v0.53.1-update-hook`, not an aspirational design document. The interactive request lab simplifies timing for teaching; the sequence below describes the actual code.
 
 ## System overview
 

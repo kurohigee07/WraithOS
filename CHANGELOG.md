@@ -176,7 +176,7 @@ Releases before `v0.24.0` are not itemized here; see commit history.
      `/run/wraith/boot`. The file stays a simple
      `slot=/other=/env=` block.
 
-  Bug existed since v0.43.0 (commit `1089188`). Verified post-fix:
+  Bug existed since v0.43.0 (commit `f1f8ad4`). Verified post-fix:
   fresh image boots, wizard completes with `slot=A`, cold reboot
   unlocks `/data` via plaintext, dropbear starts, no demote.
 - **RAUC trial-boot healthcheck reliability.** Three defects in
@@ -294,14 +294,14 @@ Releases before `v0.24.0` are not itemized here; see commit history.
   with the deployment-wide ceiling: requested caps that are not a
   subset of `ctx.capabilities` are rejected at upload time. Adds
   `CapabilitySet::is_subset_of` + `host_subsumes` + a unit test
-  (`subset_of_enforces_ceiling`). Landed in commit `9c5f3d5`
+  (`subset_of_enforces_ceiling`). Landed in commit `b7c5bb9`
   (folded into a fmt commit; annotated in `c012d2a`).
 - **C1 tar extraction before bwrap.** External `tar` invocation
   replaced with the `tar` crate. Entries with `..`, absolute
   paths, prefixes, symlinks, hardlinks, or non-regular
   non-directory types are rejected before any write. Three tests:
   accept, parent-traversal reject, symlink reject. Landed in
-  commit `d160b43`.
+  commit `6801d49`.
 
 ### Documentation
 

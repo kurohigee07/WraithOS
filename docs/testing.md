@@ -126,7 +126,7 @@ Use the [operations checklist](operations.md#pre-release-operational-checklist).
 
 ## v0.53.1 verification (ARM QEMU, 2026-11-18)
 
-### T7 — ARM fresh boot + wizard + dropbear
+### E2E-1 — ARM fresh boot + wizard + dropbear
 - Status: PASS
 - Expected: boot log shows `dm-0 (wraith-verity) is ready`, `Wraith boot:
   slot=A other=B`, wizard `completed:true` after LUKS format, dropbear
@@ -134,7 +134,7 @@ Use the [operations checklist](operations.md#pre-release-operational-checklist).
 - Evidence: `/tmp/arm-v054-serial-*.log` (session logs), wizard status
   endpoint returns `{"completed":true,"step":3,"luks_enabled":true}`.
 
-### T8 — ARM in-place RAUC update (A to B)
+### E2E-2 — ARM in-place RAUC update (A to B)
 - Status: PASS
 - Steps:
   1. `wraith-install-bundle /tmp/bundle.raucb`
@@ -147,7 +147,7 @@ Use the [operations checklist](operations.md#pre-release-operational-checklist).
      `Marked slot rootfs.1 as good`.
   5. Power cycle again: slot B persists, no demote, marker gone.
 
-### T9 — x86_64 in-place update
+### E2E-3 — x86_64 in-place update
 - Status: DEFERRED to v0.55.
 - Same code path as ARM (post-install handler, rehash, override-boot-slot).
   x86 build + fresh boot verified; RAUC cycle pending hardware/CI window.

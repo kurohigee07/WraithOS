@@ -161,7 +161,7 @@ Remaining concerns include:
   `..` in the same way GNU tar does. Exposure was gated by
   `enable_build = false` (build API only mounted when explicitly
   enabled) and by `require_auth` (off by default). **Fixed in
-  commit `d160b43`:** the external tar invocation was replaced
+  commit `6801d49`:** the external tar invocation was replaced
   with the `tar` crate. Every entry is filtered before any
   filesystem write: `..` components, absolute paths, and Windows
   prefixes are rejected, and only regular files and directories
@@ -200,7 +200,7 @@ The ARM shell profile disables history/core dumps and fixes PATH, but these are 
   `boot_b`-marker mechanism on x86 is gone; failed-boot counter and
   rollback now come from the GRUB trial counter plus the healthcheck
   described in "Update verification and rollback".
-- **In-place update guard (v0.53.1, commit `050f9fd`).** The v0.53.0
+- **In-place update guard (v0.53.1, commit `9e11fc9`).** The v0.53.0
   dm-verity root hash + salt are baked into `grub.cfg` at image build
   time. Neither `wraith-update` (dd path) nor `rauc install` rewrites
   that block, so any in-place update to a v0.53.0+ image would
@@ -216,7 +216,7 @@ The ARM shell profile disables history/core dumps and fixes PATH, but these are 
   the ESP's kernels (`Image-a`/`Image-b` on aarch64, `bzImage` on
   x86_64). Kernel updates require a separate coordinated procedure.
 - GRUB environment rewriting is atomic-rename (v0.53.1, commit
-  `24debf3`): the tmp file lives on the same filesystem as `grubenv`
+  `674b848`): the tmp file lives on the same filesystem as `grubenv`
   (`/boot/grub/.grubenv.tmp`) and the final step is `mv`, so a power
   loss mid-write leaves either the old env or the new env, never a
   partial block. Prior releases used `cat > grubenv`
@@ -551,7 +551,7 @@ Because v0.50.0 is a *lost key* case, no revocation action is
 required. The enrolled `db.crt` continues to verify only the
 specific PE signatures that were produced before the loss.
 
-**Fix (commit `aae2af7`).**
+**Fix (commit `ee2e007`).**
 
 `gen-sb-keys.sh` now:
 
@@ -583,7 +583,7 @@ mistake, different iteration of it.
 **Timeline.**
 
 1. The v0.51 cycle generated fresh SB keys (`gen-sb-keys.sh` after
-   the `aae2af7` fix, so they were written to `$HOME/sb-keys`, not
+   the `ee2e007` fix, so they were written to `$HOME/sb-keys`, not
    `/tmp`).
 2. The keys were archived to `master-keys-20261114-034706.tar.gz.enc`
    on the build VPS with a fresh 32-character password from
@@ -669,7 +669,7 @@ kernel config should read it as "available for future use", not as
 ## Update verification and rollback
 
 RAUC installs to the inactive slot and marks it active. Health
-gating **is shipped** in v0.53.1 (commits `ef6c4a4` and `24debf3`):
+gating **is shipped** in v0.53.1 (commits `dd36417` and `674b848`):
 
 - `wraith-install-bundle` writes `/data/orchestrator/rauc.pending` on
   successful `rauc install`.
