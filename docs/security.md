@@ -194,12 +194,39 @@ The ARM shell profile disables history/core dumps and fixes PATH, but these are 
 
 ## WraithOS update and encryption caveats
 
-- x86 uses a simple `boot_b` marker; no automatic failed-boot counter is implemented there.
-- ARM uses GRUB env plus watchdog proof, but `wraith-update` does not cryptographically verify the supplied rootfs image.
-- ARM updater writes only the inactive SquashFS slot; it does not replace the ESP's `Image-a`/`Image-b` kernels. Kernel updates require a separate coordinated procedure.
-- GRUB environment rewriting uses a temporary runtime file followed by overwrite plus sync; it is not proven power-loss atomic at the storage layer.
-- Watchdog health proof is stronger than “process exists,” but its logic and grace behavior need hardware/failure-injection validation.
-- LUKS setup targets hard-coded `/dev/vda4` and formats it. A wrong device/layout or populated partition can cause irreversible data loss.
+- Both arches use RAUC A/B trial boot since v0.48.0 (`system.conf` in
+  each rootfs declares `bootloader=grub`, `grubenv=/boot/grub/grubenv`,
+  and both slots via `[slot.rootfs.0/1]`). The pre-v0.48
+  `boot_b`-marker mechanism on x86 is gone; failed-boot counter and
+  rollback now come from the GRUB trial counter plus the healthcheck
+  described in "Update verification and rollback".
+- **In-place update guard (v0.53.1, commit `050f9fd`).** The v0.53.0
+  dm-verity root hash + salt are baked into `grub.cfg` at image build
+  time. Neither `wraith-update` (dd path) nor `rauc install` rewrites
+  that block, so any in-place update to a v0.53.0+ image would
+  produce a rootfs that mismatches the baked hash and panics at boot.
+  `wraith-update` and `wraith-install-bundle` now refuse on a
+  dm-verity boot (`grep dm-mod.create= /proc/cmdline`) and print a
+  clear message to flash a full image over USB. The dm-verity
+  recompute hook (`wraith-verity-rehash` + `post-install` handler) is
+  shipped in v0.53.1 and re-enables the RAUC in-place path; the guard
+  is the fallback for operators who have not updated their
+  `wraith-install-bundle` yet.
+- Updater writes only the inactive SquashFS slot; it does not replace
+  the ESP's kernels (`Image-a`/`Image-b` on aarch64, `bzImage` on
+  x86_64). Kernel updates require a separate coordinated procedure.
+- GRUB environment rewriting is atomic-rename (v0.53.1, commit
+  `24debf3`): the tmp file lives on the same filesystem as `grubenv`
+  (`/boot/grub/.grubenv.tmp`) and the final step is `mv`, so a power
+  loss mid-write leaves either the old env or the new env, never a
+  partial block. Prior releases used `cat > grubenv`
+  (truncate-then-write) which was not power-loss safe.
+- Watchdog health proof is stronger than "process exists", but its
+  logic and grace behavior need hardware/failure-injection
+  validation (planned for v0.54).
+- LUKS setup targets hard-coded `/dev/vda4` and formats it. A wrong
+  device/layout or populated partition can cause irreversible data
+  loss.
 
 See [WraithOS](wraithos.md) for exact architecture differences and recovery procedures.
 
@@ -416,11 +443,13 @@ so the EFI stub loader can run.
   write the hash. The BIOS-only ESP gap is tracked as v0.53.1 (signed
   cmdline / signed GRUB config).
 - **IMA appraisal.** Not enabled. File-level integrity inside the
-  rootfs is not verified at runtime. Deferred to v0.51.
-- **Hardware validation.** All testing is QEMU OVMF + KVM. Physical
-  board firmware quirks (variable store size, TPM interaction,
-  measured-boot events) are not exercised. Section is
-  "QEMU-verified, hardware validation pending v0.51" for this reason.
+  rootfs is not verified at runtime. Deferred to v0.54.
+- **Hardware validation.** All testing is QEMU OVMF + KVM (and QEMU
+  TCG for aarch64). Physical board firmware quirks (variable store
+  size, TPM interaction, measured-boot events) are not exercised.
+  Status: "QEMU-verified; hardware validation pending v0.54" — this
+  is the largest credibility gap on the project and is budgeted in
+  the NLnet application.
 
 **v0.50.0 test matrix (QEMU OVMF, KVM):**
 
@@ -441,10 +470,11 @@ Keys are device-specific: losing the db private key prevents future
 signed updates; leaking it lets an attacker sign images that pass
 Secure Boot.
 
-**Deferred to v0.51:** physical hardware validation, IMA appraisal
-policy, Secure Boot on aarch64 (requires ARM SBBR / U-Boot FIT
-measured boot which the current EFI-GRUB aarch64 image does not
-provide).
+**Deferred to v0.54:** physical hardware validation, IMA appraisal
+policy, per-device Secure Boot keys (v0.50.0 shipped a single custom
+PK; per-device enrollment targets v0.54), Secure Boot on aarch64
+(requires ARM SBBR / U-Boot FIT measured boot which the current
+EFI-GRUB aarch64 image does not provide).
 
 ### Build-process post-mortem (v0.50.0 Secure Boot key loss)
 
@@ -638,27 +668,34 @@ kernel config should read it as "available for future use", not as
 
 ## Update verification and rollback
 
-RAUC installs to the inactive slot and marks it active. The current
-release **does not confirm health before committing the trial boot**.
-If the new slot boots far enough to start `init` but the orchestrator
-never becomes reachable on `/healthz`, the system stays on the failing
-slot across the remaining trial attempts and then rolls back to the
-last-known-good slot via the existing GRUB trial counter. This is a
-kernel-level rollback, not a service-level rollback: a new slot that
-boots the kernel and init but leaves the orchestrator dead will still
-be marked good by the bootloader, and the operator has to intervene.
+RAUC installs to the inactive slot and marks it active. Health
+gating **is shipped** in v0.53.1 (commits `ef6c4a4` and `24debf3`):
 
-Mitigations planned for v0.5x:
+- `wraith-install-bundle` writes `/data/orchestrator/rauc.pending` on
+  successful `rauc install`.
+- On the next boot, `S99wraith-init` spawns
+  `wraith-rauc-healthcheck` (only when `rauc.pending` exists).
+- The healthcheck polls `http://127.0.0.1:9090/readyz` (not
+  `/healthz` — the readiness probe also checks SQLite and the Wasm
+  pool) for up to 60 s in 30 attempts of 2 s each, with `wget -T 5`
+  so a stalled socket cannot overrun the budget.
+- On `readyz` 200: `rauc status mark-good` + `wraith-bootenv commit`,
+  marker removed.
+- On timeout: `rauc status mark-bad` + `wraith-bootenv demote`, then
+  `reboot` so the next trial falls through to the previous slot.
+- A singleton `mkdir` lock under `/run/wraith/healthcheck.lock`
+  prevents a second healthcheck instance from spawning if
+  `S99wraith-init` is re-run by the watchdog mid-trial. Two
+  concurrent instances racing `rauc status mark-*` would corrupt
+  slot state.
+- Output and rc of `rauc status` / `wraith-bootenv` are captured
+  separately (not piped through `while read`) so a failing command
+  is logged as `WARN` with its rc rather than silently swallowed.
 
-- S99wraith-init extension: after starting the orchestrator, poll
-  `http://127.0.0.1:9090/healthz` for up to 30 s. On success, run
-  `rauc status mark-good`. On timeout, run `rauc status mark-bad`
-  and `reboot` so the next trial attempt falls through to the
-  previous slot.
-- The watchdog (`softdog` via `wraith-watchdog`, `soft_margin=15`)
-  already provides a last-resort reboot if the orchestrator hangs.
-  It does not distinguish between "hung" and "not yet started", so
-  it is a coarse signal and cannot replace health-based mark-good.
+The `softdog` via `wraith-watchdog` (`soft_margin=15`) remains a
+last-resort reboot if the orchestrator hangs. It does not
+distinguish "hung" from "not yet started", so it is a coarse
+signal and cannot replace health-based mark-good.
 
 ## Deployment decision guide
 
@@ -681,7 +718,7 @@ This is a documentation-derived recommendation, not a claim that these changes w
 4. Persist and verify signatures consistently across upload/build/restart/delete.
 5. Add archive validation, compiler resource budgets, and a durable build job model.
 6. Add outbound response limits (partially done: http::get capped at 16 MiB), egress controls, and shutdown drain tests. Rhai limits are done as of H2.
-7. Complete wizard-to-OS credential/network/reboot integration and remove tracked secret material.
+7. Audit default credentials end-to-end: `board/*/etc/shadow` files are intentional (baked default root password, wizard force-changes on first boot), not tracked secrets. Confirm every shipped image has the wizard gate and that no image ships without `wizard.complete` absent.
 8. Validate ARM boot/update/encryption through power-loss and failed-boot drills; sign update artifacts.
 
 No security audit or penetration test was performed for this documentation update.
