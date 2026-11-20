@@ -14,7 +14,7 @@
 <p>
   <a href="https://github.com/kurohigee07/WraithOS/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/kurohigee07/WraithOS?label=release&style=flat-square&color=d7af5f"></a>
   <a href="https://github.com/kurohigee07/WraithOS/actions/workflows/rust.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/kurohigee07/WraithOS/rust.yml?label=CI&style=flat-square"></a>
-  <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-AGPL--3.0--or--later%20%7C%20commercial-d7af5f?style=flat-square"></a>
+  <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-AGPL--3.0--or--later-d7af5f?style=flat-square"></a>
 </p>
 
 </div>
@@ -150,8 +150,7 @@ pending the v0.53 per-device SB key rollout).
 
 ## License
 
-Dual-licensed. AGPL-3.0-or-later for open use; commercial license
-available for embedding, closed-source SaaS, or warranty terms. See
-[`LICENSE`](LICENSE) and [`LICENSE-COMMERCIAL.md`](LICENSE-COMMERCIAL.md).
+Licensed under the GNU Affero General Public License v3.0 or later
+(AGPL-3.0-or-later). See [`LICENSE`](LICENSE).
 
 Third-party components retain their own licenses.
