@@ -256,11 +256,15 @@ Known gaps:
 
 ## Threat model — physical access
 
-The current release stores the LUKS keyfile for `/data` at
-`/boot/luks.key` on the unencrypted ESP so the device can auto-unlock
-on boot. An attacker with physical access to the disk can extract
-that keyfile and decrypt `/data` offline. This is a real limitation,
-not a theoretical one.
+Through v0.52.x, the LUKS keyfile for `/data` lived at
+`/boot/luks.key` on the unencrypted ESP so the device could
+auto-unlock on boot. v0.53.x (H3) auto-finalizes the plaintext
+keyfile after the TPM seal is verified live, so on TPM-equipped
+devices `/boot/luks.key` is removed and the sealed blob is the only
+path. On devices without a TPM — or where the TPM seal failed and
+boot falls back to plaintext — the keyfile remains on the ESP and an
+attacker with physical access to the disk can extract it and decrypt
+`/data` offline. This is a real limitation, not a theoretical one.
 
 ### TPM 2.0 sealing (shipped in v0.49.0)
 
@@ -320,38 +324,48 @@ Mitigations still planned for v0.5x:
 
 ## Boot chain integrity
 
-The current release does not verify the boot chain cryptographically.
+Boot-chain verification is **partial**. What is verified depends on
+the architecture and the boot path:
 
-- **No UEFI Secure Boot.** GRUB, the kernel, and the initramfs are
-  unsigned from the firmware's point of view. An attacker with
-  physical access can substitute any of them and the firmware will
-  load it. This invalidates the LUKS protection above: a modified
-  initramfs can log the decryption keyfile at boot.
+- **UEFI Secure Boot (x86_64, v0.50.0).** Shipped. See "UEFI Secure
+  Boot" below for what firmware verifies and what the chain still
+  does not cover.
+- **BIOS-only paths (x86_64 v0.51+) and aarch64.** Boot chain is not
+  verified cryptographically. GRUB, the kernel, and the initramfs
+  are unsigned from firmware's point of view. An attacker with
+  physical access can substitute any of them and firmware will load
+  it. On devices that still fall back to a plaintext LUKS keyfile
+  (see "Threat model — physical access" above) this invalidates the
+  LUKS protection: a modified initramfs can log the keyfile at boot.
+  On devices with runtime dm-verity active, tampering with the
+  rootfs slot is detected at boot; tampering with the kernel or
+  GRUB on the ESP is not.
 - **No ARM Verified Boot.** The aarch64 image uses the same unsigned
   GRUB + kernel chain. There is no U-Boot FIT signing.
-- **dm-verity is applied to RAUC bundles only.** The `format=verity`
-  bundle verifies the rootfs squashfs against a signed root hash
-  during `rauc install`. This is a **transport** integrity check
-  (bundle → slot), not a **runtime** integrity check. The rootfs
-  itself is mounted from the raw slot with no dm-verity layer, so
-  post-install tampering with `/dev/vda2` or `/dev/vda3` is not
-  detected at boot.
+- **dm-verity, two layers as of v0.53.0.**
+  - **Transport** integrity: the `format=verity` RAUC bundle
+    verifies the rootfs squashfs against a signed root hash during
+    `rauc install` (bundle → slot).
+  - **Runtime** integrity: the rootfs slot is mounted through a
+    kernel `dm-verity` table (`dm-mod.create=` on the cmdline). The
+    Merkle tree is baked into the same slot at build time and the
+    root hash + salt live in `grub.cfg` on the ESP. A modified
+    rootfs block triggers `panic_on_corruption`. On BIOS-only
+    images the trust anchor for that hash is trusted-by-origin,
+    not firmware-verified; on x86_64 UEFI Secure Boot the chain
+    above makes the hash firmware-verified.
 
-Mitigations planned for v0.5x:
+Mitigations still planned for v0.5x:
 
-- UEFI Secure Boot with a per-device key pair (PK, KEK, db). Sign
-  GRUB and the kernel during build; enroll the custom keys in
-  firmware at first deployment. Requires build-time key management
-  and either a cloud KMS or a hardware token for the private keys.
+- Per-device Secure Boot keys (PK, KEK, db). v0.50.0 shipped a
+  single custom PK; v0.54 targets per-device enrollment at first
+  deployment. Requires build-time key management and either a cloud
+  KMS or a hardware token for the private keys.
 - ARM Verified Boot with U-Boot FIT signing. Requires replacing the
   current EFI-GRUB path on aarch64 with a U-Boot verified-boot
   chain.
-- Runtime dm-verity on the rootfs slot: add a small initramfs that
-  opens the slot squashfs under a dm-verity table backed by a signed
-  root hash stored in the boot partition, then pivots to it. This
-  closes the "attacker replaced the raw slot after install" gap but
-  does not close the "attacker modified the kernel" gap without
-  Secure Boot.
+- IMA appraisal for runtime file integrity inside the rootfs. Not
+  shipped; deferred from v0.50.
 
 ### UEFI Secure Boot (shipped in v0.50.0, x86_64 only)
 
@@ -604,6 +618,23 @@ by the same audit-response process that produced the fixes in this
 release. Neither shipped to users. The fixes are preventive — the
 first is code, the second is documented process — and neither
 requires a v0.53 compatibility break.
+
+## eBPF
+
+The kernel is compiled with eBPF support — `CONFIG_BPF=y`,
+`CONFIG_BPF_SYSCALL=y`, `CONFIG_BPF_JIT_ALWAYS_ON=y`,
+`CONFIG_CGROUP_BPF=y`, `CONFIG_NET_CLS_BPF=y`,
+`CONFIG_NET_ACT_BPF=y`, `CONFIG_BPF_EVENTS=y` — but the shipped
+userland does not load any eBPF programs. There is no XDP program,
+no tc classifier, no cgroup-bpf hook, and no bpftrace script in the
+WraithOS tree.
+
+Practical impact today: eBPF is attack surface with no security
+payoff. `CONFIG_BPF_UNPRIV_DEFAULT_OFF=y` keeps unprivileged BPF
+loading disabled (`kernel.unprivileged_bpf_disabled=1` is the
+default), so only root can attach programs. Readers who see the
+kernel config should read it as "available for future use", not as
+"used for enforcement".
 
 ## Update verification and rollback
 
