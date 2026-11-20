@@ -1,0 +1,13 @@
+version = 1
+SPDX-PackageName = "WraithOS"
+SPDX-PackageSupplier = "Jace <231419737+kurohigee07@users.noreply.github.com>"
+SPDX-PackageDownloadLocation = "https://github.com/kurohigee07/WraithOS"
+
+[[annotations]]
+path = ["**"]
+SPDX-FileCopyrightText = "2026 Jace <231419737+kurohigee07@users.noreply.github.com>"
+SPDX-License-Identifier = "AGPL-3.0-or-later"
+
+# Third-party components (Cargo dependencies) retain their own
+# licenses. This file covers WraithOS-authored content only.
+# Run `reuse lint` for a current report; see CONTRIBUTING.md.
