@@ -1,5 +1,9 @@
 # Contributing
 
+
+> Note: this file covers policy for external contributions.
+> The maintainer's own AI usage is documented in [`AI-DISCLOSURE.md`](AI-DISCLOSURE.md).
+
 Thank you for considering a contribution to WraithOS. This document
 covers the mechanics — how to build, how to test, how to submit — and
 the AI-assistance policy.
@@ -73,7 +77,7 @@ sandbox, also run the relevant QEMU smoke test described in
 
 This policy applies to **contributions to WraithOS as a project**. It
 follows NLnet Foundation's Generative AI Policy 2.0 (October 2026),
-under which WraithOS development is funded.
+under which WraithOS has applied for grant funding.
 
 - **You may use AI as a read-only reviewer.** Ask it to point out
   bugs, missing cases, or unclear code.
@@ -99,7 +103,7 @@ clarification. This is a policy about understanding, not about tools.
 ## Reporting bugs
 
 For security bugs, **do not open a public issue** — see
-[SECURITY.md](SECURITY.md). For non-security bugs, use the GitHub
+[SECURITY.md](docs/security.md). For non-security bugs, use the GitHub
 issue tracker and include:
 
 - Release tag (e.g. `v0.53.1-update-hook`)

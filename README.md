@@ -2,7 +2,7 @@
 
 <img src=".github/wraithos-boot.png" alt="WraithOS boot banner" width="720">
 
-**A Wasm appliance Linux. Single binary, signed boot chain, encrypted data.**
+**A Wasm appliance Linux. Single binary, dm-verity root integrity, encrypted data.**
 
 <p>
   <code>Rust 1.85+</code> ·

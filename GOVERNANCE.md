@@ -24,7 +24,7 @@ reasoning in the commit message or the issue thread.
   `orchestrator/src/rhai_worker.rs`, RAUC/boot chain, or
   `docs/security.md`: one maintainer review plus a written rationale
   in the PR description covering threat-model impact.
-- Security issues: see [SECURITY.md](SECURITY.md) — do **not** open a
+- Security issues: see [SECURITY.md](docs/security.md) — do **not** open a
   public issue.
 
 ## Bus factor

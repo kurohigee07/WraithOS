@@ -1,5 +1,11 @@
 # Security model and known limitations
 
+
+> AI-assistance note: prose in this file was drafted with AI
+> assistance from maintainer-provided claims and reviewed against
+> the running system before commit. Design and threat-model
+> decisions are the maintainer's. See [`AI-DISCLOSURE.md`](../AI-DISCLOSURE.md).
+
 **Audience:** anyone considering a non-loopback bind, shared deployment, uploaded source, or customer-facing plugin service.
 
 Wraith has useful defensive mechanisms, but the current implementation is best understood as a **single-operator runtime with namespace/resource tenancy**, not an independently audited hostile multi-tenant platform. This page describes what the code does and does not guarantee.
