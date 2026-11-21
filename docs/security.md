@@ -60,7 +60,7 @@ An empty capability sidecar/manifest falls back to global permissions on reload.
 
 ### HTTP-specific risks
 
-The HTTP check is hostname-based. It does not restrict schemes to HTTPS, block private/link-local IP ranges, pin DNS answers, or cap response-body size. Redirects are disabled, which removes one bypass class but not DNS rebinding or an allowlisted host that serves internal content.
+The HTTP check is hostname-based. It does not restrict schemes to HTTPS, block private/link-local IP ranges, or pin DNS answers. The response body is capped at `MAX_HTTP_BODY_BYTES = 16 MiB` (see "Resource limits" below), but that bound applies only to `http::get` — other egress paths remain open and there is no egress policy. Redirects are disabled, which removes one bypass class but not DNS rebinding or an allowlisted host that serves internal content.
 
 Use network egress controls for SSRF defense. Treat `allowed_hosts=["*"]` as broad outbound GET authority.
 
@@ -194,7 +194,7 @@ The wizard stores an Argon2 admin-password hash, hostname, and network TOML, but
 
 ## Appliance credential and boot material
 
-The ARM tree contains a tracked `board/wraithos/etc/shadow` file outside the rootfs overlay. Its contents are intentionally not reproduced here. Review whether that build-time credential material belongs in Git, whether it enters an image, and rotate/remove it through a deliberate security change before public distribution. This documentation update does not alter credentials.
+Both `deploy/wraithos/{aarch64,x86_64}/rootfs_overlay/etc/shadow` ship a baked SHA512-crypt hash of the documented default root password (`wraithos-admin-change-me`; see `README.md`). The hash is intentional: it is the only way to log in over serial console on a fresh image, and the wizard force-changes the password on first boot. These files are not tracked secrets and are not removed or rotated — changing the default would lock out first-boot serial access. See "Default credentials" below for the full model.
 
 The ARM shell profile disables history/core dumps and fixes PATH, but these are usability/hardening settings, not a substitute for authenticated console access. `root` is the configured shell account. Read-only rootfs does not mean verified boot or encrypted persistent data.
 
@@ -724,7 +724,7 @@ This is a documentation-derived recommendation, not a claim that these changes w
 4. Persist and verify signatures consistently across upload/build/restart/delete.
 5. Add archive validation, compiler resource budgets, and a durable build job model.
 6. Add outbound response limits (partially done: http::get capped at 16 MiB), egress controls, and shutdown drain tests. Rhai limits are done as of H2.
-7. Audit default credentials end-to-end: `board/*/etc/shadow` files are intentional (baked default root password, wizard force-changes on first boot), not tracked secrets. Confirm every shipped image has the wizard gate and that no image ships without `wizard.complete` absent.
+7. Audit default credentials end-to-end: `deploy/wraithos/*/rootfs_overlay/etc/shadow` files are intentional (baked default root password, wizard force-changes on first boot), not tracked secrets. Confirm every shipped image has the wizard gate and that no image ships without `wizard.complete` absent.
 8. Validate ARM boot/update/encryption through power-loss and failed-boot drills; sign update artifacts.
 
 No security audit or penetration test was performed for this documentation update.
