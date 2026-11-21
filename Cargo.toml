@@ -5,71 +5,41 @@ resolver = "2"
 
 [workspace.package]
 edition = "2021"
-rust-version = "1.85"          # tokio 1.54 requires Rust 1.85+
+rust-version = "1.85"
 license = "AGPL-3.0-or-later"
 
 [workspace.dependencies]
-# ── Async Runtime & Utility ─────────────────────────────────────────────
 tokio = { version = "1.54", features = ["full"] }
 async-trait = "0.1"
 futures = "0.3"
 dashmap = "6.1"
 
-# ── Error & Observability ───────────────────────────────────────────────
 thiserror = "2.0"
 anyhow = "1.0"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 
-# ── HTTP / TLS ──────────────────────────────────────────────────────────
-# default-features = false WAJIB: reqwest 0.13 default-nya menarik native-tls
-# and aws-lc-rs. Force rustls-no-provider so the ring provider from
-# the workspace rustls is used, not aws-lc-rs.
+# rustls only, no native-tls, no aws-lc-rs
 reqwest = { version = "0.13", default-features = false, features = [
-    "rustls-no-provider",
-    "json",
-    "gzip",
-    "brotli",
-    "stream",
+    "rustls-no-provider", "json", "gzip", "brotli", "stream",
 ] }
-
-# Provider kripto tunggal: ring. default-features = false menghapus
-# implicit aws-lc-rs dependency that needs cmake/nasm.
 rustls = { version = "0.23", default-features = false, features = [
-    "ring",
-    "std",
-    "tls12",
-    "logging",
+    "ring", "std", "tls12", "logging",
 ] }
 
-# ── Raw Socket Host-Level ───────────────────────────────────────────────
 socket2 = { version = "0.5", features = ["all"] }
 
-# ── Database ────────────────────────────────────────────────────────────
-# sqlx 0.8 "sqlite" feature already enables sqlite-bundled:
-# libsqlite3 is compiled from source and linked statically. No TLS
-# for SQLite (embedded DB).
+# sqlite-bundled, static
 sqlx = { version = "0.8", default-features = false, features = [
-    "runtime-tokio",
-    "sqlite",
-    "macros",
-    "migrate",
+    "runtime-tokio", "sqlite", "macros", "migrate",
 ] }
 
-# ── Wasmtime (Component Model + Async Host Functions) ───────────────────
-# wasmtime 48 is LTS. component-model-async is required for bindgen!
-# with async: true. runtime + cranelift + std also needed.
+# wasmtime LTS; async host needs component-model-async
 wasmtime = { version = "48.0", default-features = false, features = [
-    "async",
-    "component-model",
-    "component-model-async",
-    "cranelift",
-    "runtime",
-    "std",
+    "async", "component-model", "component-model-async", "cranelift", "runtime", "std",
 ] }
 wasmtime-wasi = { version = "48.0", default-features = false, features = ["p2"] }
 
-# ── Rhai ────────────────────────────────────────────────────────────────
 rhai = { version = "1.22", features = ["sync", "serde", "internals"] }
 
 axum = { version = "0.8", features = ["ws"] }
@@ -84,7 +54,6 @@ tempfile = "3"
 ed25519-dalek = { version = "2", default-features = false, features = ["std"] }
 hex = "0.4"
 
-# ── Serialization ───────────────────────────────────────────────────────
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 webpki-roots = "1.0"

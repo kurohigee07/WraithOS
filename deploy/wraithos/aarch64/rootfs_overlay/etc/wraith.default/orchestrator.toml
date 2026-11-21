@@ -1,75 +1,54 @@
-# Orchestrator runtime config. All fields have defaults.
+# Orchestrator runtime config.
 
 db_path = "orchestrator.db"
 modules_dir = "./modules"
 http_timeout_secs = 30
 max_sockets = 256
-# Max parallel wasm executions. Keep < CPU count so tokio workers stay
-# free for HTTP/metrics/signals.
+
+# Keep below CPU count so tokio workers stay free.
 max_concurrent_wasm = 2
-# Wasm pool slot acquire timeout. On expiry, execute() returns error.
 wasm_acquire_timeout_secs = 10
-# Max linear memory per wasm instance. Over-quota guest traps.
 wasm_memory_limit_mb = 256
 max_db_connections = 8
 log_level = "info"
-log_format = "pretty"   # "pretty" | "json"
-metrics_bind = "127.0.0.1:9090"   # empty string = disable
+log_format = "pretty"
+metrics_bind = "127.0.0.1:9090"
 
 enable_build = false
 enable_build_network = false
 
 trusted_signer_keys = []
+
 [script]
-# Use either inline or path.
 inline = '''
 log_info("rhai received: " + event_kind);
 emit_event("rhai.processed", "{\"source\":\"rhai\"}");
 '''
 # path = "./rules/scan.rhai"
 
-# H2: per-execution Rhai budget. Defaults are safe (see docs/security.md).
-# Override only when a legitimate script needs more.
-# max_operations = 10000000        # ~500 ms typical, <=2 s worst (x86_64 native)
-# max_string_size = 1048576        # 1 MiB
+# Budget overrides:
+# max_operations = 10000000
+# max_string_size = 1048576
 # max_array_size = 100000
 # max_map_size = 10000
 # max_expr_depth = 64
 # max_function_expr_depth = 32
 
-# Ed25519 pubkeys (hex, 64 chars). If non-empty, each .wasm requires
-# a sibling .wasm.sig (64-byte raw ed25519 signature).
-# Leave empty to skip verification (dev only).
-# Default quota for modules uploaded without X-Module-Quota header.
-# Field 0 = inherit global / unlimited. See shared-types docs.
+# If set, each .wasm requires a sibling .wasm.sig (ed25519).
+# Per-tenant quota (0 = inherit / unlimited):
 # [default_quota]
 # max_memory_mb = 0
 # max_concurrent = 0
 # rate_limit_per_sec = 0
 
-# ── Multi-tenant (M17) ─────────────────────────────────────────────
-# default_tenant used by /modules route (backward compat) and
-# modules/{default_tenant}/ subdir. Default: "default" (no auth).
+# Multi-tenant:
 # default_tenant = "default"
-# require_auth = true  # all endpoints except /healthz /readyz need Bearer
-
-# Additional tenants. Route: /t/{tenant}/modules. Storage: modules/{tenant}/.
-# token_hash: argon2 PHC string (production). Generate:
-#   python3 -c "from argon2 import PasswordHasher; print(PasswordHasher().hash('mytoken'))"
-# token_plain: plaintext (dev only; logs warning)
+# require_auth = true
 # [tenants.alice]
-# token_hash = "$argon2id$v=19$m=19456,t=2,p=1$..."
-# Per-tenant resource caps (M18) — omit for unlimited:
-# max_modules = 10            # max modules per tenant
-# max_concurrent_wasm = 4     # max concurrent wasm execs per tenant
-# rate_limit_per_sec = 100    # aggregate rate limit across tenant's modules
-#
+# token_hash = "$argon2id$..."
 # [tenants.bob]
 # token_plain = "dev-token"
 
-# Build pipeline (M19). Cargo home used to invoke `cargo build`.
-# Default: $HOME/.cargo. Override if orchestrator runs under a user
-# whose cargo install lives elsewhere.
 # cargo_home = "~/.cargo"
 
 [[capabilities]]
@@ -86,4 +65,3 @@ allowed_hosts = ["example.com"]
 [[capabilities]]
 type = "tcp-connect"
 allowed_ports = [80, 443]
-
