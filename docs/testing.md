@@ -28,7 +28,6 @@ cargo test --locked -p orchestrator -p wraith-sdk -p wraith-cli --all-targets
 
 The CI workflow runs on pushes/PRs targeting `main`. It has formatting/Clippy, guest build/tests, and an x86 musl static-linkage job. A session working branch does not receive the push CI trigger unless the workflow is changed or a qualifying PR is opened. CI configuration is not proof that the current checkout passed CI.
 
-**Verification boundary for this update:** Rust/Cargo was not installed in the documentation workspace, so these Rust commands were not rerun. The work changed documentation and documentation tooling, not runtime source.
 
 ## Documentation
 
