@@ -3,7 +3,7 @@
 //! deterministic result so the latency number is comparable across runs.
 
 wit_bindgen::generate!({
-    path: "/home/opc/orchestrator-project/orchestrator/wit",
+    path: "/home/builder/wraithos/wit",
     world: "plugin",
 });
 
