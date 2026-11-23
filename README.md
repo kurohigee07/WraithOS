@@ -155,6 +155,6 @@ Licensed under the GNU Affero General Public License v3.0 or later
 
 Third-party components retain their own licenses.
 
-> **Status: Archived / Discontinued**
-> This project is no longer actively maintained or developed. The repository remains public for reference only; no further updates, bug fixes, or security patches will be provided.
+> **Status: Unmaintained (Open to Community PRs)**
+> Active development by the original author has stopped. The repository remains open—feel free to fork, open issues, or submit pull requests if you wish to continue building on this codebase.
 > 
