@@ -1,20 +1,19 @@
 name: CI
 
 on:
-  # Temporarily manual-only: CI token expired (2026-11-22).
-  # Re-enable push/pull_request when token refreshed:
-  #   workflow_dispatch:
-  #   push:
-  #     branches: [main]
-  #     paths-ignore:
-  #       - '**.md'
-  #       - 'docs/**'
-  #       - 'LICENSE'
-  #       - 'GOVERNANCE.md'
-  #       - 'CONTRIBUTING.md'
-  #       - 'ROADMAP.md'
-  #       - 'AI-DISCLOSURE.md'
-  #       - 'REUSE.toml'
+  push:
+    branches: [main]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - 'LICENSE'
+      - 'GOVERNANCE.md'
+      - 'CONTRIBUTING.md'
+      - 'ROADMAP.md'
+      - 'AI-DISCLOSURE.md'
+      - 'REUSE.toml'
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 
 env:
