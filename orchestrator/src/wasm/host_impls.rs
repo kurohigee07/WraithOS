@@ -71,6 +71,47 @@ impl http::Host for WasmHostState {
         }
         String::from_utf8(body).map_err(|e| format!("http body not utf8: {e}"))
     }
+    async fn post(
+        &mut self,
+        url: String,
+        body: Vec<u8>,
+        content_type: String,
+    ) -> Result<String, String> {
+        let parsed = reqwest::Url::parse(&url).map_err(|e| format!("invalid url: {e}"))?;
+        self.capabilities
+            .check_http_post(&parsed)
+            .map_err(|e| e.to_string())?;
+        let resp = self
+            .ctx
+            .http
+            .post(parsed)
+            .header("Content-Type", content_type)
+            .body(body)
+            .send()
+            .await
+            .map_err(|e| format!("http send failed: {e}"))?;
+        let status = resp.status();
+        if !status.is_success() {
+            return Err(format!("http status {status}"));
+        }
+        if let Some(len) = resp.content_length() {
+            if len > MAX_HTTP_BODY_BYTES as u64 {
+                return Err(format!(
+                    "http body too large (content-length {len} > {MAX_HTTP_BODY_BYTES})"
+                ));
+            }
+        }
+        let mut stream = resp.bytes_stream();
+        let mut total = 0usize;
+        let mut out: Vec<u8> = Vec::new();
+        while let Some(chunk_result) = stream.next().await {
+            let chunk = chunk_result.map_err(|e| format!("http body chunk: {e}"))?;
+            total = total.saturating_add(chunk.len());
+            check_body_size(total)?;
+            out.extend_from_slice(&chunk);
+        }
+        String::from_utf8(out).map_err(|e| format!("http body not utf8: {e}"))
+    }
 }
 
 impl tcp::Host for WasmHostState {

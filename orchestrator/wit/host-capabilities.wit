@@ -2,6 +2,7 @@ package orchestrator:host;
 
 interface http {
     get: func(url: string) -> result<string, string>;
+    post: func(url: string, body: list<u8>, content-type: string) -> result<string, string>;
 }
 
 interface tcp {

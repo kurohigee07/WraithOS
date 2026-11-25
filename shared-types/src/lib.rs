@@ -21,6 +21,7 @@ pub struct ModuleManifest {
 #[serde(tag = "type", rename_all = "kebab-case")]
 pub enum Capability {
     HttpGet { allowed_hosts: Vec<String> },
+    HttpPost { allowed_hosts: Vec<String> },
     TcpConnect { allowed_ports: Vec<u16> },
     DbQuery { allowed_tables: Vec<String> },
     Log,

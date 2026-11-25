@@ -36,6 +36,7 @@ impl HostMatcher {
 #[derive(Debug, Clone, Default)]
 pub struct CapabilitySet {
     http_hosts: Vec<HostMatcher>,
+    http_post_hosts: Vec<HostMatcher>,
     tcp_ports: Vec<u16>,
     tcp_hosts: Vec<HostMatcher>,
     db_tables: Vec<String>,
@@ -50,6 +51,10 @@ impl CapabilitySet {
             match cap {
                 Capability::HttpGet { allowed_hosts } => {
                     set.http_hosts
+                        .extend(allowed_hosts.iter().map(|h| HostMatcher::parse(h)));
+                }
+                Capability::HttpPost { allowed_hosts } => {
+                    set.http_post_hosts
                         .extend(allowed_hosts.iter().map(|h| HostMatcher::parse(h)));
                 }
                 Capability::TcpConnect { allowed_ports } => {
@@ -76,6 +81,19 @@ impl CapabilitySet {
         } else {
             Err(OrchestratorError::CapabilityDenied(format!(
                 "http host '{host}' not allowed"
+            )))
+        }
+    }
+
+    pub fn check_http_post(&self, url: &reqwest::Url) -> Result<()> {
+        let host = url
+            .host_str()
+            .ok_or_else(|| OrchestratorError::InvalidUrl(url.to_string()))?;
+        if self.http_post_hosts.iter().any(|m| m.matches(host)) {
+            Ok(())
+        } else {
+            Err(OrchestratorError::CapabilityDenied(format!(
+                "http-post host '{host}' not allowed"
             )))
         }
     }
