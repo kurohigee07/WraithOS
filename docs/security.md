@@ -723,7 +723,7 @@ This is a documentation-derived recommendation, not a claim that these changes w
 3. Scope socket ownership and event/audit visibility by tenant and execution.
 4. Persist and verify signatures consistently across upload/build/restart/delete.
 5. Add archive validation, compiler resource budgets, and a durable build job model.
-6. Add outbound response limits (partially done: http::get capped at 16 MiB), egress controls, and shutdown drain tests. Rhai limits are done as of H2.
+6. Outbound response limits: `http::get` and `http::post` are both capped at 16 MiB. `tcp::connect` remains unbounded by design (raw socket, no protocol knowledge). Egress controls and shutdown drain tests are still open. Rhai limits are done as of H2.
 7. Audit default credentials end-to-end: `deploy/wraithos/*/rootfs_overlay/etc/shadow` files are intentional (baked default root password, wizard force-changes on first boot), not tracked secrets. Confirm every shipped image has the wizard gate and that no image ships without `wizard.complete` absent.
 8. Validate ARM boot/update/encryption through power-loss and failed-boot drills; sign update artifacts.
 
