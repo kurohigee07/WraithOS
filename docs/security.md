@@ -60,7 +60,7 @@ An empty capability sidecar/manifest falls back to global permissions on reload.
 
 ### HTTP-specific risks
 
-The HTTP check is hostname-based. It does not restrict schemes to HTTPS, block private/link-local IP ranges, or pin DNS answers. The response body is capped at `MAX_HTTP_BODY_BYTES = 16 MiB` (see "Resource limits" below), but that bound applies only to `http::get` — other egress paths remain open and there is no egress policy. Redirects are disabled, which removes one bypass class but not DNS rebinding or an allowlisted host that serves internal content.
+The HTTP check is hostname-based. It does not restrict schemes to HTTPS, block private/link-local IP ranges, or pin DNS answers. The response body is capped at `MAX_HTTP_BODY_BYTES = 16 MiB` (see "Resource limits" below), but that bound applies only to `http::get` and `http::post` — other egress paths remain open and there is no egress policy. `http::get` and `http::post` are separate capabilities (`http-get` and `http-post`) so a guest that only needs to read cannot POST. Redirects are disabled, which removes one bypass class but not DNS rebinding or an allowlisted host that serves internal content.
 
 Use network egress controls for SSRF defense. Treat `allowed_hosts=["*"]` as broad outbound GET authority.
 
