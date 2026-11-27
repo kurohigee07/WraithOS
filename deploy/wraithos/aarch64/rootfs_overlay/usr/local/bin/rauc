@@ -1,0 +1,34 @@
+#!/bin/sh
+# RAUC wrapper: auto-inject --override-boot-slot for commands that need it.
+# WraithOS boots with dm-verity root (/dev/dm-0), which RAUC cannot match to
+# /dev/vdaN slots. Override is required on install/status/info.
+REAL_RAUC=/usr/bin/rauc
+
+# Find first non-flag argument (the subcommand).
+CMD=""
+for arg in "$@"; do
+    case "$arg" in
+        -*) continue ;;
+        *) CMD="$arg"; break ;;
+    esac
+done
+
+case "$CMD" in
+    install|status|info)
+        # Already overridden? Pass through unchanged.
+        for arg in "$@"; do
+            case "$arg" in
+                --override-boot-slot=*) exec "$REAL_RAUC" "$@" ;;
+            esac
+        done
+        # Detect active slot from kernel cmdline.
+        SLOT=$(sed -n 's/.*slot=\([AB]\).*/\1/p' /proc/cmdline 2>/dev/null | head -1)
+        if [ -z "$SLOT" ]; then
+            exec "$REAL_RAUC" "$@"
+        fi
+        exec "$REAL_RAUC" --override-boot-slot="$SLOT" "$@"
+        ;;
+    *)
+        exec "$REAL_RAUC" "$@"
+        ;;
+esac

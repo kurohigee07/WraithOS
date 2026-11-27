@@ -59,6 +59,9 @@ case "$1" in
         fi
         if [ "$MOUNTED" = "1" ]; then
             mkdir -p /data/orchestrator /data/modules /data/wraith
+            # Restrict writable dirs: only root can inject modules or tamper state.
+            chmod 755 /data/modules /data/wraith 2>/dev/null
+            chmod 700 /data/orchestrator 2>/dev/null
             grep -q ' /var/lib/orchestrator ' /proc/mounts || \
                 mount --bind /data/orchestrator /var/lib/orchestrator
             grep -q ' /modules ' /proc/mounts || \

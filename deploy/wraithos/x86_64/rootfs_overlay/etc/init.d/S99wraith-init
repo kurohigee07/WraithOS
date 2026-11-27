@@ -1,23 +1,55 @@
 #!/bin/sh
+PIDFILE=/run/wraith/orchestrator.pid
+mkdir -p /run/wraith
+
 case "$1" in
     start)
         echo -n "Starting Wraith orchestrator: "
-        # Safety net: ensure log dir exists
         mkdir -p /var/lib/orchestrator 2>/dev/null
+
+        # Single-instance guard: kill race with watchdog.
+        if [ -f "$PIDFILE" ]; then
+            oldpid=$(cat "$PIDFILE" 2>/dev/null)
+            if [ -n "$oldpid" ] && kill -0 "$oldpid" 2>/dev/null; then
+                echo "ALREADY RUNNING (pid $oldpid)"
+                exit 0
+            fi
+            rm -f "$PIDFILE"
+        fi
+
+        # Resource caps for the orchestrator process tree.
+        ulimit -u 500 2>/dev/null || true
+        ulimit -n 8192 2>/dev/null || true
 
         if [ -f /etc/wraith/orchestrator.toml ]; then
             /sbin/wraith-init --config /etc/wraith/orchestrator.toml \
                 >> /var/lib/orchestrator/wraith.log 2>&1 &
-            echo "OK"
-            # RAUC trial-boot health gate. Runs in the background so
-            # the boot sequence never blocks. The poller is a no-op
-            # unless /data/orchestrator/rauc.pending exists.
+            echo $! > "$PIDFILE"
+            echo "OK (pid $(cat $PIDFILE))"
             [ -x /usr/bin/wraith-rauc-healthcheck ] && \
                 /usr/bin/wraith-rauc-healthcheck >/dev/null 2>&1 &
         else
             echo "SKIPPED (no config)"
         fi
         ;;
-    stop) killall wraith-init 2>/dev/null ;;
-    restart) $0 stop; sleep 1; $0 start ;;
+    stop)
+        if [ -f "$PIDFILE" ]; then
+            oldpid=$(cat "$PIDFILE" 2>/dev/null)
+            if [ -n "$oldpid" ]; then
+                kill "$oldpid" 2>/dev/null
+                i=0
+                while [ "$i" -lt 5 ] && kill -0 "$oldpid" 2>/dev/null; do
+                    sleep 1
+                    i=$((i + 1))
+                done
+                kill -9 "$oldpid" 2>/dev/null
+            fi
+            rm -f "$PIDFILE"
+        fi
+        killall wraith-init 2>/dev/null
+        ;;
+    restart)
+        $0 stop
+        $0 start
+        ;;
 esac
