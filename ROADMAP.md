@@ -13,9 +13,11 @@ with a note.
 - `v0.52.0` — Audit response (11/14 findings fixed, H1/H2 Wasm and
   HTTP hardening)
 - `v0.53.0` — dm-verity runtime rootfs integrity (x86_64 + aarch64)
-- `v0.53.1` — dm-verity in-place update hook, RAUC healthcheck
+- `v0.53.1` — dm-verity in-place update hook, RAUC healthcheck,
   hardening, grubenv atomicity, bootcheck reboot-loop fix,
   H2/H3 completion, config/subprocess hardening
+- **post-v0.53.1 (unreleased)** — `http::post` Wasm host capability
+  with `http-post` split from `http-get`, CI aarch64 musl fix
 
 ## v0.54 — hardware validation (target: 2027-Q1)
 

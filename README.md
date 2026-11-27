@@ -154,7 +154,3 @@ Licensed under the GNU Affero General Public License v3.0 or later
 (AGPL-3.0-or-later). See [`LICENSE`](LICENSE).
 
 Third-party components retain their own licenses.
-
-> **Status: Unmaintained (Open to Community PRs)**
-> Active development by the original author has stopped. The repository remains open—feel free to fork, open issues, or submit pull requests if you wish to continue building on this codebase.
-> 

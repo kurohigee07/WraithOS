@@ -147,6 +147,9 @@ Use the [operations checklist](operations.md#pre-release-operational-checklist).
   5. Power cycle again: slot B persists, no demote, marker gone.
 
 ### E2E-3 — x86_64 in-place update
-- Status: DEFERRED to v0.55.
+- Status: DEFERRED (next milestone).
 - Same code path as ARM (post-install handler, rehash, override-boot-slot).
-  x86 build + fresh boot verified; RAUC cycle pending hardware/CI window.
+  x86 build + fresh boot verified; RAUC cycle pending.
+- Runtime capability verified (2026-11-26, x86 QEMU): `http::post` tested
+  end-to-end. Guest → host function → HTTPS POST to `httpbin.org/post` →
+  381-byte response. `http-post` split from `http-get` works as documented.
