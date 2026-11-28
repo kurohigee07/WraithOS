@@ -74,102 +74,62 @@ Then in another shell:
 Full API surface in [`docs/api.md`](docs/api.md). Guest contract, WIT
 files, and capability model in [`docs/architecture.md`](docs/architecture.md).
 
-## Build from source (reproducible)
+## Build from source
 
-The appliance image is built with **Buildroot 2024.02.9**. The
-external tree under `deploy/wraithos/` carries the board files,
-rootfs overlay, kernel fragment, and post-build / post-image scripts.
-Every image the project ships is produced from this tree.
+Built with Buildroot 2024.02.9. External tree: `deploy/wraithos/`.
 
-### Prerequisites
+Prereqs: Buildroot 2024.02.9 source, host toolchain per Buildroot
+manual (`debian:bookworm` works), ~20 GiB disk per arch.
 
-- Buildroot 2024.02.9 source tree, checked out outside this repo
-  (see [buildroot.org/download](https://buildroot.org/download))
-- Host toolchain per Buildroot's `support/manual` requirements
-  (a `debian:bookworm` container is sufficient)
-- ~20 GiB free disk per architecture output tree
+The defconfigs use `/path/to/wraithos-br2-ext/board/wraithos/`
+(x86) / `/path/to/wraithos-aarch64-br2-ext/board/wraithos/` (aarch64)
+as placeholders. Buildroot doesn't expand env vars in defconfigs, so
+you apply the defconfig then `sed` the placeholder out of `.config`
+before building.
 
-### How the path override works
-
-The checked-in defconfigs under `deploy/wraithos/` carry the literal
-string `/path/to/wraithos-br2-ext/board/wraithos/` (x86) or
-`/path/to/wraithos-aarch64-br2-ext/board/wraithos/` (aarch64) where
-the absolute path of your repo clone belongs. There is **no**
-environment-variable override: Buildroot's `make <defconfig>`
-rewrites `.config` from the literal defconfig values, so exporting
-`BR2_*` before the call has no effect. The supported sequence is:
-
-1. apply the defconfig
-2. `sed` the `/path/to/...` placeholders out of the generated `.config`
-3. `make`
-
-    export WRAITH_REPO="$PWD"                       # this repo root
+    export WRAITH_REPO="$PWD"
     export BUILDROOT="/path/to/buildroot-2024.02.9"
 
-The `sed` step is safe to re-run.
+**x86_64:**
 
-### x86_64
-
-    cd "$WRAITH_REPO"
-    BR2_EXTERNAL="$WRAITH_REPO/deploy/wraithos"
-    make -C "$BUILDROOT" O=output-wraithos-x86 BR2_EXTERNAL="$BR2_EXTERNAL" \
+    make -C "$BUILDROOT" O=out-x86 BR2_EXTERNAL="$WRAITH_REPO/deploy/wraithos" \
          wraithos_x86_64_defconfig
-
     sed -i -E "s|/path/to/wraithos-br2-ext/board/wraithos|$WRAITH_REPO/deploy/wraithos/x86_64|g" \
-        "$BUILDROOT/output-wraithos-x86/.config"
+        "$BUILDROOT/out-x86/.config"
+    make -C "$BUILDROOT" O=out-x86 -j"$(nproc)"
+    # → $BUILDROOT/out-x86/images/wraithos.img
 
-    make -C "$BUILDROOT" O=output-wraithos-x86 -j"$(nproc)"
+**aarch64:**
 
-    # Result: $BUILDROOT/output-wraithos-x86/images/wraithos.img
-    # Bootable raw disk image (MBR + ESP + 2×squashfs + LUKS data)
-
-### aarch64
-
-    cd "$WRAITH_REPO"
-    BR2_EXTERNAL="$WRAITH_REPO/deploy/wraithos"
-    make -C "$BUILDROOT" O=output-wraithos-arm BR2_EXTERNAL="$BR2_EXTERNAL" \
+    make -C "$BUILDROOT" O=out-arm BR2_EXTERNAL="$WRAITH_REPO/deploy/wraithos" \
          wraithos_aarch64_defconfig
-
     sed -i -E "s|/path/to/wraithos-aarch64-br2-ext/board/wraithos|$WRAITH_REPO/deploy/wraithos/aarch64|g" \
-        "$BUILDROOT/output-wraithos-arm/.config"
+        "$BUILDROOT/out-arm/.config"
+    make -C "$BUILDROOT" O=out-arm -j"$(nproc)"
+    # → $BUILDROOT/out-arm/images/wraithos-arm.img
 
-    make -C "$BUILDROOT" O=output-wraithos-arm -j"$(nproc)"
+Verify against the release SHA-256:
 
-    # Result: $BUILDROOT/output-wraithos-arm/images/wraithos-arm.img
+    sha256sum "$BUILDROOT/out-x86/images/wraithos.img"
 
-### Verify the build
+Bit-identical reproducibility is not done yet (mtimes in squashfs,
+`mksquashfs` thread scheduling). Tracked in [ROADMAP.md](ROADMAP.md)
+under v0.54.
 
-Every release image has a SHA-256 checksum published alongside the
-release asset. To compare a fresh build:
+**Root password override** for production images:
 
-    sha256sum "$BUILDROOT/output-wraithos-x86/images/wraithos.img"
-    # Compare against the release notes for the tag you are building
+    export WRAITH_ROOT_PASSWORD_HASH='$6$...'   # openssl passwd -6 -salt "$(openssl rand -base64 12)" 'pass'
+    # then build as above; post-build.sh replaces root entry in /etc/shadow
 
-**Bit-identical reproducibility is a work in progress.** Known
-sources of non-determinism today: filesystem mtimes inside
-squashfs, `mksquashfs` thread scheduling. The v0.54 roadmap entry
-"x86_64 parity and reproducible builds" (see [ROADMAP.md](ROADMAP.md))
-tracks bit-for-bit reproducibility as a deliverable of the NLnet
-application.
+Unset = default `wraithos-admin-change-me` ships with the login nag
+at `/etc/profile.d/00-default-password-warning.sh`.
 
-### Overriding the root password hash
-
-Production images **must not** ship with the default
-`wraithos-admin-change-me` password. The build supports a hash
-override:
-
-    export WRAITH_ROOT_PASSWORD_HASH='$6$...'   # SHA-512 crypt hash
-    make -C "$BUILDROOT" O=output-wraithos-x86 -j"$(nproc)"
-
-When `WRAITH_ROOT_PASSWORD_HASH` is set, `post-build.sh` (x86) /
-`post-build-arm.sh` (aarch64) replaces the root password field in
-`/etc/shadow` inside the built rootfs. Generate a hash with:
-
-    openssl passwd -6 -salt "$(openssl rand -base64 12)" 'your-password'
-
-If the variable is unset, the shipped default hash is used and the
-login warning at `/etc/profile.d/00-default-password-warning.sh`
-nudges the operator to change it.
+**The runtime wizard does not update `/etc/shadow`.** Wizard saves an
+Argon2 hash to `/data/wraith/admin.password.argon2` (orchestrator
+auth), not the system password. After wizard, the serial console and
+SSH still accept `wraithos-admin-change-me` until the operator runs
+`passwd`. See [wraithos.md](docs/wraithos.md) → "wizard boundaries".
+Fix pending (see [ROADMAP.md](ROADMAP.md) v0.54).
 
 
 ## Quick start (appliance image)

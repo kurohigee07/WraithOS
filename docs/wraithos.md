@@ -219,13 +219,28 @@ the kernel will brick `/data` on the next boot.** This is the most
 important rule in this section. v0.50.0 automation via a RAUC
 bundle-level `hooks.sh` is tracked as roadmap.
 
-## x86 configuration caveats
+## x86 build notes
 
-The checked-in `wraithos_x86_64_defconfig` selects **systemd**, while the overlay provides BusyBox `/etc/inittab` and S99 scripts. The systemd unit and its absolute symlink are also present, but historical working boot notes describe BusyBox init. This is a source/config mismatch to resolve before claiming a clean reproducible image build.
+x86 uses BusyBox init, same as ARM. Confirmed in the built image:
+`/sbin/init` is a symlink to `../bin/busybox`, `/etc/inittab` is
+BusyBox-style, `BR2_INIT_SYSTEMD` is unset in `.config`. Leftover
+files under `/etc/systemd/` and `/usr/lib/systemd/` in the image are
+**dead artifacts** from pre-v0.48 builds; nothing reads them because
+there is no systemd binary. Will be removed in a future cleanup.
 
-The file named `wraithos_x86_64_final.config` is only one line setting a download mirror; it is **not a complete final Buildroot configuration**. The x86 defconfig also does not wire the post-image script or host genimage/GRUB tools in the same explicit way as ARM. Treat the x86 build as a reconstructable historical recipe requiring configuration review, not a one-command guaranteed image pipeline.
+`wraithos_x86_64_final.config` is one line (a download mirror URL),
+not a complete Buildroot config. Ignore it.
 
-Hardcoded `/path/to/...` overlay/fragment paths must be adapted to your checkout. The x86 overlay does not contain the host binary; cross-compile and copy it before building.
+The x86 defconfig uses `/path/to/...` placeholders for
+`BR2_ROOTFS_OVERLAY`, `BR2_LINUX_KERNEL_CONFIG_FRAGMENT_FILES`,
+`BR2_ROOTFS_POST_IMAGE_SCRIPT`, and `BR2_ROOTFS_POST_BUILD_SCRIPT`.
+Substitute with your checkout path after `make ..._defconfig` —
+[README](../README.md) → "Build from source" has the exact sed.
+
+The x86 rootfs overlay does not carry the host binary
+(`sbin/wraith-init`); cross-compile the orchestrator and run
+`deploy/wraithos/sync-wraith-init.sh` before `make`.
+
 
 ## ARM boot contract
 
@@ -659,7 +674,20 @@ Important boundaries:
 
 - The embedded HTML does not currently expose the encryption-password input.
 - Finishing returns `reboot_required:true` but does not itself reboot the machine.
-- Persisting an Argon2 hash does not automatically update `/etc/shadow` or orchestrator Bearer config.
+- **Wizard does not update `/etc/shadow`.** Wizard hashes the admin
+  password with Argon2 and writes it to
+  `/data/wraith/admin.password.argon2`. `/etc/shadow` keeps the
+  build-time value (default `wraithos-admin-change-me`, or whatever
+  `WRAITH_ROOT_PASSWORD_HASH` was set to at build). System login via
+  serial console or SSH uses `/etc/shadow`, not the wizard file.
+  Operator must run `passwd` after the wizard, or set
+  `WRAITH_ROOT_PASSWORD_HASH` at build time to skip the default.
+  Incompatibility note: `/etc/shadow` uses crypt(3) format ($6$, $y$,
+  $2b$), not Argon2 PHC — the wizard file cannot be copied over.
+  Fixing this needs either an Argon2 PAM module in the image or a
+  brief plaintext passthrough to `chpasswd`. Tracked for v0.54.
+- Persisting an Argon2 hash does not automatically update orchestrator
+  Bearer config either.
 - Persisting network TOML does not by itself teach S41network to apply static addressing.
 - The backend LUKS path hardcodes `/dev/vda4`, runs `cryptsetup luksFormat`, opens `wraith-data`, and creates ext4. **This destroys existing data on the target.**
 - ARM S30data detects LUKS and prompts through cryptsetup before mounting. If no data mount exists it falls back to root/tmpfs paths; do not mistake that fallback for durable persistence.
