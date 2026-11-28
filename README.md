@@ -78,58 +78,76 @@ files, and capability model in [`docs/architecture.md`](docs/architecture.md).
 
 The appliance image is built with **Buildroot 2024.02.9**. The
 external tree under `deploy/wraithos/` carries the board files,
-rootfs overlay, and post-build / post-image scripts. Every image the project
-ships is produced from this tree — no manual `cp` of target files.
+rootfs overlay, kernel fragment, and post-build / post-image scripts.
+Every image the project ships is produced from this tree.
 
 ### Prerequisites
 
 - Buildroot 2024.02.9 source tree, checked out outside this repo
   (see [buildroot.org/download](https://buildroot.org/download))
 - Host toolchain per Buildroot's `support/manual` requirements
-  (the container `debian:bookworm` is sufficient)
+  (a `debian:bookworm` container is sufficient)
 - ~20 GiB free disk per architecture output tree
+
+### How the path override works
+
+The checked-in defconfigs under `deploy/wraithos/` carry the literal
+string `/path/to/wraithos-br2-ext/board/wraithos/` (x86) or
+`/path/to/wraithos-aarch64-br2-ext/board/wraithos/` (aarch64) where
+the absolute path of your repo clone belongs. There is **no**
+environment-variable override: Buildroot's `make <defconfig>`
+rewrites `.config` from the literal defconfig values, so exporting
+`BR2_*` before the call has no effect. The supported sequence is:
+
+1. apply the defconfig
+2. `sed` the `/path/to/...` placeholders out of the generated `.config`
+3. `make`
+
+    export WRAITH_REPO="$PWD"                       # this repo root
+    export BUILDROOT="/path/to/buildroot-2024.02.9"
+
+The `sed` step is safe to re-run.
 
 ### x86_64
 
-    # Adjust paths to your layout
-    export BR2_ROOTFS_OVERLAY="$PWD/deploy/wraithos/x86_64/rootfs_overlay"
-    export BR2_EXTERNAL="$PWD/deploy/wraithos"
-
-    cd /path/to/buildroot-2024.02.9
-    make O=output-wraithos-x86 BR2_EXTERNAL="$BR2_EXTERNAL" \
+    cd "$WRAITH_REPO"
+    BR2_EXTERNAL="$WRAITH_REPO/deploy/wraithos"
+    make -C "$BUILDROOT" O=output-wraithos-x86 BR2_EXTERNAL="$BR2_EXTERNAL" \
          wraithos_x86_64_defconfig
 
-    # Override the two absolute paths the defconfig ships with:
-    # - BR2_ROOTFS_OVERLAY (line above sets it)
-    # - BR2_ROOTFS_POST_IMAGE_SCRIPT (set in .config below)
-    sed -i "s|@REPO@|$OLDPWD|g" output-wraithos-x86/.config
+    sed -i -E "s|/path/to/wraithos-br2-ext/board/wraithos|$WRAITH_REPO/deploy/wraithos/x86_64|g" \
+        "$BUILDROOT/output-wraithos-x86/.config"
 
-    make O=output-wraithos-x86 -j"$(nproc)"
+    make -C "$BUILDROOT" O=output-wraithos-x86 -j"$(nproc)"
 
-    # Result: output-wraithos-x86/images/wraithos.img
+    # Result: $BUILDROOT/output-wraithos-x86/images/wraithos.img
     # Bootable raw disk image (MBR + ESP + 2×squashfs + LUKS data)
 
 ### aarch64
 
-    make O=output-wraithos-arm BR2_EXTERNAL="$BR2_EXTERNAL" \
+    cd "$WRAITH_REPO"
+    BR2_EXTERNAL="$WRAITH_REPO/deploy/wraithos"
+    make -C "$BUILDROOT" O=output-wraithos-arm BR2_EXTERNAL="$BR2_EXTERNAL" \
          wraithos_aarch64_defconfig
 
-    # Same path override as x86 above
-    make O=output-wraithos-arm -j"$(nproc)"
+    sed -i -E "s|/path/to/wraithos-aarch64-br2-ext/board/wraithos|$WRAITH_REPO/deploy/wraithos/aarch64|g" \
+        "$BUILDROOT/output-wraithos-arm/.config"
 
-    # Result: output-wraithos-arm/images/wraithos-arm.img
+    make -C "$BUILDROOT" O=output-wraithos-arm -j"$(nproc)"
+
+    # Result: $BUILDROOT/output-wraithos-arm/images/wraithos-arm.img
 
 ### Verify the build
 
 Every release image has a SHA-256 checksum published alongside the
 release asset. To compare a fresh build:
 
-    sha256sum output-wraithos-x86/images/wraithos.img
+    sha256sum "$BUILDROOT/output-wraithos-x86/images/wraithos.img"
     # Compare against the release notes for the tag you are building
 
 **Bit-identical reproducibility is a work in progress.** Known
 sources of non-determinism today: filesystem mtimes inside
-squashfs, `mksquashfs` thread scheduling. The v0.53.1 roadmap entry
+squashfs, `mksquashfs` thread scheduling. The v0.54 roadmap entry
 "x86_64 parity and reproducible builds" (see [ROADMAP.md](ROADMAP.md))
 tracks bit-for-bit reproducibility as a deliverable of the NLnet
 application.
@@ -141,17 +159,18 @@ Production images **must not** ship with the default
 override:
 
     export WRAITH_ROOT_PASSWORD_HASH='$6$...'   # SHA-512 crypt hash
-    make O=output-wraithos-x86 -j"$(nproc)"
+    make -C "$BUILDROOT" O=output-wraithos-x86 -j"$(nproc)"
 
-When `WRAITH_ROOT_PASSWORD_HASH` is set, `post-build.sh` replaces the
-first field of `/etc/shadow` in the built rootfs. Generate a hash with:
+When `WRAITH_ROOT_PASSWORD_HASH` is set, `post-build.sh` (x86) /
+`post-build-arm.sh` (aarch64) replaces the root password field in
+`/etc/shadow` inside the built rootfs. Generate a hash with:
 
     openssl passwd -6 -salt "$(openssl rand -base64 12)" 'your-password'
 
-If the variable is unset, the default hash from the shipped overlay is
-used and the login warning
-(`/etc/profile.d/00-default-password-warning.sh`) nudges the operator
-to change it.
+If the variable is unset, the shipped default hash is used and the
+login warning at `/etc/profile.d/00-default-password-warning.sh`
+nudges the operator to change it.
+
 
 ## Quick start (appliance image)
 
