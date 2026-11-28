@@ -1,0 +1,6 @@
+[
+  {"type": "log"},
+  {"type": "emit-event", "allowed_kinds": ["sample.emitted"]},
+  {"type": "http-get", "allowed_hosts": ["example.com"]},
+  {"type": "tcp-connect", "allowed_ports": [80, 443]}
+]

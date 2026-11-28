@@ -191,6 +191,35 @@ The capability header is a permission grant, not an intersection with global pol
 
 `db-query` and `log` exist in shared capability types but are not WIT guest imports. Rhai logging uses the global log permission.
 
+## Adversarial demo: capability isolation
+
+`modules/default/evil.wasm` tries every host capability. Reports denied/allowed per attempt. Not an exploit — it tests the boundary the host enforces.
+
+Three attempts:
+
+| Capability | Target |
+|---|---|
+| `events::emit` | kind `system.compromised` |
+| `http::get` | `https://evil.internal/` |
+| `tcp::connect` | `evil.internal:22` |
+
+Each returns the host's denial string in the plugin's JSON output.
+
+Ships with `capabilities.json == []` (deny all). Run it:
+
+    curl --fail -X POST http://127.0.0.1:9090/modules/evil/execute \
+         -H 'Content-Type: application/json' -d '{}'
+
+Expected: all three `denied: ...`.
+
+Now edit `modules/default/evil.wasm.capabilities.json`:
+
+    [{"type": "emit-event", "allowed_kinds": ["system.compromised"]}]
+
+Re-upload (or restart), run again. `emit_event` succeeds, HTTP + TCP stay denied. Same guest code, different manifest. That's the point: the host enforces, not the guest's cooperation.
+
+Fuel budget is separate — `cpu_heavy.wasm` exercises that. Same pattern: host enforces, guest traps, process survives.
+
 ## Build from source
 
 The optional HTTP compiler expects an archive root like:

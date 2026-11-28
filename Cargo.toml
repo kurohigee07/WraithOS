@@ -1,5 +1,5 @@
 [workspace]
-members = ["orchestrator", "shared-types", "sample-plugin", "wraith-sdk", "wraith-cli"]
+members = ["orchestrator", "shared-types", "sample-plugin", "evil-plugin", "wraith-sdk", "wraith-cli"]
 default-members = ["orchestrator", "shared-types", "wraith-cli", "wraith-sdk"]
 resolver = "2"
 

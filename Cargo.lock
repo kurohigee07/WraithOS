@@ -987,6 +987,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "evil-plugin"
+version = "0.1.0"
+dependencies = [
+ "wit-bindgen 0.37.0",
+]
+
+[[package]]
 name = "fastrand"
 version = "2.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
