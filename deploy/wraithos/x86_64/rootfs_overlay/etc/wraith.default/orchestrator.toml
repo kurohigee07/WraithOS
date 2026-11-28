@@ -1,7 +1,8 @@
 # Orchestrator runtime config.
 
-db_path = "orchestrator.db"
-modules_dir = "./modules"
+db_path = "/var/lib/orchestrator/orchestrator.db"
+modules_dir = "/modules"
+data_dir = "/var/lib/orchestrator"
 http_timeout_secs = 30
 max_sockets = 256
 
