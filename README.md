@@ -74,6 +74,85 @@ Then in another shell:
 Full API surface in [`docs/api.md`](docs/api.md). Guest contract, WIT
 files, and capability model in [`docs/architecture.md`](docs/architecture.md).
 
+## Build from source (reproducible)
+
+The appliance image is built with **Buildroot 2024.02.9**. The
+external tree under `deploy/wraithos/` carries the board files,
+rootfs overlay, and post-build / post-image scripts. Every image the project
+ships is produced from this tree — no manual `cp` of target files.
+
+### Prerequisites
+
+- Buildroot 2024.02.9 source tree, checked out outside this repo
+  (see [buildroot.org/download](https://buildroot.org/download))
+- Host toolchain per Buildroot's `support/manual` requirements
+  (the container `debian:bookworm` is sufficient)
+- ~20 GiB free disk per architecture output tree
+
+### x86_64
+
+    # Adjust paths to your layout
+    export BR2_ROOTFS_OVERLAY="$PWD/deploy/wraithos/x86_64/rootfs_overlay"
+    export BR2_EXTERNAL="$PWD/deploy/wraithos"
+
+    cd /path/to/buildroot-2024.02.9
+    make O=output-wraithos-x86 BR2_EXTERNAL="$BR2_EXTERNAL" \
+         wraithos_x86_64_defconfig
+
+    # Override the two absolute paths the defconfig ships with:
+    # - BR2_ROOTFS_OVERLAY (line above sets it)
+    # - BR2_ROOTFS_POST_IMAGE_SCRIPT (set in .config below)
+    sed -i "s|@REPO@|$OLDPWD|g" output-wraithos-x86/.config
+
+    make O=output-wraithos-x86 -j"$(nproc)"
+
+    # Result: output-wraithos-x86/images/wraithos.img
+    # Bootable raw disk image (MBR + ESP + 2×squashfs + LUKS data)
+
+### aarch64
+
+    make O=output-wraithos-arm BR2_EXTERNAL="$BR2_EXTERNAL" \
+         wraithos_aarch64_defconfig
+
+    # Same path override as x86 above
+    make O=output-wraithos-arm -j"$(nproc)"
+
+    # Result: output-wraithos-arm/images/wraithos-arm.img
+
+### Verify the build
+
+Every release image has a SHA-256 checksum published alongside the
+release asset. To compare a fresh build:
+
+    sha256sum output-wraithos-x86/images/wraithos.img
+    # Compare against the release notes for the tag you are building
+
+**Bit-identical reproducibility is a work in progress.** Known
+sources of non-determinism today: filesystem mtimes inside
+squashfs, `mksquashfs` thread scheduling. The v0.53.1 roadmap entry
+"x86_64 parity and reproducible builds" (see [ROADMAP.md](ROADMAP.md))
+tracks bit-for-bit reproducibility as a deliverable of the NLnet
+application.
+
+### Overriding the root password hash
+
+Production images **must not** ship with the default
+`wraithos-admin-change-me` password. The build supports a hash
+override:
+
+    export WRAITH_ROOT_PASSWORD_HASH='$6$...'   # SHA-512 crypt hash
+    make O=output-wraithos-x86 -j"$(nproc)"
+
+When `WRAITH_ROOT_PASSWORD_HASH` is set, `post-build.sh` replaces the
+first field of `/etc/shadow` in the built rootfs. Generate a hash with:
+
+    openssl passwd -6 -salt "$(openssl rand -base64 12)" 'your-password'
+
+If the variable is unset, the default hash from the shipped overlay is
+used and the login warning
+(`/etc/profile.d/00-default-password-warning.sh`) nudges the operator
+to change it.
+
 ## Quick start (appliance image)
 
 The appliance is not a cloud image. It's a disk image that boots to a

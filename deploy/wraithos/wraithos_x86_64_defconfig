@@ -44,6 +44,7 @@ BR2_PACKAGE_HOST_DOSFSTOOLS=y
 BR2_PACKAGE_HOST_MTOOLS=y
 BR2_PACKAGE_HOST_GENEXT2FS=y
 BR2_ROOTFS_POST_IMAGE_SCRIPT="/path/to/wraithos-br2-ext/board/wraithos/post-image.sh"
+BR2_ROOTFS_POST_BUILD_SCRIPT="/path/to/wraithos-br2-ext/board/wraithos/post-build.sh"
 
 # ─── Runtime packages (match ARM) ───────────────────────────────
 BR2_PACKAGE_OPENSSL=y
