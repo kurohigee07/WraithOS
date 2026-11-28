@@ -271,7 +271,7 @@ After userspace starts, `wraith-bootcheck` verifies:
 
 The watchdog worker pets `/dev/watchdog` every five seconds while proof succeeds or the default 180-second grace period has not expired. On first successful proof it runs `wraith-bootenv commit`. After grace, failed proof triggers demotion, sync, a 20-second wait, and forced reboot. If the process was missing, it attempts restart and treats that cycle as unproven.
 
-This is a meaningful recovery design, but not proof of power-loss atomicity. `wraith-bootenv` overwrites the env file from a runtime temporary file and syncs; it does not implement an A/B environment-block transaction. Hardware/failure injection is still required.
+`wraith-bootenv` writes atomically: tmp file lives on the same fs as the target (`/boot/grub/.grubenv.tmp`), final step is `mv` (atomic rename on vfat), then `sync`. A power loss mid-write leaves either the old env or the new env, never a partial block. What is *not* covered: an A/B environment-block transaction (both slots committed together), and hardware/failure-injection validation of the whole sequence. Still required.
 
 ## Updating a root filesystem
 
@@ -380,7 +380,7 @@ The ARM defconfig wires `post-build-arm.sh` and `post-image-arm.sh`. Post-build 
 
 The post-image script writes a textual GRUB env padded with spaces, whereas the runtime helper pads with `#`. GRUB's environment-block format is strict; validate that the generated block loads on the actual GRUB build. Do not assume historical success proves every current script combination is reproducible.
 
-For x86, resolve the init-system/post-image wiring gaps first, supply the binary, and use the BIOS post-image/genimage files as a reference. The repository does not include a full disk image or complete Buildroot output tree.
+For x86, cross-compile the orchestrator, run `deploy/wraithos/sync-wraith-init.sh`, then build via the defconfig in `deploy/wraithos/`. See [README](../README.md) → "Build from source". The repository does not ship a prebuilt image or full Buildroot output tree.
 
 ## Building a UEFI Secure Boot x86_64 image
 
@@ -616,7 +616,7 @@ bash deploy/run-wraithos.sh /path/to/wraithos.img
 
 The helper uses KVM when writable, otherwise TCG, and attaches the image as virtio. It uses `-nographic -no-reboot`; a guest reboot may terminate QEMU rather than simulate a fresh firmware boot. For A/B tests, restart QEMU explicitly as appropriate.
 
-For ARM, use `qemu-system-aarch64` with a compatible `virt` machine, ARM UEFI firmware, Cortex-A72-compatible CPU, serial console, and the GPT image. The exact firmware path/package varies by host; the repository does not include a complete ARM QEMU launcher. Match `console=ttyAMA0` and virtio disk naming before debugging userspace.
+For ARM, use `deploy/run-wraithos-arm.sh` (needs `qemu-system-aarch64` + `qemu-efi-aarch64`; the script wraps the QEMU call and handles A/B trial restarts). It picks `-machine virt -cpu cortex-a72`, the edk2 `QEMU_EFI.fd` firmware, serial console, and the GPT image. Firmware path can vary by distro; if the script fails at firmware load, point `-bios` at your `QEMU_EFI.fd`. Match `console=ttyAMA0` and virtio disk naming before debugging userspace.
 
 To reach a loopback-only guest API from the host, use QEMU host forwarding, for example a user-mode netdev forwarding host port 9091 to guest 9090. Then access `127.0.0.1:9091` on the host. This does not require binding the guest runtime to every interface.
 

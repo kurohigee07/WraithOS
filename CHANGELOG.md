@@ -8,7 +8,7 @@ describes the change theme. `v0.30` was not released.
 Crate manifests declare `0.1.0`; the tags are the release units.
 Releases before `v0.24.0` are not itemized here; see commit history.
 
-## [0.53.1] - 2026-11-18
+## [v0.53.1-update-hook] - 2026-11-18
 
 ### Added — in-place dm-verity update hook
 - `wraith-verity-rehash`: recompute squashfs verity tree + rewrite target slot's
