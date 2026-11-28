@@ -1,5 +1,15 @@
 # Security model and known limitations
 
+> **Status: not independently audited.** No third-party security audit
+> or penetration test has been performed on WraithOS. Every claim in
+> this document reflects what the current code does under the
+> maintainer's own testing (QEMU + automated tests; see
+> [`testing.md`](testing.md) for the current verification matrix).
+> Treat this as the maintainer's honest map of the code's
+> capabilities and limitations, not as a third-party endorsement.
+>
+> **Found a vulnerability?** See [Vulnerability disclosure](#vulnerability-disclosure)
+> at the end of this page.
 
 > AI-assistance note: prose in this file was drafted with AI
 > assistance from maintainer-provided claims and reviewed against
@@ -9,6 +19,30 @@
 **Audience:** anyone considering a non-loopback bind, shared deployment, uploaded source, or customer-facing plugin service.
 
 Wraith has useful defensive mechanisms, but the current implementation is best understood as a **single-operator runtime with namespace/resource tenancy**, not an independently audited hostile multi-tenant platform. This page describes what the code does and does not guarantee.
+
+## Contents
+
+1. [Trust boundaries](#trust-boundaries)
+2. [Recommended local posture](#recommended-local-posture)
+3. [Authentication is not tenant isolation](#authentication-is-not-tenant-isolation)
+4. [Capabilities are authorization data](#capabilities-are-authorization-data)
+5. [Execution resource limits](#execution-resource-limits)
+6. [Signatures](#signatures)
+7. [Source-build sandbox](#source-build-sandbox)
+8. [Dashboard and wizard](#dashboard-and-wizard)
+9. [Appliance credential and boot material](#appliance-credential-and-boot-material)
+10. [WraithOS update and encryption caveats](#wraithos-update-and-encryption-caveats)
+11. [Data handling and persistence](#data-handling-and-persistence)
+12. [SSH authentication](#ssh-authentication)
+13. [Threat model — physical access](#threat-model--physical-access)
+14. [Boot chain integrity](#boot-chain-integrity)
+15. [eBPF](#ebpf)
+16. [Update verification and rollback](#update-verification-and-rollback)
+17. [Deployment decision guide](#deployment-decision-guide)
+18. [Priority hardening backlog](#priority-hardening-backlog)
+19. [Default credentials](#default-credentials)
+20. [Vulnerability disclosure](#vulnerability-disclosure)
+21. [In-place update hook (v0.53.1)](#in-place-update-hook-v0531)
 
 ## Trust boundaries
 
@@ -727,7 +761,6 @@ This is a documentation-derived recommendation, not a claim that these changes w
 7. Audit default credentials end-to-end: `deploy/wraithos/*/rootfs_overlay/etc/shadow` files are intentional (baked default root password, wizard force-changes on first boot), not tracked secrets. Confirm every shipped image has the wizard gate and that no image ships without `wizard.complete` absent.
 8. Validate ARM boot/update/encryption through power-loss and failed-boot drills; sign update artifacts.
 
-No security audit or penetration test was performed for this documentation update.
 
 ## Default credentials
 
@@ -846,6 +879,90 @@ this means the plaintext keyfile is only deleted after the TPM path
 has been verified live — no new brick path is introduced. Manual
 `wraith-tpm-finalize` remains idempotent and is still the recovery
 tool for deployments where the TPM was absent at wizard time.
+
+## Vulnerability disclosure
+
+WraithOS is a single-maintainer project. This section describes how to
+report a security issue and what to expect.
+
+### How to report
+
+Preferred channel: **email `jace@synclab.biz.id`** with `[WraithOS
+security]` in the subject line.
+
+Alternative: open a **GitHub Security Advisory** at
+`https://github.com/kurohigee07/WraithOS/security/advisories/new`.
+Advisories are enabled on the repository during public launch; until
+then, email is the only reliable channel.
+
+**Do not open a public GitHub issue** for a vulnerability, and **do not**
+include working exploit code in an issue.
+
+### What to include
+
+- Affected version (tag, e.g. `v0.53.1-update-hook`) and architecture
+  (x86_64 or aarch64)
+- Component (orchestrator binary, RAUC path, TPM/LUKS flow, WebSocket,
+  HTTP API, boot chain, etc.)
+- Reproduction steps or a description of the attack
+- Impact you believe it has (confidentiality / integrity / availability
+  / privilege boundary crossed)
+- Your PGP public key, if you want encrypted replies. The maintainer
+  does not currently publish a project PGP key, but will reply encrypted
+  to your key if you provide one.
+
+### What to expect
+
+- Acknowledgment within **7 calendar days** (best effort — single
+  maintainer, no paid on-call)
+- A preliminary assessment within **21 calendar days**
+- Fix timeline depends on severity and complexity. Critical issues that
+  require a release typically ship as a `v0.<minor>.<patch>-hotfix` tag
+  within 30 days.
+- If the issue is not reproducible or falls outside the scope below,
+  the maintainer will say so and explain why.
+
+### Scope
+
+**In scope:**
+
+- The Rust orchestrator (`orchestrator/` crate) and the WebAssembly host
+  bridge
+- The wizard flow (`/wizard/*` endpoints)
+- RAUC update path, dm-verity integration, TPM 2.0 sealing, LUKS keyfile
+  handling
+- Secure Boot chain and GRUB configuration in the image
+- Initial boot scripts (`deploy/wraithos/*/rootfs_overlay/etc/init.d/`)
+- Any path by which an unauthenticated network caller can break a
+  documented security invariant
+
+**Out of scope:**
+
+- Third-party Cargo dependencies — report those upstream; the
+  maintainer will coordinate if a WraithOS version is affected
+- Vulnerabilities that require the attacker to already have root on the
+  running appliance
+- The default root password (`wraithos-admin-change-me`) — documented,
+  intentional, and force-changed by the wizard on first boot (see
+  "Default credentials" above)
+- Physical-access attacks that require desoldering or firmware
+  replacement, unless they bypass a documented control
+- Files under `docs/evidence/` (build logs, benchmark fixtures)
+
+### Safe harbor
+
+If you make a good-faith effort to avoid privacy violations, service
+disruption, and data destruction, and you report the issue through the
+channels above, the maintainer will:
+
+- Not pursue legal action against you for the report
+- Acknowledge your report in release notes (unless you ask to stay
+  anonymous)
+- Coordinate disclosure timing with you — default 90 days from
+  acknowledgment, or sooner if a fix ships and users are exposed
+
+This is not a formal bug bounty program. The maintainer cannot offer
+monetary rewards.
 
 ## In-place update hook (v0.53.1)
 
